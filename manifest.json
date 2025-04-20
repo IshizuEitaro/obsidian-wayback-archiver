@@ -3,7 +3,7 @@
   "name": "Wayback Archiver",
   "version": "1.0.0",
   "minAppVersion": "0.15.0",
-  "description": "Automatically archives web links via Wayback Machine and appends archived versions in Obsidian notes.",
+  "description": "Automatically archives web links via Wayback Machine and appends archived versions in notes.",
   "author": "ISHIZUE",
   "authorUrl": "https://github.com/IshizuEitaro",
   "isDesktopOnly": false
