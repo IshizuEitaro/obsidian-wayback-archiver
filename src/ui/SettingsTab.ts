@@ -13,8 +13,6 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this;
-		containerEl.empty();
-		containerEl.createEl('h2', { text: 'Wayback Archiver Settings' });
 
 		containerEl.createEl('h3', { text: 'Archive.org API Keys (Global)' });
 

@@ -348,12 +348,12 @@ export class ArchiverService {
                 let archiveResult: { status: 'success'; url: string } | { status: 'too_many_captures'; url: string } | { status: 'failed'; status_ext?: string | undefined };
 
                 if (cached && (Date.now() - cached.timestamp) < freshnessThresholdMs) {
-                    console.log(`[DEBUG] Using cached archive result for (selection): ${originalUrl}`);
+                    //console.log(`[DEBUG] Using cached archive result for (selection): ${originalUrl}`);
                     archiveResult = { status: cached.status as any, url: cached.url };
                 } else {
-                    console.log(`[DEBUG] Calling archiveUrl for (selection): ${originalUrl}`);
+                    //console.log(`[DEBUG] Calling archiveUrl for (selection): ${originalUrl}`);
                     archiveResult = await this.archiveUrl(originalUrl);
-                    console.log(`[DEBUG] archiveUrl returned (selection):`, archiveResult);
+                    //console.log(`[DEBUG] archiveUrl returned (selection):`, archiveResult);
                     if (archiveResult.status === 'success' || archiveResult.status === 'too_many_captures') {
                         this.recentArchiveCache.set(originalUrl, { status: archiveResult.status, url: archiveResult.url, timestamp: Date.now() });
                     }
@@ -516,8 +516,8 @@ export class ArchiverService {
                     return;
                 }
 
-                console.log('[DEBUG] Processing link:', fullMatch);
-                console.log('[DEBUG] Original URL:', originalUrl);
+                //console.log('[DEBUG] Processing link:', fullMatch);
+                //console.log('[DEBUG] Original URL:', originalUrl);
 
                 const insertionPosIndex = matchIndex + fullMatch.length; // Position *after* the original link text `[text](url)`
 
@@ -550,12 +550,12 @@ export class ArchiverService {
 
                 // Cache check remains the same
                 if (cached && (Date.now() - cached.timestamp) < freshnessThresholdMs) {
-                    console.log(`[DEBUG] Using cached archive result for (file): ${originalUrl}`);
+                    //console.log(`[DEBUG] Using cached archive result for (file): ${originalUrl}`);
                     archiveResult = { status: cached.status as any, url: cached.url };
                 } else {
-                    console.log(`[DEBUG] Calling archiveUrl for (file): ${originalUrl}`);
+                    //console.log(`[DEBUG] Calling archiveUrl for (file): ${originalUrl}`);
                     archiveResult = await this.archiveUrl(originalUrl);
-                    console.log(`[DEBUG] archiveUrl returned (file):`, archiveResult);
+                    //console.log(`[DEBUG] archiveUrl returned (file):`, archiveResult);
                     if (archiveResult.status === 'success' || archiveResult.status === 'too_many_captures') {
                         this.recentArchiveCache.set(originalUrl, {
                             status: archiveResult.status,
@@ -584,8 +584,8 @@ export class ArchiverService {
                     } else {
                         const insertionOffset = matchIndex + originalLinkText.length; // Position *after* original link
 
-                        console.log('[DEBUG] Full match (file):', fullMatch);
-                        console.log('[DEBUG] Original URL (file):', originalUrl);
+                        //console.log('[DEBUG] Full match (file):', fullMatch);
+                        //console.log('[DEBUG] Original URL (file):', originalUrl);
 
                         const insertionText = needsSpace ? ' ' + archiveLink : archiveLink;
                         fileContent = fileContent.slice(0, insertionOffset) + insertionText + fileContent.slice(insertionOffset);
@@ -601,12 +601,12 @@ export class ArchiverService {
                     }
                 } else {
                     failedCount++;
-                    console.log(`[DEBUG] Entering 'failed' block for (file): ${originalUrl}`);
+                    //console.log(`[DEBUG] Entering 'failed' block for (file): ${originalUrl}`);
                     console.log(`Failed to archive (file): ${originalUrl}`);
                     if (!this.data.failedArchives) this.data.failedArchives = [];
                     this.data.failedArchives.push({ url: originalUrl, filePath: filePath, timestamp: Date.now(), error: `Archiving failed (status: ${archiveResult.status})`, retryCount: 0 });
                     await this.saveSettings(); 
-                    console.log(`[DEBUG] Exiting 'failed' block for (file): ${originalUrl}`);
+                    //console.log(`[DEBUG] Exiting 'failed' block for (file): ${originalUrl}`);
                 }
             };
 
