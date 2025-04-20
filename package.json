@@ -1,7 +1,7 @@
 {
   "name": "wayback-archiver",
   "version": "1.0.0",
-  "description": "Automatically archives web links via Wayback Machine and appends archived versions in Obsidian notes.",
+  "description": "Automatically archives web links via Wayback Machine and appends archived versions in notes.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
