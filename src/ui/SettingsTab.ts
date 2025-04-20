@@ -13,8 +13,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this;
-
-		containerEl.createEl('h3', { text: 'Archive.org API Keys (Global)' });
+		containerEl.empty();
+		
+		new Setting(containerEl).setName('Archive.org API keys (global)').setHeading();
 
 		const apiDesc = containerEl.createEl('p');
 		apiDesc.appendText('This is used globally across all profiles. ');
@@ -25,7 +26,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		apiDesc.style.marginBottom = '10px'; 
 
 		new Setting(containerEl)
-			.setName('Archive.org SPN Access Key')
+			.setName('Archive.org SPN access key')
 			.setDesc('Your S3-like Access Key for the SPN API v2.')
 			.addText(text => text
 				.setPlaceholder('Enter your access key')
@@ -36,7 +37,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Archive.org SPN Secret Key')
+			.setName('Archive.org SPN secret key')
 			.setDesc('Your S3-like Secret Key for the SPN API v2.')
 			.addText(text => text
 				.setPlaceholder('Enter your secret key')
@@ -46,11 +47,10 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-
-		containerEl.createEl('h3', { text: 'Profiles' });
+		new Setting(containerEl).setName('Profiles').setHeading();
 
 		new Setting(containerEl)
-			.setName('Active Profile')
+			.setName('Active profile')
 			.setDesc('Select the settings profile to use.')
 			.addDropdown(dropdown => {
 				for (const profileId in this.plugin.data.profiles) {
@@ -68,34 +68,33 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		profileButtonContainer.style.marginBottom = '20px'; 
 
 		new ButtonComponent(profileButtonContainer)
-			.setButtonText('Create Profile')
+			.setButtonText('Create profile')
 			.onClick(async () => {
 				await this.handleCreateProfileClick();
 			})
 			.buttonEl.style.marginRight = '5px';
 
 		new ButtonComponent(profileButtonContainer)
-			.setButtonText('Rename Profile')
+			.setButtonText('Rename profile')
 			.onClick(async () => {
 				await this.handleRenameProfileClick();
 			})
 			.buttonEl.style.marginRight = '5px';
 
 		new ButtonComponent(profileButtonContainer)
-			.setButtonText('Delete Profile')
+			.setButtonText('Delete profile')
 			.setWarning()
 			.onClick(async () => {
 				await this.handleDeleteProfileClick();
 			})
 			.buttonEl.style.marginRight = '5px';
 
-
-		containerEl.createEl('h3', { text: `Settings for Profile: "${this.plugin.data.activeProfileId}"` });
+		new Setting(containerEl).setName('Archive link format').setHeading();
 
 		const activeSettings = this.plugin.activeSettings;
 
 		new Setting(containerEl)
-			.setName('Date Format')
+			.setName('Date format')
 			.setDesc('Format for the {date} placeholder in the archive link text (using date-fns format).')
 			.addText(text => text
 				.setPlaceholder('yyyy-MM-dd')
@@ -106,7 +105,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Archive Link Text')
+			.setName('Archive link text')
 			.setDesc('Text used for the inserted archive link. Use {date} as a placeholder.')
 			.addText(text => text
 				.setPlaceholder('(Archived on {date})')
@@ -115,9 +114,11 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					activeSettings.archiveLinkText = value || '(Archived on {date})';
 					await this.plugin.saveSettings();
 				}));
+				
+		new Setting(containerEl).setName('Filtering rules (optional)').setHeading();
 
 		new Setting(containerEl)
-			.setName('Ignore URL Patterns')
+			.setName('Ignore URL patterns')
 			.setDesc('URLs matching these patterns (one per line, regex or simple text) will be ignored. Example: youtube\\.com or internal-wiki')
 			.addTextArea(text => text
 				.setPlaceholder('example\\.com\ninternal-server')
@@ -127,11 +128,10 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		containerEl.createEl('h3', { text: 'Filtering Rules (Optional)' });
 		containerEl.createEl('p', { text: 'Define patterns to ONLY archive links within notes matching these criteria. If multiple filter types are used, the note/link must match ALL active filter types.' });
 
 		new Setting(containerEl)
-			.setName('Path Patterns')
+			.setName('Path patterns')
 			.setDesc('Only archive links in notes whose file path matches these patterns (one per line, regex or simple text). Leave empty to ignore path.')
 			.addTextArea(text => text
 				.setPlaceholder('^Journal/.*\nProjects/MyProject/')
@@ -142,7 +142,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('URL Patterns')
+			.setName('URL patterns')
 			.setDesc('Only archive links whose URL matches these patterns (one per line, regex or simple text). Leave empty to ignore URL.')
 			.addTextArea(text => text
 				.setPlaceholder('^https://specific-domain\\.com/\nnews-site')
@@ -153,7 +153,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Word/Phrase Patterns')
+			.setName('Word/Phrase patterns')
 			.setDesc('Only archive links in notes containing ANY of these words or phrases (one per line, simple text match). Leave empty to ignore content.')
 			.addTextArea(text => text
 				.setPlaceholder('Project Alpha\n#research-topic')
@@ -163,8 +163,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-
-		containerEl.createEl('h3', { text: 'URL Substitution Rules' });
+		new Setting(containerEl).setName('URL substitution rules').setHeading();
 		containerEl.createEl('p', { text: 'Apply find/replace rules to URLs before archiving. Useful for removing tracking parameters or normalizing links.' });
 
 		const substitutionDiv = containerEl.createDiv();
@@ -173,18 +172,17 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.addButton(button => button
-			.setButtonText('Add Substitution Rule')
+			.setButtonText('Add substitution rule')
 			.onClick(async () => {
 				activeSettings.substitutionRules.push({ find: '', replace: '', regex: false });
 				await this.plugin.saveSettings();
 				this.renderSubstitutionRules(substitutionDiv);
 			}));
 
-
-		containerEl.createEl('h3', { text: 'Advanced Settings' });
+		new Setting(containerEl).setName('Advanced').setHeading();
 
 		new Setting(containerEl)
-			.setName('API Request Delay (ms)')
+			.setName('API request delay (ms)')
 			.setDesc('Delay between API calls (initiate, status check, next link) in milliseconds.')
 			.addSlider(slider => slider
 				.setLimits(500, 10000, 100) // Min 0.5s, Max 10s, Step 0.1s
@@ -196,7 +194,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Max Status Check Retries')
+			.setName('Max status check retries')
 			.setDesc('Maximum number of times to check the status of a pending archive job.')
 			.addSlider(slider => slider
 				.setLimits(1, 10, 1)
@@ -208,7 +206,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Archive Freshness (Days)')
+			.setName('Archive freshness (days)')
 			.setDesc('Only archive if the URL has not been archived within this many days (0 = always archive if not present). Uses SPN API `if_not_archived_within`.')
 			.addText(text => text
 				.setPlaceholder('Enter number of days (e.g., 90)')
@@ -221,7 +219,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 				
 		new Setting(containerEl)
-			.setName('Auto Clear Failed Logs')
+			.setName('Auto clear failed logs')
 			.setDesc('Automatically clear failed logs after successful retries without confirmation.')
 			.addToggle(toggle => {
 				toggle
@@ -232,7 +230,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					});
 			});
 
-		containerEl.createEl('h4', { text: 'SPN API v2 Options' });
+		containerEl.createEl('h4', { text: 'SPN API v2 options' });
 
 		const spnDesc = containerEl.createEl('p');
 		spnDesc.appendText('These options correspond to parameters available in the Archive.org SPN API v2. ');
@@ -243,7 +241,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		spnDesc.style.marginBottom = '10px'; 
 
 		new Setting(containerEl)
-			.setName('Capture Screenshot')
+			.setName('Capture screenshot')
 			.setDesc('Request a screenshot of the page during archiving (SPN option).')
 			.addToggle(toggle => toggle
 				.setValue(activeSettings.captureScreenshot)
@@ -253,7 +251,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Capture All Resources (capture_all=1)')
+			.setName('Capture all resources (capture_all=1)')
 			.setDesc('Attempt to capture more resources like JS, CSS, embeds (SPN option). May increase capture time/failure rate.')
 			.addToggle(toggle => toggle
 				.setValue(activeSettings.captureAll)
@@ -263,7 +261,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('JS Behavior Timeout (ms)')
+			.setName('JS behavior timeout (ms)')
 			.setDesc('Max time (milliseconds) to allow JS execution during capture (0 = default). (SPN option)')
 			.addText(text => text
 				.setPlaceholder('0')
@@ -277,7 +275,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 
 		new Setting(containerEl)
-			.setName('Force GET Request (force_get=1)')
+			.setName('Force GET request (force_get=1)')
 			.setDesc('Force the archiver to use a GET request (SPN option).')
 			.addToggle(toggle => toggle
 				.setValue(activeSettings.forceGet)
@@ -287,7 +285,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Capture Outlinks (capture_outlinks=1)')
+			.setName('Capture outlinks (capture_outlinks=1)')
 			.setDesc('Attempt to capture pages linked from the main URL (SPN option). Use with caution, can be slow.')
 			.addToggle(toggle => toggle
 				.setValue(activeSettings.captureOutlinks)
@@ -404,9 +402,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new ConfirmationModal(
 			this.app,
-			'Delete Profile?',
+			'Delete profile?',
 			`Are you sure you want to delete the profile "${profileIdToDelete}"? This cannot be undone.`,
-			'Yes, Delete Profile',
+			'Yes, delete profile',
 			async (confirmed: boolean) => {
 				if (confirmed) {
 					delete this.plugin.data.profiles[profileIdToDelete];
