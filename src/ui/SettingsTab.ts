@@ -212,13 +212,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Archive Freshness (Days)')
 			.setDesc('Only archive if the URL has not been archived within this many days (0 = always archive if not present). Uses SPN API `if_not_archived_within`.')
-			.addSlider(slider => slider
-				.setLimits(0, 365, 1) // Min 0 days, Max 1 year, Step 1 day
-				.setValue(activeSettings.archiveFreshnessDays)
-				.setDynamicTooltip()
+			.addText(text => text
+				.setPlaceholder('Enter number of days (e.g., 90)')
+				.setValue(String(activeSettings.archiveFreshnessDays))
 				.onChange(async (value) => {
-					activeSettings.archiveFreshnessDays = value;
+					const numValue = parseInt(value, 10);
+					activeSettings.archiveFreshnessDays = isNaN(numValue) || numValue < 0 ? 0 : numValue;
 					await this.plugin.saveSettings();
+					text.setValue(String(activeSettings.archiveFreshnessDays));
 				}));
 				
 		new Setting(containerEl)
