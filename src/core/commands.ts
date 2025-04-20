@@ -43,13 +43,13 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 
     plugin.addCommand({
         id: 'force-rearchive-links',
-        name: 'Force re-archive links (ignore cache)',
+        name: 'Force re-archive links in current note',
         editorCallback: plugin.forceReArchiveLinksAction.bind(plugin)
     });
 
     plugin.addCommand({
         id: 'force-rearchive-links-vault',
-        name: 'Force Re-archive all links in vault',
+        name: 'Force re-archive all links in vault',
         callback: async () => {
             new ConfirmationModal(
                 plugin.app,
