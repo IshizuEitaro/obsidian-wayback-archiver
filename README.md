@@ -15,8 +15,8 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
 - [Commands](#commands)
   - [Archive links in current note](#archive-links-in-current-note)
   - [Archive all links in vault](#archive-all-links-in-vault)
-  - [Force Re-archive links in current note](#force-re-archive-links-in-current-note)
-  - [Force Re-archive all links in vault](#force-re-archive-all-links-in-vault)
+  - [Force re-archive links in current note](#force-re-archive-links-in-current-note)
+  - [Force re-archive all links in vault](#force-re-archive-all-links-in-vault)
   - [Retry failed archive attempts](#retry-failed-archive-attempts)
   - [Retry failed archive attempts (Force Replace)](#retry-failed-archive-attempts-force-replace)
   - [Export failed archive log](#export-failed-archive-log)
@@ -31,6 +31,7 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
     - [Advanced Settings](#advanced-settings)
     - [SPN API v2 Options](#spn-api-v2-options)
 - [Troubleshooting FAQ](#troubleshooting-faq)
+- [Out of Scope and Limitations](#out-of-scope-and-limitations)
 - [LICENSE](#license)
 
 ## Installation
