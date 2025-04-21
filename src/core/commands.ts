@@ -116,7 +116,7 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
                         filename = `wayback-archiver-failed-log-${timestamp}.csv`;
                     }
 
-                    const folderPath = '.obsidian/plugins/wayback-archiver/failed_logs';
+                    const folderPath = plugin.app.vault.configDir + '/plugins/wayback-archiver/failed_logs';
                     try {
                         await plugin.app.vault.createFolder(folderPath);
                     } catch (e) {

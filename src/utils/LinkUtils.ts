@@ -1,26 +1,17 @@
 /**
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
- * - Group 1: The primary link structure (Markdown, HTML A, HTML Img, or Plain URL)
- *   - Group 2: URL from Markdown `(![...](URL) or [...](URL))`
- *   - Group 4: URL from HTML `<a href="URL">`
- *   - Group 6: URL from HTML `<img src="URL">`
- *   - Group 7: Plain HTTP/HTTPS URL
- * - Group 8: Optionally match zero or more adjacent archive links (Markdown format)
+ * - Group 0: The primary link structure (Markdown, HTML A, HTML Img, or Plain URL)
+ * - Group 1: URL from Markdown `(![...](URL) or [...](URL))`
+ * - Group 2: URL from HTML `<a href="URL">`
+ * - Group 3: URL from HTML `<img src="URL">`
+ * - Group 4: Plain HTTP/HTTPS URL
+ * Markdown URL/Img Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)$
+ * HTML A/Img Regex: <a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>
+ * Raw URL Regex: ^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})$
+ * Combined Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)$|<a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>|^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})$
+ * Thank you https://regex101.com/ and zolrath for auto link title 
  */
-export const LINK_REGEX = new RegExp(
-	'(' +
-		'(?:!?\\[[^\\]]*?\\]\\(([^\\)]+?)\\))' +
-		'|' +
-		'(?:<a\\s+(?:[^>]*?\\s+)?href=(["\'])(.*?)\\3[^>]*?>.*?<\\/a>)' +
-		'|' +
-		'(?:<img\\s+(?:[^>]*?\\s+)?src=(["\'])(.*?)\\5[^>]*?>)' +
-		'|' +
-		'(?:(?<![=\\(\'"\\/])(https?:\\/\\/[^\\s<>"]+))' +
-	')' +
-	'((?:\\s*\\[.*?\\]\\(https?:\\/\\/web\\.archive\\.org\\/web\\/\\d+\\/.*?\\))*?)',
-	'gim'
-);
-
+export const LINK_REGEX = new RegExp('!?\\[[^\\[\\]]*\\]\\((https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})\\)$|<a\\b(?=[^>]*href=["\'])[^>]*href="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>.*?<\\\/a>|<img\\b(?=[^>]*src=["\'])[^>]*src="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>|^(https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})$', 'img')
 
 export function isIgnoredUrl(url: string, ignorePatterns: string[]): boolean {
 	return ignorePatterns.some(pattern => {

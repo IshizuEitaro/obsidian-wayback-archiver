@@ -1,0 +1,42 @@
+/* modals */
+  .inputEl {
+    width: 100%;
+  }
+
+/* SettingsTab */
+  .apiDesc {
+    margin-bottom: 10px;
+  }
+
+
+  .findInput {
+    flex-grow: 1;
+    margin-right: 5px;
+  }
+
+  .profileButtonContainer {
+    margin-bottom: 20px;
+  }
+
+  .profileButton {
+    margin-right: 5px;
+  }
+
+  .regexToggleLabel {
+    margin-right: 5px;
+  }
+
+  .replaceInput {
+    flex-grow: 1;
+    margin-right: 5px;
+  }
+
+  .ruleEl {
+    align-items: center;
+    display: flex;
+    margin-bottom: 10px;
+  }
+
+  .spnDesc {
+    margin-bottom: 10px;
+  }
