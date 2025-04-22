@@ -15,44 +15,45 @@ export const LINK_REGEX = new RegExp('!?\\[[^\\[\\]]*\\]\\((https?:\\\/\\\/(?:ww
 
 export const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || '';
 
-export function isIgnoredUrl(url: string, ignorePatterns: string[]): boolean {
-	return ignorePatterns.some(pattern => {
-		if (!pattern || pattern.trim() === '') return false;
-		try {
-			return new RegExp(pattern, 'i').test(url);
-		} catch (e) {
-			return url.includes(pattern);
-		}
-	}) || url.includes('web.archive.org/');
+// Regex to match both markdown and HTML adjacent archive links
+export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
+	// Markdown: [text](https://web.archive.org/web/123456789/http...)
+	String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\))` +
+	// OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
+	String.raw`|(\s*\n*\s*<a [^>]*href=\\?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\\?"[^>]*>.*?<\/a>)`,
+	's'
+);
+
+export function isFollowedByArchiveLink(textFollowingLink: string): boolean {
+    return ADJACENT_ARCHIVE_LINK_REGEX.test(textFollowingLink);
 }
 
-export function matchesPathPatterns(filePath: string, pathPatterns: string[]): boolean {
-	if (!pathPatterns.length) return true;
-	return pathPatterns.some(pattern => {
-		if (!pattern || pattern.trim() === '') return false;
-		try {
-			return new RegExp(pattern, 'i').test(filePath);
-		} catch (e) {
-			return filePath.includes(pattern);
-		}
-	});
-}
+/**
+ * Checks if a string matches any of the provided patterns using case-insensitive regex
+ * with a fallback to string inclusion if the pattern is invalid regex.
+ *
+ * @param text The string to test (e.g., URL, file path).
+ * @param patterns An array of pattern strings.
+ * @returns True if the text matches at least one pattern, false otherwise.
+ *          Returns false if the patterns array is null or empty.
+ */
+export function matchesAnyPattern(text: string, patterns: string[] | null | undefined): boolean {
+    if (!patterns || patterns.length === 0) {
+        return false;
+    }
 
-export function matchesWordPatterns(content: string, wordPatterns: string[]): boolean {
-	if (!wordPatterns.length) return true;
-	return wordPatterns.some(pattern => pattern && pattern.trim() !== '' && content.includes(pattern));
-}
+    return patterns.some(pattern => {
+        if (!pattern || pattern.trim() === '') {
+            return false;
+        }
 
-export function matchesUrlPatterns(url: string, urlPatterns: string[]): boolean {
-	if (!urlPatterns.length) return true;
-	return urlPatterns.some(pattern => {
-		if (!pattern || pattern.trim() === '') return false;
-		try {
-			return new RegExp(pattern, 'i').test(url);
-		} catch (e) {
-			return url.includes(pattern);
-		}
-	});
+        try {
+            return new RegExp(pattern, 'iu').test(text);
+        } catch (e) {
+            console.warn(`Invalid regex pattern: "${pattern}". Falling back to string inclusion check.`);
+            return text.includes(pattern);
+        }
+    });
 }
 
 export function applySubstitutionRules(url: string, rules: { find: string; replace: string; regex?: boolean }[]): string {

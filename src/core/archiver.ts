@@ -1,6 +1,6 @@
 import { App, Editor, MarkdownView, MarkdownFileInfo, Notice, requestUrl, TFile } from 'obsidian';
 import { format } from 'date-fns';
-import { getUrlFromMatch, LINK_REGEX } from '../utils/LinkUtils';
+import { ADJACENT_ARCHIVE_LINK_REGEX, applySubstitutionRules, getUrlFromMatch, isFollowedByArchiveLink, LINK_REGEX, matchesAnyPattern } from '../utils/LinkUtils';
 import { ConfirmationModal, FileSelectModal } from '../ui/modals';
 import { FailedArchiveEntry, freshnessThresholdMs, WaybackArchiverData, WaybackArchiverSettings } from './settings';
 import WaybackArchiverPlugin from '../main';
@@ -10,15 +10,6 @@ export class ArchiverService {
     private app: App;
     // In-memory cache for recent archive results (not persisted)
 	private recentArchiveCache: Map<string, { status: string, url: string, timestamp: number }> = new Map();
-
-    // Regex to match both markdown and HTML adjacent archive links
-    private static readonly ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
-        // Markdown: [text](https://web.archive.org/web/123456789/http...)
-        String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\))` +
-        // OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
-        String.raw`|(\s*\n*\s*<a [^>]*href=\\?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\\?"[^>]*>.*?<\/a>)`,
-        's'
-    );
 
     constructor(plugin: WaybackArchiverPlugin) {
         this.plugin = plugin;
@@ -52,12 +43,12 @@ export class ArchiverService {
 			return { status: 'failed', status_ext: 'Configuration Error' };
 		}
 
-		const substitutedUrl = this.applySubstitutionRules(url);
+		const substitutedUrl = applySubstitutionRules(url, this.activeSettings.substitutionRules); 
 		// console.log(`Attempting to archive (after substitution): ${substitutedUrl}`); 
 
 		// Enforce fixed delay before initial archive request to avoid 429 rate limits
 		// console.log(`Waiting ${this.activeSettings.apiDelay}ms before archiving to respect SPN2 rate limits...`); 
-		      await new Promise(resolve => setTimeout(resolve, this.activeSettings.apiDelay));
+		await new Promise(resolve => setTimeout(resolve, this.activeSettings.apiDelay));
 		// console.log('Proceeding with archive request...'); 
 
 		try {
@@ -219,25 +210,6 @@ export class ArchiverService {
 		}
 	}
 
-    applySubstitutionRules(url: string): string {
-		let result = url;
-		for (const rule of this.activeSettings.substitutionRules) {
-			if (!rule.find) continue; 
-			try {
-				if (rule.regex) {
-					const regex = new RegExp(rule.find, 'g'); 
-					result = result.replace(regex, rule.replace || '');
-				} else {
-					result = result.split(rule.find).join(rule.replace || '');
-				}
-			} catch (e: any) {
-				console.warn(`Error applying substitution rule: Find="${rule.find}", Regex=${rule.regex}. Error: ${e.message}`);
-			}
-		}
-		return result;
-	}
-
-
 	archiveLinksAction = async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo): Promise<void> => {
         let linksToProcess: RegExpMatchArray[] = [];
         let archivedCount = 0;
@@ -269,38 +241,28 @@ export class ArchiverService {
                 const absoluteMatchIndex = selectionStartOffset + matchIndex;
                 const insertionPosIndex = absoluteMatchIndex + match[0].length;
                 const textAfter = fullDocContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                const isAdjacent = ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX.test(textAfter);
+                const isAdjacent = isFollowedByArchiveLink(textAfter);
                 // if (isAdjacent) // console.log('Skipping match (selection) already followed by an archive link:', getUrlFromMatch(match)); 
                 return !isAdjacent;
                });
             
                linksToProcess = allMatches.filter(match => {
                 const url = getUrlFromMatch(match);
-                const isIgnored = this.activeSettings.ignorePatterns.some(pattern => {
-                    if (!pattern || pattern.trim() === '') return false;
-                    try { return new RegExp(pattern, 'i').test(url); }
-                    catch (e) { return url.includes(pattern); }
-                   });
-                   if (isIgnored || url.includes('web.archive.org/')) {
-                    // console.log(`Filtering out ignored/archive link (selection): ${url}`); 
+                if (matchesAnyPattern(url, this.activeSettings.ignorePatterns) || url.includes('web.archive.org/')) {
+                    // console.log(`Filtering out ignored/archive link (selection): ${url}`);
                     return false;
-                   }
-                   return true;
+                }
+                return true;
             });
 
             linksToProcess = linksToProcess.filter(match => {
                 const url = getUrlFromMatch(match);
-                if (this.activeSettings.urlPatterns.length > 0) {
-                    const urlMatches = this.activeSettings.urlPatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try { return new RegExp(pattern, 'i').test(url); }
-                        catch (e) { return url.includes(pattern); }
-                    });
-                    if (!urlMatches) {
-                    	// console.log(`Filtering out link due to urlPatterns (selection): ${url}`); 
-                    	return false;
+                if (this.activeSettings.urlPatterns && this.activeSettings.urlPatterns.length > 0) {
+                    if (!matchesAnyPattern(url, this.activeSettings.urlPatterns)) {
+                        // console.log(`Filtering out link due to urlPatterns (selection): ${url}`);
+                        return false;
                     }
-                   }
+                }
                    if (!url.match(/^https?:\/\//i)) {
                     // console.log(`Skipping non-HTTP(S) link (selection): ${url}`); 
                     skippedCount++;
@@ -337,7 +299,7 @@ export class ArchiverService {
                 const insertionPos = editor.offsetToPos(insertionOffset);
 
                 const textAfterLink = fullDocContent.substring(insertionOffset, insertionOffset + 300);
-                const isAdjacent = ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX.test(textAfterLink);
+                const isAdjacent = isFollowedByArchiveLink(textAfterLink);
                 if (isAdjacent) {
                 	// console.log(`Skipping link (selection) already followed by an archive link (pre-insert check): ${originalUrl}`); 
                 	skippedCount++;
@@ -371,7 +333,7 @@ export class ArchiverService {
                     const currentDocForCheck = editor.getValue(); 
                     const currentInsertionOffset = editor.posToOffset(insertionPos); 
                     const currentTextAfter = currentDocForCheck.substring(currentInsertionOffset, currentInsertionOffset + 300);
-                    const isAdjacent = ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX.test(currentTextAfter);
+                    const isAdjacent = isFollowedByArchiveLink(currentTextAfter);
                     if (archiveResult.status === 'too_many_captures' && isAdjacent) {
                     	// console.log(`Skipping insertion (selection - daily limit) because adjacent archive link already exists: ${originalUrl}`); 
                     	skippedCount++;
@@ -422,7 +384,7 @@ export class ArchiverService {
                 if (matchIndex === -1) return true;
                 const insertionPosIndex = matchIndex + match[0].length; // Position after the link `[text](url)`
                 const textAfter = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                const isAdjacentArchiveLink = ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX.test(textAfter);
+                const isAdjacentArchiveLink = isFollowedByArchiveLink(textAfter);
                 if (isAdjacentArchiveLink) {
                 	// console.log('Skipping match already followed by an archive link:', getUrlFromMatch(match)); 
                 	return false;
@@ -432,19 +394,10 @@ export class ArchiverService {
 
             linksToProcess = allMatches.filter(match => {
                 const url = getUrlFromMatch(match);
-                const isIgnored = this.activeSettings.ignorePatterns.some(pattern => {
-                    if (!pattern || pattern.trim() === '') return false;
-                    try {
-                        return new RegExp(pattern, 'i').test(url);
-                    } catch (e) {
-                        console.warn(`Invalid regex pattern in ignore list: "${pattern}". Falling back to string inclusion check.`);
-                        return url.includes(pattern);
-                    }
-                });
 
-                if (isIgnored) {
-                	// console.log(`Filtering out ignored link: ${url}`); 
-                	return false;
+                if (matchesAnyPattern(url, this.activeSettings.ignorePatterns)) {
+                    // console.log(`Filtering out ignored link: ${url}`);
+                    return false;
                 }
                 if (url.includes('web.archive.org/')) {
                 	// console.log(`Filtering out archive.org link: ${url}`); 
@@ -463,21 +416,12 @@ export class ArchiverService {
 
             linksToProcess = linksToProcess.filter(match => {
                 const url = getUrlFromMatch(match);
-                if (this.activeSettings.urlPatterns.length > 0) {
-                    const urlMatches = this.activeSettings.urlPatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try {
-                            return new RegExp(pattern, 'i').test(url);
-                        } catch (e) {
-                            console.warn(`Invalid regex pattern in urlPatterns: "${pattern}". Falling back to string inclusion check.`);
-                            return url.includes(pattern);
-                        }
-                    });
-                    if (!urlMatches) {
-                    	// console.log(`Filtering out link due to urlPatterns: ${url}`); 
-                    	return false;
+                if (this.activeSettings.urlPatterns && this.activeSettings.urlPatterns.length > 0) {
+                    if (!matchesAnyPattern(url, this.activeSettings.urlPatterns)) {
+                        // console.log(`Filtering out link due to urlPatterns: ${url}`);
+                        return false;
                     }
-                   }
+                }
                
                    if (!url.match(/^https?:\/\//i)) {
                     // console.log(`Skipping non-HTTP(S) link (file): ${url}`); 
@@ -513,7 +457,7 @@ export class ArchiverService {
                 const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
 
                 const textAfterLink = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                const isAdjacentArchiveLink = ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX.test(textAfterLink);
+                const isAdjacentArchiveLink = isFollowedByArchiveLink(textAfterLink);
 
                 if (isAdjacentArchiveLink) {
                 	// console.log(`Skipping link already followed by an archive link: ${originalUrl}`); 
@@ -564,7 +508,7 @@ export class ArchiverService {
                     // Need to recalculate insertionPosIndex based on current fileContent length if modifications happened before this link in the loop (reverse processing helps avoid this)
                     const currentInsertionPosIndex = matchIndex + fullMatch.length;
                     const currentTextAfter = fileContent.substring(currentInsertionPosIndex, currentInsertionPosIndex + 300);
-                    const isAdjacentArchiveLink = ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX.test(currentTextAfter); // Use currentTextAfter
+                    const isAdjacentArchiveLink = isFollowedByArchiveLink(currentTextAfter); // Use currentTextAfter
 
                     if (archiveResult.status === 'too_many_captures' && isAdjacentArchiveLink) {
                     	// console.log(`Skipping insertion (file - daily limit) because adjacent archive link already exists: ${originalUrl}`); 
@@ -654,17 +598,12 @@ export class ArchiverService {
             try {
                 // File Level Filtering
                 // 1. Path Patterns
-                if (this.activeSettings.pathPatterns.length > 0) {
-                    const pathMatches = this.activeSettings.pathPatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try { return new RegExp(pattern, 'i').test(file.path); }
-                        catch (e) { return file.path.includes(pattern); }
-                    });
-                    if (!pathMatches) {
-                    	// console.log(`Skipping file ${file.path} - does not match path patterns.`); 
-                    	continue;
+                if (this.activeSettings.pathPatterns && this.activeSettings.pathPatterns.length > 0) {
+                    if (!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)) {
+                         // console.log(`Skipping file ${file.path} - does not match path patterns.`);
+                         continue;
                     }
-                   }
+                }
                    // 2. Word Patterns
                    if (this.activeSettings.wordPatterns.length > 0) {
                     const fileHasWord = this.activeSettings.wordPatterns.some(pattern =>
@@ -690,22 +629,18 @@ export class ArchiverService {
                     }
 
                     // Link Level Filtering
-                    const isIgnored = this.activeSettings.ignorePatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try { return new RegExp(pattern, 'i').test(originalUrl); }
-                        catch (e) { return originalUrl.includes(pattern); }
-                    });
-                    if (isIgnored || originalUrl.includes('web.archive.org/')) { fileLinksSkipped++; continue; }
-
-                    if (this.activeSettings.urlPatterns.length > 0) {
-                        const urlMatches = this.activeSettings.urlPatterns.some(pattern => {
-                            if (!pattern || pattern.trim() === '') return false;
-                            try { return new RegExp(pattern, 'i').test(originalUrl); }
-                            catch (e) { return originalUrl.includes(pattern); }
-                        });
-                        if (!urlMatches) { fileLinksSkipped++; continue; }
+                    if (matchesAnyPattern(originalUrl, this.activeSettings.ignorePatterns) || originalUrl.includes('web.archive.org/')) {
+                        fileLinksSkipped++;
+                        continue;
                     }
-                    if (!originalUrl.match(/^https?:\/\//i)) { fileLinksSkipped++; continue; }
+
+                    if (this.activeSettings.urlPatterns && this.activeSettings.urlPatterns.length > 0) {
+                        if (!matchesAnyPattern(originalUrl, this.activeSettings.urlPatterns)) {
+                            fileLinksSkipped++;
+                            continue;
+                        }
+                   }
+                   if (!originalUrl.match(/^https?:\/\//i)) { fileLinksSkipped++; continue; }
 
                     const insertionPosIndex = matchIndex + fullMatch.length;
                     const textAfterLink = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
@@ -822,23 +757,13 @@ export class ArchiverService {
       
         	linksToProcess = allMatches.filter(match => {
         		const url = getUrlFromMatch(match);
-                const isIgnored = this.activeSettings.ignorePatterns.some(pattern => {
-                    if (!pattern || pattern.trim() === '') return false;
-                    try { return new RegExp(pattern, 'i').test(url); }
-                    catch (e) { return url.includes(pattern); }
-                   });
-                   if (isIgnored || url.includes('web.archive.org/')) {
+                if (matchesAnyPattern(url, this.activeSettings.ignorePatterns) || url.includes('web.archive.org/')) {
                     // console.log(`Filtering out ignored/archive link (selection - force): ${url}`); 
                     skippedCount++;
                     return false;
                    }
-                if (this.activeSettings.urlPatterns.length > 0) {
-                    const urlMatches = this.activeSettings.urlPatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try { return new RegExp(pattern, 'i').test(url); }
-                        catch (e) { return url.includes(pattern); }
-                    });
-                    if (!urlMatches) {
+                   if (this.activeSettings.urlPatterns && this.activeSettings.urlPatterns.length > 0) {
+                    if (!matchesAnyPattern(url, this.activeSettings.urlPatterns)) {
                     	// console.log(`Filtering out link due to urlPatterns (selection - force): ${url}`); 
                     	skippedCount++;
                     	return false;
@@ -875,7 +800,7 @@ export class ArchiverService {
                 let oldLinkToRemoveEndPos = insertionPos;
                 const textAfterLinkInDoc = fullDocContent.substring(absoluteInsertionOffset, absoluteInsertionOffset + 300);
                 const isHtmlLink = match[2] || match[3];
-                const existingArchiveMatch = textAfterLinkInDoc.match(ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX);
+                const existingArchiveMatch = textAfterLinkInDoc.match(ADJACENT_ARCHIVE_LINK_REGEX);
                 if (existingArchiveMatch && existingArchiveMatch[0]) {
                     const oldLinkText = existingArchiveMatch[0];
                     const oldLinkLength = oldLinkText.length;
@@ -928,28 +853,17 @@ export class ArchiverService {
          
             linksToProcess = allMatches.filter(match => {
             	const url = getUrlFromMatch(match);
-                const isIgnored = this.activeSettings.ignorePatterns.some(pattern => {
-                    if (!pattern || pattern.trim() === '') return false;
-                    try { return new RegExp(pattern, 'i').test(url); }
-                    catch (e) { return url.includes(pattern); }
-                   });
-                   if (isIgnored || url.includes('web.archive.org/')) {
+                if (matchesAnyPattern(url, this.activeSettings.ignorePatterns) || url.includes('web.archive.org/')) {
                     // console.log(`Filtering out ignored/archive link (file - force): ${url}`); 
                     skippedCount++;
                     return false;
                    }
-                if (this.activeSettings.urlPatterns.length > 0) {
-                    const urlMatches = this.activeSettings.urlPatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try { return new RegExp(pattern, 'i').test(url); }
-                        catch (e) { return url.includes(pattern); }
-                    });
-                    if (!urlMatches) {
-                    	// console.log(`Filtering out link due to urlPatterns (file - force): ${url}`); 
-                    	skippedCount++;
-                    	return false;
+                   if (this.activeSettings.urlPatterns && this.activeSettings.urlPatterns.length > 0) {
+                    if (!matchesAnyPattern(url, this.activeSettings.urlPatterns)) {
+                        // console.log(`Filtering out link due to urlPatterns (file - force): ${url}`);
+                        return false;
                     }
-                   }
+                }
                    if (!url.match(/^https?:\/\//i)) {
                     // console.log(`Skipping non-HTTP(S) link (file - force): ${url}`); 
                     skippedCount++;
@@ -980,7 +894,7 @@ export class ArchiverService {
                 let endIndexToRemove = insertionPosIndex;
                 const textAfterLinkInContent = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
                 const isHtmlLink = match[2] || match[3];
-                const existingArchiveMatch = textAfterLinkInContent.match(ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX);
+                const existingArchiveMatch = textAfterLinkInContent.match(ADJACENT_ARCHIVE_LINK_REGEX);
                 if (existingArchiveMatch && existingArchiveMatch[0]) {
                     const oldLinkLength = existingArchiveMatch[0].length;
                     endIndexToRemove = insertionPosIndex + oldLinkLength;
@@ -1049,17 +963,12 @@ export class ArchiverService {
             let fileModified = false;
 
             try {
-                if (this.activeSettings.pathPatterns.length > 0) {
-                    const pathMatches = this.activeSettings.pathPatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try { return new RegExp(pattern, 'i').test(file.path); }
-                        catch (e) { return file.path.includes(pattern); }
-                    });
-                    if (!pathMatches) {
-                    	// console.log(`Skipping file ${file.path} - does not match path patterns.`); 
-                    	continue;
+                if (this.activeSettings.pathPatterns && this.activeSettings.pathPatterns.length > 0) {
+                    if (!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)) {
+                         // console.log(`Skipping file ${file.path} - does not match path patterns.`);
+                         continue; 
                     }
-                   }
+                }
                    if (this.activeSettings.wordPatterns.length > 0) {
                     const fileHasWord = this.activeSettings.wordPatterns.some(pattern =>
                     	pattern && pattern.trim() !== '' && fileContent.includes(pattern)
@@ -1080,20 +989,16 @@ export class ArchiverService {
 
                     if (matchIndex === undefined) { fileLinksSkipped++; continue; }
 
-                    const isIgnored = this.activeSettings.ignorePatterns.some(pattern => {
-                        if (!pattern || pattern.trim() === '') return false;
-                        try { return new RegExp(pattern, 'i').test(originalUrl); }
-                        catch (e) { return originalUrl.includes(pattern); }
-                    });
-                    if (isIgnored || originalUrl.includes('web.archive.org/')) { fileLinksSkipped++; continue; }
+                    if (matchesAnyPattern(originalUrl, this.activeSettings.ignorePatterns) || originalUrl.includes('web.archive.org/')) {
+                        fileLinksSkipped++;
+                        continue;
+                    }
 
-                    if (this.activeSettings.urlPatterns.length > 0) {
-                        const urlMatches = this.activeSettings.urlPatterns.some(pattern => {
-                            if (!pattern || pattern.trim() === '') return false;
-                            try { return new RegExp(pattern, 'i').test(originalUrl); }
-                            catch (e) { return originalUrl.includes(pattern); }
-                        });
-                        if (!urlMatches) { fileLinksSkipped++; continue; }
+                    if (this.activeSettings.urlPatterns && this.activeSettings.urlPatterns.length > 0) {
+                        if (!matchesAnyPattern(originalUrl, this.activeSettings.urlPatterns)) {
+                            fileLinksSkipped++;
+                            continue;
+                        }
                     }
                     if (!originalUrl.match(/^https?:\/\//i)) { fileLinksSkipped++; continue; }
 
@@ -1112,7 +1017,6 @@ export class ArchiverService {
                     } else {
                     	totalLinksFound++;
                     }
-
 
                     // console.log(`Waiting ${this.activeSettings.apiDelay}ms before re-archiving ${originalUrl} in ${file.path}`); 
                     await new Promise(resolve => setTimeout(resolve, this.activeSettings.apiDelay));
@@ -1308,7 +1212,7 @@ export class ArchiverService {
 
                                         const insertionPosIndex = matchIndex + match[0].length;
                                         const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
-                                        const existingArchiveMatch = textAfterLink.match(ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX);
+                                        const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
                                         if (existingArchiveMatch) {
                                         	// console.log(`Skipping retry API call, adjacent archive link already exists for ${entry.url}`); 
@@ -1375,7 +1279,7 @@ export class ArchiverService {
                                             // Check again right before insertion (redundant if pre-check worked, but safe)
                                             const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
                                             const isHtmlLink = match[2] || match[3];
-                                            const existingArchiveMatch = textAfterLink.match(ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX);
+                                            const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
                                             const archiveDate = format(new Date(), this.activeSettings.dateFormat);
                                             const archiveLinkText = this.activeSettings.archiveLinkText.replace('{date}', archiveDate);
@@ -1491,7 +1395,7 @@ export class ArchiverService {
 
                                                 const insertionPosIndex = matchIndex + match[0].length;
                                                 const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
-                                                const existingArchiveMatch = textAfterLink.match(ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX);
+                                                const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
                                                 if (existingArchiveMatch) {
                                                 	// console.log(`Skipping retry API call, adjacent archive link already exists for ${entry.url}`); 
@@ -1559,7 +1463,7 @@ export class ArchiverService {
                                                     // Check again right before insertion (redundant if pre-check worked, but safe)
                                                     const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
                                                     const isHtmlLink = match[2] || match[3];
-                                                    const existingArchiveMatch = textAfterLink.match(ArchiverService.ADJACENT_ARCHIVE_LINK_REGEX);
+                                                    const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
 
                                                     const archiveDate = format(new Date(), this.activeSettings.dateFormat);
