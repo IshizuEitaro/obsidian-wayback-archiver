@@ -40,6 +40,8 @@ export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 	autoClearFailedLogs: false
 }
 
+export const freshnessThresholdMs = 24 * 60 * 60 * 1000; // 24 hours
+
 export interface FailedArchiveEntry {
 	url: string;
 	filePath: string;

@@ -1,9 +1,9 @@
 {
   "id": "wayback-archiver",
   "name": "Wayback Archiver",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "0.15.0",
-  "description": "Automatically archives web links via Wayback Machine and appends archived versions in notes.",
+  "description": "Automatically archives web links via Wayback Machine and appends archived versions in Obsidian notes.",
   "author": "ISHIZUE",
   "authorUrl": "https://github.com/IshizuEitaro",
   "isDesktopOnly": false

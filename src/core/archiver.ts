@@ -1,8 +1,8 @@
 import { App, Editor, MarkdownView, MarkdownFileInfo, Notice, requestUrl, TFile } from 'obsidian';
 import { format } from 'date-fns';
-import { LINK_REGEX } from '../utils/LinkUtils';
+import { getUrlFromMatch, LINK_REGEX } from '../utils/LinkUtils';
 import { ConfirmationModal, FileSelectModal } from '../ui/modals';
-import { FailedArchiveEntry, WaybackArchiverData, WaybackArchiverSettings } from './settings';
+import { FailedArchiveEntry, freshnessThresholdMs, WaybackArchiverData, WaybackArchiverSettings } from './settings';
 import WaybackArchiverPlugin from '../main';
 
 export class ArchiverService {
@@ -37,6 +37,13 @@ export class ArchiverService {
         await this.plugin.saveSettings();
     }
 
+    private async logFailedArchive(originalUrl: string, filePath: string, error: string, retryCount: number = 0): Promise<void> {
+        if (!this.data.failedArchives) {
+            this.data.failedArchives = [];
+        }
+        this.data.failedArchives.push({ url: originalUrl, filePath, timestamp: Date.now(), error, retryCount });
+        await this.saveSettings();
+    }
 
 	async archiveUrl(url: string): Promise<{ status: 'success', url: string } | { status: 'too_many_captures', url: string } | { status: 'failed', status_ext?: string }> {
 		if (!this.data.spnAccessKey || !this.data.spnSecretKey) {
@@ -247,8 +254,6 @@ export class ArchiverService {
             return;
         }
 
-        const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || '';
-
         if (isSelection) {
         	// Editor Mode (Selection Exists) 
         	// console.log('Archiving links in current selection (Editor Mode)...'); 
@@ -341,7 +346,6 @@ export class ArchiverService {
 
                 // Cache check remains the same
                 const cached = this.recentArchiveCache.get(originalUrl);
-                const freshnessThresholdMs = 24 * 60 * 60 * 1000;
                 let archiveResult: { status: 'success'; url: string } | { status: 'too_many_captures'; url: string } | { status: 'failed'; status_ext?: string | undefined };
 
                 if (cached && (Date.now() - cached.timestamp) < freshnessThresholdMs) {
@@ -384,9 +388,7 @@ export class ArchiverService {
                    } else {
                     failedCount++;
                     // console.log(`Failed to archive (selection): ${originalUrl}`); 
-                    if (!this.data.failedArchives) this.data.failedArchives = [];
-                    this.data.failedArchives.push({ url: originalUrl, filePath: filePath, timestamp: Date.now(), error: `Archiving failed (status: ${archiveResult.status})`, retryCount: 0 });
-                    await this.saveSettings();
+                    this.logFailedArchive(originalUrl, filePath, `Archiving failed (status: ${archiveResult.status})`, 0)
                 }
             };
 
@@ -410,7 +412,6 @@ export class ArchiverService {
                 console.error(`Error reading file ${file.path}:`, err);
                 return;
             }
-            const originalContent = fileContent;
             let fileModified = false;
          
             let allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
@@ -528,7 +529,7 @@ export class ArchiverService {
 
                 // Check recent cache before making API call
                 const cached = this.recentArchiveCache.get(originalUrl);
-                const freshnessThresholdMs = 24 * 60 * 60 * 1000; // 24 hours
+                 
 
                 let archiveResult:
                     | { status: 'success'; url: string }
@@ -590,9 +591,7 @@ export class ArchiverService {
                     failedCount++;
                     //// console.log(`[DEBUG] Entering 'failed' block for (file): ${originalUrl}`);
                     // console.log(`Failed to archive (file): ${originalUrl}`); 
-                    if (!this.data.failedArchives) this.data.failedArchives = [];
-                    this.data.failedArchives.push({ url: originalUrl, filePath: filePath, timestamp: Date.now(), error: `Archiving failed (status: ${archiveResult.status})`, retryCount: 0 });
-                    await this.saveSettings();
+                    this.logFailedArchive(originalUrl, filePath, `Archiving failed (status: ${archiveResult.status})`, 0)
                     //// console.log(`[DEBUG] Exiting 'failed' block for (file): ${originalUrl}`);
                    }
                   };
@@ -643,13 +642,10 @@ export class ArchiverService {
 
         // console.log(`Found ${markdownFiles.length} markdown files to process.`);
 
-        const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || '';
-
         for (const file of markdownFiles) {
             filesProcessed++;
             // console.log(`Processing file ${filesProcessed}/${markdownFiles.length}: ${file.path}`);
             let fileContent = await this.app.vault.read(file);
-            let originalContent = fileContent;
             let fileLinksArchived = 0;
             let fileLinksFailed = 0;
             let fileLinksSkipped = 0;
@@ -816,8 +812,6 @@ export class ArchiverService {
             return;
         }
 
-        const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || '';
-
         if (isSelection) {
         	// console.log('Force Re-archiving links in current selection (Editor Mode)...'); 
         	const selectionStartOffset = editor.posToOffset(editor.getCursor('from'));
@@ -878,7 +872,6 @@ export class ArchiverService {
                 const absoluteMatchStartIndex = selectionStartOffset + matchIndexRelative;
                 const absoluteInsertionOffset = absoluteMatchStartIndex + fullMatch.length;
                 const insertionPos = editor.offsetToPos(absoluteInsertionOffset);
-                let oldLinkToRemoveStartPos = insertionPos;
                 let oldLinkToRemoveEndPos = insertionPos;
                 const textAfterLinkInDoc = fullDocContent.substring(absoluteInsertionOffset, absoluteInsertionOffset + 300);
                 const isHtmlLink = match[2] || match[3];
@@ -889,7 +882,7 @@ export class ArchiverService {
                     oldLinkToRemoveEndPos = editor.offsetToPos(absoluteInsertionOffset + oldLinkLength);
                 }
                 const cached = this.recentArchiveCache.get(originalUrl);
-                const freshnessThresholdMs = 24 * 60 * 60 * 1000;
+                
                 let archiveResult;
                 if (cached && (Date.now() - cached.timestamp) < freshnessThresholdMs) {
                     archiveResult = { status: cached.status, url: cached.url };
@@ -910,14 +903,7 @@ export class ArchiverService {
                     archivedCount++;
                 } else {
                     failedCount++;
-                    if (!this.data.failedArchives) this.data.failedArchives = [];
-                    this.data.failedArchives.push({
-                        url: originalUrl,
-                        filePath: filePath,
-                        timestamp: Date.now(),
-                        error: `Force re-archiving failed (status: ${archiveResult.status})`,
-                        retryCount: 0
-                    });
+                    this.logFailedArchive(originalUrl, filePath, `Force re-archiving failed (status: ${archiveResult.status})`, 0)
                 }
             };
             for (const match of reversedLinks) {
@@ -935,7 +921,6 @@ export class ArchiverService {
                 console.error(`Error reading file ${file.path}:`, err);
                 return;
             }
-            const originalContent = fileContent;
             let fileModified = false;
          
             let allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
@@ -1001,7 +986,7 @@ export class ArchiverService {
                     endIndexToRemove = insertionPosIndex + oldLinkLength;
                 }
                 const cached = this.recentArchiveCache.get(originalUrl);
-                const freshnessThresholdMs = 24 * 60 * 60 * 1000;
+                
                 let archiveResult;
                 if (cached && (Date.now() - cached.timestamp) < freshnessThresholdMs) {
                     archiveResult = { status: cached.status, url: cached.url };
@@ -1023,14 +1008,7 @@ export class ArchiverService {
                     archivedCount++;
                 } else {
                     failedCount++;
-                    if (!this.data.failedArchives) this.data.failedArchives = [];
-                    this.data.failedArchives.push({
-                        url: originalUrl,
-                        filePath: filePath,
-                        timestamp: Date.now(),
-                        error: `Force re-archiving failed (status: ${archiveResult.status})`,
-                        retryCount: 0
-                    });
+                    this.logFailedArchive(originalUrl, filePath, `Force re-archiving failed (status: ${archiveResult.status})`, 0)
                 }
             };
             for (const match of reversedLinks) {
@@ -1061,13 +1039,10 @@ export class ArchiverService {
         let filesProcessed = 0;
         let filesModified = 0;
 
-        const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || '';
-
         for (const file of markdownFiles) {
             filesProcessed++;
             // console.log(`Processing file ${filesProcessed}/${markdownFiles.length}: ${file.path}`);
             let fileContent = await this.app.vault.read(file);
-            let originalContent = fileContent;
             let fileLinksArchived = 0;
             let fileLinksFailed = 0;
             let fileLinksSkipped = 0;

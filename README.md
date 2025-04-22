@@ -1,6 +1,6 @@
 # Wayback Archiver
 
-This is an Obsidian plugin which automatically archives web links via Wayback Machine and appends archived versions in Obsidian notes. It has a vault-wide archiving, filtering (include/exclude), substitution rule, retrying failed archive, profile based settings, and more.
+This is an Obsidian plugin which automatically archives web links via Wayback Machine and appends archived versions in notes. It has a vault-wide archiving, filtering (include/exclude), substitution rule, retrying failed archive, profile based settings, and more.
 
 ## Table of Contents
 
@@ -15,8 +15,8 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
 - [Commands](#commands)
   - [Archive links in current note](#archive-links-in-current-note)
   - [Archive all links in vault](#archive-all-links-in-vault)
-  - [Force re-archive links in current note](#force-re-archive-links-in-current-note)
-  - [Force re-archive all links in vault](#force-re-archive-all-links-in-vault)
+  - [Force Re-archive links in current note](#force-re-archive-links-in-current-note)
+  - [Force Re-archive all links in vault](#force-re-archive-all-links-in-vault)
   - [Retry failed archive attempts](#retry-failed-archive-attempts)
   - [Retry failed archive attempts (Force Replace)](#retry-failed-archive-attempts-force-replace)
   - [Export failed archive log](#export-failed-archive-log)
@@ -31,7 +31,6 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
     - [Advanced Settings](#advanced-settings)
     - [SPN API v2 Options](#spn-api-v2-options)
 - [Troubleshooting FAQ](#troubleshooting-faq)
-- [Out of Scope and Limitations](#out-of-scope-and-limitations)
 - [LICENSE](#license)
 
 ## Installation
@@ -44,7 +43,7 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
 
 ### Archiving Process
 
-The plugin scans your notes (either the current note, selected text, or the entire vault) for markdown links (`[text](url)` and `![text](url)`), HTML links (`<a href="url">text</a>` and `<img src="url" alt="text">` ), and plain links (https://example.com). For each eligible link, it attempts to save a snapshot using the Archive.org Wayback Machine's SPN API v2.
+The plugin scans your notes (either the current note, selected text, or the entire vault) for markdown links (`[text](url)` and `![text](url)`), HTML links (`<a href="url">text</a>` and `<img src="url">` ), and plain links (https://example.com). For each eligible link, it attempts to save a snapshot using the Archive.org Wayback Machine's SPN API v2.
 
 ### Archive Links
 
@@ -54,7 +53,7 @@ If archiving is successful, the plugin inserts a new markdown (or html) archive 
 `[Example Site](https://example.com)` becomes
 `[Example Site](https://example.com) [(Archived on 2025-04-10)](https://web.archive.org/web/20250410...)`
 
-The plugin avoids adding duplicate archive links if one already exists immediately following the original link, unless using a "Force Re-archive" command or "freshness" settings.
+The plugin avoids adding archive links if one already exists immediately following the original link, unless using a "Force re-archive" command or "freshness" settings.
 
 ### Profiles
 
@@ -75,7 +74,7 @@ Before attempting to archive a URL, you can apply find/replace rules. This is us
 
 ### Failed Archives
 
-If the plugin fails to archive a link (due to API errors, timeouts, rate limits, etc.), the attempt is logged. You can view, export, and retry these failed attempts. Failed logs are stored in `.obsidian/plugins/wayback-archiver/failed_logs/` within your vault.
+If the plugin fails to archive a link (due to API errors, timeouts, rate limits, etc.), the attempt is logged. You can view, export, and retry these failed attempts. Failed logs are stored in plugin.app.vault.configDir + /plugins/wayback-archiver/failed_logs/` within your vault.
 
 ## Commands
 
@@ -101,7 +100,7 @@ The plugin provides several commands accessible via the command palette (Ctrl/Cm
     *   Applies the same archiving and insertion/replacement logic as "Archive links in current note".
 *   **Note:** This can take a significant amount of time depending on vault size and number of links.
 
-### Force re-archive links in current note
+### Force Re-archive links in current note
 
 *   **Scope:** Processes links in the currently active note. If text is selected, only processes links within the selection.
 *   **Logic:**
@@ -111,7 +110,7 @@ The plugin provides several commands accessible via the command palette (Ctrl/Cm
     *   If archiving fails or hits a rate limit, **no link is inserted or replaced**. The existing link (if any) is kept.
 *   **Note:** Path and Word patterns are **not** applied.
 
-### Force re-archive all links in vault
+### Force Re-archive all links in vault
 
 *   **Scope:** Processes links in all markdown files across the entire vault. Requires confirmation.
 *   **Logic:**
@@ -122,7 +121,7 @@ The plugin provides several commands accessible via the command palette (Ctrl/Cm
 
 ### Retry failed archive attempts
 
-*   **Action:** Prompts you to select a failed log file (`.json` or `.csv`) from the `.obsidian/plugins/wayback-archiver/failed_logs/` folder.
+*   **Action:** Prompts you to select a failed log file (`.json` or `.csv`) from the plugin.app.vault.configDir + /plugins/wayback-archiver/failed_logs/` folder.
 *   **Logic:** Attempts to archive each URL listed in the selected file.
     *   On success, removes the entry from the log file and inserts the archive link in the original note **only if no adjacent archive link already exists**.
     *   If all entries succeed, the log file is deleted.
@@ -141,7 +140,7 @@ The plugin provides several commands accessible via the command palette (Ctrl/Cm
 *   **Action:** Exports the current list of failed archive attempts to a new file.
 *   **Logic:**
     *   Prompts you to choose either CSV or JSON format.
-    *   Saves the log to a timestamped file (e.g., `wayback-archiver-failed-log-YYYYMMDDHHMMSS.json`) inside the `.obsidian/plugins/wayback-archiver/failed_logs/` folder.
+    *   Saves the log to a timestamped file (e.g., `wayback-archiver-failed-log-YYYYMMDDHHMMSS.json`) inside the plugin.app.vault.configDir + /plugins/wayback-archiver/failed_logs/` folder.
     *   Prompts if you want to clear the internal failed log list after successful export.
 
 ### Clear failed archive log
@@ -222,21 +221,18 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 ## Troubleshooting FAQ
 
 **Q: Why are my API keys not working? / Getting "Configuration Error".**
-
 **A:**
 1.  Ensure you have copied the **Access Key** and **Secret Key** correctly from [https://archive.org/account/s3.php](https://archive.org/account/s3.php) into the **Global API Keys** section of the plugin settings.
 2.  Make sure there are no leading/trailing spaces.
 3.  Remember these keys are global; they don't need to be set per profile.
 
 **Q: Archiving fails frequently or I get rate limit errors (like HTTP 429).**
-
 **A:**
 1.  The Archive.org API has usage limits. Try increasing the **API Request Delay** in Advanced Settings (e.g., to 3000ms or 5000ms).
 2.  You might be hitting daily capture limits imposed by Archive.org. The plugin attempts to handle this by fetching the latest available snapshot URL when a 429 or similar "too many captures" response is received during standard archiving.
 3.  Check the **Failed Archive Log** (using the Export or Retry commands) for specific error messages.
 
 **Q: Certain links are not being archived. Why?**
-
 **A:** Check the following:
 1.  **Ignore Patterns:** Does the URL match any pattern in the "Ignore URL Patterns" setting for the active profile?
 2.  **Include Patterns:**
@@ -248,11 +244,9 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 5.  **API Errors:** The link might be failing to archive on the Archive.org side. Check the Failed Archive Log.
 
 **Q: I used "Force Re-archive", but an old archive link wasn't replaced.**
-
 **A:** Force Re-archive only replaces an existing link if the *new* archive attempt is **successful**. If the attempt fails or hits a rate limit, the plugin will *not* modify the note, leaving the old link intact (or inserting nothing if no old link existed).
 
 **Q: How do I manage links that consistently fail to archive?**
-
 **A:**
 1.  Use the **Export failed archive log** command to get a list (CSV or JSON) of failed URLs and their errors.
 2.  Investigate why they might be failing (e.g., website blocking archivers, temporary site issues).
@@ -261,14 +255,12 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 5.  Use the **Clear failed archive log** command to remove persistent failures if you no longer wish to track them.
 
 **Q: My Substitution Rules aren't working correctly.**
-
 **A:**
 1.  If using Regex, ensure the **Regex?** box is checked and your pattern syntax is correct. Remember the `g` flag is added automatically.
 2.  Check the order of rules; they are applied sequentially.
 3.  Ensure the "Find" pattern accurately matches the part of the URL you intend to replace. Simple text matching is case-sensitive.
 
 **Q: Filtering by Path/Word patterns doesn't work when archiving the current note.**
-
 **A:** This is expected behavior. Path and Word patterns are designed to filter which *notes* are processed during **vault-wide** operations ("Archive all links in vault", "Force Re-archive all links in vault"). They do not apply when using the "current note" commands. URL patterns, however, apply in all commands.
 
 ## Out of Scope and Limitations
