@@ -40,7 +40,8 @@ export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 	autoClearFailedLogs: false
 }
 
-export const freshnessThresholdMs = 24 * 60 * 60 * 1000; // 24 hours
+export const getFreshnessThresholdMs = (settings: WaybackArchiverSettings) =>
+    settings.archiveFreshnessDays * 24 * 60 * 60 * 1000; // Convert days to ms
 
 export interface FailedArchiveEntry {
 	url: string;

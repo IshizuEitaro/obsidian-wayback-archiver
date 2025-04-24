@@ -1,3 +1,6 @@
+import { format } from 'date-fns';
+import { WaybackArchiverSettings } from '../core/settings';
+
 /**
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
  * - Group 0: The primary link structure (Markdown, HTML A, HTML Img, or Plain URL)
@@ -5,13 +8,13 @@
  * - Group 2: URL from HTML `<a href="URL">`
  * - Group 3: URL from HTML `<img src="URL">`
  * - Group 4: Plain HTTP/HTTPS URL
- * Markdown URL/Img Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)$
+ * Markdown URL/Img Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)
  * HTML A/Img Regex: <a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>
- * Raw URL Regex: ^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})$
- * Combined Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)$|<a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>|^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})$
+ * Raw URL Regex: ^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})
+ * Combined Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)|<a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>|^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})
  * Thank you https://regex101.com/ and zolrath for auto link title 
  */
-export const LINK_REGEX = new RegExp('!?\\[[^\\[\\]]*\\]\\((https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})\\)$|<a\\b(?=[^>]*href=["\'])[^>]*href="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>.*?<\\\/a>|<img\\b(?=[^>]*src=["\'])[^>]*src="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>|^(https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})$', 'img')
+export const LINK_REGEX = new RegExp('!?\\[[^\\[\\]]*\\]\\((https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})\\)|<a\\b(?=[^>]*href=["\'])[^>]*href="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>.*?<\\\/a>|<img\\b(?=[^>]*src=["\'])[^>]*src="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>|^(https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})', 'img')
 
 export const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || '';
 
@@ -72,4 +75,31 @@ export function applySubstitutionRules(url: string, rules: { find: string; repla
 		}
 	}
 	return result;
+}
+
+/**
+ * Creates the archive link string (Markdown or HTML) to be inserted.
+ *
+ * @param match - The RegExpMatchArray from matching the original link (using LINK_REGEX).
+ * @param archiveUrl - The URL of the successful archive.
+ * @param settings - The active plugin settings.
+ * @returns The formatted archive link string (e.g., " [archive](url)" or " <a href='url'>archive</a>").
+ */
+export function createArchiveLink(
+    match: RegExpMatchArray,
+    archiveUrl: string,
+    settings: WaybackArchiverSettings
+	): string {
+    const archiveDate = format(new Date(), settings.dateFormat);
+
+    const archiveLinkText = settings.archiveLinkText.replace('{date}', archiveDate);
+
+    const isHtmlLink = match[2] || match[3];
+
+    if (isHtmlLink) {
+        const escapedArchiveUrl = archiveUrl.replace(/"/g, '&quot;');
+        return ` <a href="${escapedArchiveUrl}">${archiveLinkText}</a>`;
+    } else {
+        return ` [${archiveLinkText}](${archiveUrl})`;
+    }
 }
