@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { WaybackArchiverSettings } from '../core/settings';
+import { getFreshnessThresholdMs,WaybackArchiverSettings } from '../core/settings';
 
 /**
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
@@ -102,4 +102,50 @@ export function createArchiveLink(
     } else {
         return ` [${archiveLinkText}](${archiveUrl})`;
     }
+}
+
+/**
+     * Checks the freshness of an existing adjacent archive link based on its timestamp.
+     * Determines if the original link should be processed and if the adjacent link should be replaced.
+     * @param adjacentTimestamp The timestamp string (YYYYMMDDHHMMSS) extracted from the adjacent link, or undefined if none found.
+     * @returns An object { shouldProcess: boolean, replaceExisting: boolean }
+     */
+export const checkAdjacentLinkFreshness = (adjacentTimestamp: string | undefined, settings: WaybackArchiverSettings): { shouldProcess: boolean, replaceExisting: boolean } => {
+    let shouldProcess = true;
+    let replaceExisting = false;
+
+    if (adjacentTimestamp) {
+        try {
+            const adjacentDate = new Date(
+                parseInt(adjacentTimestamp.substring(0, 4)),     // Year
+                parseInt(adjacentTimestamp.substring(4, 6)) - 1, // Month (0-indexed)
+                parseInt(adjacentTimestamp.substring(6, 8)),     // Day
+                parseInt(adjacentTimestamp.substring(8, 10)),    // Hour
+                parseInt(adjacentTimestamp.substring(10, 12)),   // Minute
+                parseInt(adjacentTimestamp.substring(12, 14))    // Second
+            );
+            if (!isNaN(adjacentDate.getTime())) {
+                const isFresh = (Date.now() - adjacentDate.getTime()) < getFreshnessThresholdMs(settings);
+                if (isFresh) {
+                    // Adjacent link exists and is fresh, skip.
+                    shouldProcess = false;
+                } else {
+                    // Adjacent link exists but is older, mark for replacement.
+                    replaceExisting = true;
+                }
+            } else {
+                // Could not parse timestamp, assume it's old/invalid, mark for replacement
+                replaceExisting = true;
+            }
+        } catch (e) {
+            // Error parsing date, assume old/invalid
+            console.warn("Error parsing adjacent link timestamp:", adjacentTimestamp, e);
+            replaceExisting = true;
+        }
+    } else {
+        // Adjacent link exists but no timestamp captured (e.g., wildcard), treat as old, mark for replacement
+        replaceExisting = true;
+    }
+
+    return { shouldProcess, replaceExisting };
 }

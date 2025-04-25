@@ -221,18 +221,21 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 ## Troubleshooting FAQ
 
 **Q: Why are my API keys not working? / Getting "Configuration Error".**
+
 **A:**
 1.  Ensure you have copied the **Access Key** and **Secret Key** correctly from [https://archive.org/account/s3.php](https://archive.org/account/s3.php) into the **Global API Keys** section of the plugin settings.
 2.  Make sure there are no leading/trailing spaces.
 3.  Remember these keys are global; they don't need to be set per profile.
 
 **Q: Archiving fails frequently or I get rate limit errors (like HTTP 429).**
+
 **A:**
 1.  The Archive.org API has usage limits. Try increasing the **API Request Delay** in Advanced Settings (e.g., to 3000ms or 5000ms).
 2.  You might be hitting daily capture limits imposed by Archive.org. The plugin attempts to handle this by fetching the latest available snapshot URL when a 429 or similar "too many captures" response is received during standard archiving.
 3.  Check the **Failed Archive Log** (using the Export or Retry commands) for specific error messages.
 
 **Q: Certain links are not being archived. Why?**
+
 **A:** Check the following:
 1.  **Ignore Patterns:** Does the URL match any pattern in the "Ignore URL Patterns" setting for the active profile?
 2.  **Include Patterns:**
@@ -244,9 +247,11 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 5.  **API Errors:** The link might be failing to archive on the Archive.org side. Check the Failed Archive Log.
 
 **Q: I used "Force Re-archive", but an old archive link wasn't replaced.**
+
 **A:** Force Re-archive only replaces an existing link if the *new* archive attempt is **successful**. If the attempt fails or hits a rate limit, the plugin will *not* modify the note, leaving the old link intact (or inserting nothing if no old link existed).
 
 **Q: How do I manage links that consistently fail to archive?**
+
 **A:**
 1.  Use the **Export failed archive log** command to get a list (CSV or JSON) of failed URLs and their errors.
 2.  Investigate why they might be failing (e.g., website blocking archivers, temporary site issues).
@@ -255,12 +260,14 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 5.  Use the **Clear failed archive log** command to remove persistent failures if you no longer wish to track them.
 
 **Q: My Substitution Rules aren't working correctly.**
+
 **A:**
 1.  If using Regex, ensure the **Regex?** box is checked and your pattern syntax is correct. Remember the `g` flag is added automatically.
 2.  Check the order of rules; they are applied sequentially.
 3.  Ensure the "Find" pattern accurately matches the part of the URL you intend to replace. Simple text matching is case-sensitive.
 
 **Q: Filtering by Path/Word patterns doesn't work when archiving the current note.**
+
 **A:** This is expected behavior. Path and Word patterns are designed to filter which *notes* are processed during **vault-wide** operations ("Archive all links in vault", "Force Re-archive all links in vault"). They do not apply when using the "current note" commands. URL patterns, however, apply in all commands.
 
 ## Out of Scope and Limitations
