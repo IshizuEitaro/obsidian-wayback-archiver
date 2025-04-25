@@ -1,4 +1,4 @@
-```Mermaid
+```mermaid
 flowchart TD
     A["Retry Failed"] --> B["Load Failed Log"]
     B --> C{"Force Replace?"}
@@ -17,4 +17,3 @@ flowchart TD
     M & N & O & I & J --> X{"Success?"}
     X --> |Yes| P["Log Success"]
     X --> |No| Q["Log Failure or Limited"]
-    ```

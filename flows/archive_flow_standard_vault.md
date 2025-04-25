@@ -1,4 +1,4 @@
-```Mermaid
+```mermaid
 flowchart TD
     A["Archive All in Vault"] --> B["Apply Path/Word Patterns"]
     B --> C["Apply URL Patterns"]
@@ -12,4 +12,3 @@ flowchart TD
     H & I & J --> K{"Success?"}
     K -->|Yes| L["Log Success"]
     K -->|No| M["Log Failure or Limited"]
-    ```

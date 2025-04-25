@@ -1,4 +1,4 @@
-```Mermaid
+```mermaid
 flowchart TD
     A["Force Re-archive"] --> B{"Selection?"}
     B -->|Yes| C["Process Selected Links"]
@@ -11,4 +11,3 @@ flowchart TD
     H & I --> J{"Success?"}
     J -->|Yes| K["Log Success"]
     J -->|No| L["Log Failure or Limited"]
-    ```
