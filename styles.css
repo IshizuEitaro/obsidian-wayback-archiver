@@ -1,42 +1,42 @@
 /* modals */
-  .inputEl {
+  .wa-inputEl {
     width: 100%;
   }
 
 /* SettingsTab */
-  .apiDesc {
+  .wa-apiDesc {
     margin-bottom: 10px;
   }
 
 
-  .findInput {
+  .wa-findInput {
     flex-grow: 1;
     margin-right: 5px;
   }
 
-  .profileButtonContainer {
+  .wa-profileButtonContainer {
     margin-bottom: 20px;
   }
 
-  .profileButton {
+  .wa-profileButton {
     margin-right: 5px;
   }
 
-  .regexToggleLabel {
+  .wa-regexToggleLabel {
     margin-right: 5px;
   }
 
-  .replaceInput {
+  .wa-replaceInput {
     flex-grow: 1;
     margin-right: 5px;
   }
 
-  .ruleEl {
+  .wa-ruleEl {
     align-items: center;
     display: flex;
     margin-bottom: 10px;
   }
 
-  .spnDesc {
+  .wa-spnDesc {
     margin-bottom: 10px;
   }

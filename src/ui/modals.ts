@@ -56,8 +56,7 @@ class ProfileNameModal extends Modal {
         contentEl.empty();
         contentEl.createEl('h2', { text: 'Enter profile name' });
 
-        const inputEl = contentEl.createEl('input', { type: 'text', placeholder: 'Enter profile name' });
-        inputEl.classList.add('inputEl');
+        const inputEl = contentEl.createEl('input', { type: 'text', placeholder: 'Enter profile name', cls: 'wa-inputEl' });
         if (this.initialValue) {
             inputEl.value = this.initialValue;
         }

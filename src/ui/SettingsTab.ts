@@ -17,7 +17,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		
 		new Setting(containerEl).setName('Archive.org API keys (global)').setHeading();
 
-		const apiDesc = containerEl.createEl('p', { cls: 'apiDesc' });
+		const apiDesc = containerEl.createEl('p', { cls: 'wa-apiDesc' });
 		apiDesc.appendText('This is used globally across all profiles. ');
 		apiDesc.createEl('a', {
 			text: 'You can generate your API keys here.',
@@ -63,21 +63,21 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				});
 			});
 
-		const profileButtonContainer = containerEl.createDiv({ cls: 'profileButtonContainer' });
+		const profileButtonContainer = containerEl.createDiv({ cls: 'wa-profileButtonContainer' });
 
 		new ButtonComponent(profileButtonContainer)
 			.setButtonText('Create profile')
 			.onClick(async () => {
 				await this.handleCreateProfileClick();
 			})
-			.buttonEl.classList.add('profileButton');
+			.buttonEl.classList.add('wa-profileButton');
 
 		new ButtonComponent(profileButtonContainer)
 			.setButtonText('Rename profile')
 			.onClick(async () => {
 				await this.handleRenameProfileClick();
 			})
-			.buttonEl.classList.add('profileButton');
+			.buttonEl.classList.add('wa-profileButton');
 
 		new ButtonComponent(profileButtonContainer)
 			.setButtonText('Delete profile')
@@ -85,7 +85,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			.onClick(async () => {
 				await this.handleDeleteProfileClick();
 			})
-			.buttonEl.classList.add('profileButton');
+			.buttonEl.classList.add('wa-profileButton');
 
 		new Setting(containerEl).setName('Archive link format').setHeading();
 
@@ -230,7 +230,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName('SPN API v2 options').setHeading();
 
-		const spnDesc = containerEl.createEl('p', { cls: 'spnDesc' });
+		const spnDesc = containerEl.createEl('p', { cls: 'wa-spnDesc' });
 		spnDesc.appendText('These options correspond to parameters available in the Archive.org SPN API v2. ');
 		spnDesc.createEl('a', {
 			text: 'See documentation for details.',
@@ -303,27 +303,23 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		}
 
 		activeSettings.substitutionRules.forEach((rule, index) => {
-			const ruleEl = containerEl.createDiv({ cls: 'ruleEl' });
+			const ruleEl = containerEl.createDiv({ cls: 'wa-ruleEl' });
 
-			const findInput = ruleEl.createEl('input', { type: 'text', placeholder: 'Find (text or regex)' });
-			findInput.classList.add('findInput');
+			const findInput = ruleEl.createEl('input', { type: 'text', placeholder: 'Find (text or regex)', cls: 'wa-findInput' });
 			findInput.value = rule.find;
 			findInput.addEventListener('change', async (e) => {
 				rule.find = (e.target as HTMLInputElement).value;
 				await this.plugin.saveSettings();
 			});
 
-			const replaceInput = ruleEl.createEl('input', { type: 'text', placeholder: 'Replace with' });
-			replaceInput.classList.add('replaceInput');
+			const replaceInput = ruleEl.createEl('input', { type: 'text', placeholder: 'Replace with', cls: 'wa-replaceInput' });
 			replaceInput.value = rule.replace;
 			replaceInput.addEventListener('change', async (e) => {
 				rule.replace = (e.target as HTMLInputElement).value;
 				await this.plugin.saveSettings();
 			});
 
-			const regexToggleLabel = ruleEl.createEl('label');
-			regexToggleLabel.classList.add('regexToggleLabel');
-			regexToggleLabel.textContent = 'Regex?';
+			const regexToggleLabel = ruleEl.createEl('label', {text: 'Regex?',cls: 'wa-regexToggleLabel'});
 			const regexToggle = regexToggleLabel.createEl('input', { type: 'checkbox' });
 			regexToggle.checked = rule.regex;
 			regexToggle.addEventListener('change', async (e) => {
