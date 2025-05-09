@@ -750,7 +750,7 @@ export class ArchiverService {
 
         await this.saveSettings();
         // console.log(`Vault-wide archiving complete. Processed ${filesProcessed} files, modified ${filesModified}.`);
-        new Notice(`Vault Archival Complete. Found: ${totalLinksFound}, Archived: ${totalArchived}, Failed: ${totalFailed}, Skipped: ${totalSkipped}.`);
+        new Notice(`Vault archival complete. Found: ${totalLinksFound}, archived: ${totalArchived}, failed: ${totalFailed}, skipped: ${totalSkipped}.`);
     }
 
 	forceReArchiveLinksAction = async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo): Promise<void> => {
@@ -919,9 +919,9 @@ export class ArchiverService {
             }
         }
 
-        let summary = `Force Re-archival complete. Re-archived: ${archivedCount}, Failed: ${failedCount}`;
+        let summary = `Force re-archival complete. Re-archived: ${archivedCount}, failed: ${failedCount}`;
         if (skippedCount > 0) {
-            summary += `, Skipped: ${skippedCount}`;
+            summary += `, skipped: ${skippedCount}`;
         }
         new Notice(summary);
     };
@@ -1079,7 +1079,7 @@ export class ArchiverService {
 
         await this.saveSettings();
         // console.log(`Vault-wide force re-archiving complete. Processed ${filesProcessed} files, modified ${filesModified}.`);
-        new Notice(`Vault Force Re-Archival Complete. Found: ${totalLinksFound}, Re-Archived: ${totalArchived}, Failed: ${totalFailed}, Skipped: ${totalSkipped}.`);
+        new Notice(`Vault force re-Archival complete. Found: ${totalLinksFound}, re-Archived: ${totalArchived}, failed: ${totalFailed}, skipped: ${totalSkipped}.`);
     };
 
     retryFailedArchives = async (forceReplace: boolean): Promise<void> => {
@@ -1344,13 +1344,13 @@ export class ArchiverService {
                         new Notice(`Error updating or deleting failed log file: ${errorMsg}`);
                     }
 
-                    new Notice(`Retry complete. Retried ${failedCount} links. Success: ${successCount}, Still Failed: ${stillFailed.length}.`);
+                    new Notice(`Retry complete. Retried ${failedCount} links. Success: ${successCount}, still failed: ${stillFailed.length}.`);
                 } else {
                     new ConfirmationModal(
                         this.app,
-                        forceReplace ? 'Force Retry Failed Archives?' : 'Retry Failed Archives?',
+                        forceReplace ? 'Force retry failed archives?' : 'Retry failed archives?',
                         `${forceReplace ? 'Force retry' : 'Retry'} all ${failedCount} failed archives?\n\nSample:\n${listPreview}`,
-                        forceReplace ? 'Yes, Force Retry All' : 'Yes, Retry All',
+                        forceReplace ? 'Yes, force retry all' : 'Yes, retry all',
                         async (confirmed: boolean) => {
                             if (!confirmed) {
                                 new Notice('Retry cancelled.');

@@ -5,7 +5,7 @@ import { WaybackArchiverData, WaybackArchiverSettings } from './settings';
 
 export function registerCommands(plugin: WaybackArchiverPlugin) {
     // This creates an icon in the left ribbon.
-    const ribbonIconEl = plugin.addRibbonIcon('ribbon-icon', 'Archive Links in Current Note', async () => {
+    const ribbonIconEl = plugin.addRibbonIcon('ribbon-icon', 'Archive links in curretn note', async () => {
         const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
         if (view) {
             await plugin.archiveLinksAction(view.editor, view);
@@ -26,9 +26,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
             callback: async () => { 
                 new ConfirmationModal(
                     plugin.app,
-                    'Archive All Links?',
+                    'Archive all links?',
                     'This will scan all markdown notes in your vault and attempt to archive external links via Archive.org. Links that already have an archive link immediately following them will be skipped. This may take a while depending on the number of notes and links.',
-                    'Yes, Archive All',
+                    'Yes, archive all',
                     async (confirmed: boolean) => {
                         if (confirmed) {
                             await plugin.archiveAllLinksVaultAction();
@@ -53,9 +53,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
         callback: async () => {
             new ConfirmationModal(
                 plugin.app,
-                'Force Re-Archive All Links?',
+                'Force re-archive all links?',
                 'This will scan all markdown notes in your vault and attempt to archive external links via Archive.org, *overwriting* any existing archive links immediately following them. This may take a while.',
-                'Yes, Force Re-Archive All',
+                'Yes, force re-archive all',
                 async (confirmed: boolean) => {
                     if (!confirmed) {
                         new Notice('Vault-wide force re-archiving cancelled.');
@@ -127,13 +127,13 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
                     const fullPath = `${folderPath}/${filename}`;
                     await plugin.app.vault.create(fullPath, content);
                     new Notice(`Failed archive log exported successfully to ${fullPath}`);
-                    console.log(`Exported failed log to ${filename}`);
+                    // console.log(`Exported failed log to ${filename}`);
 
                     new ConfirmationModal(
                         plugin.app,
                         "Export successful",
                         "Export successful. Clear failed log list now?",
-                        "Clear List",
+                        "Clear list",
                         async (confirmed: boolean) => {
                             if (confirmed) {
                                 plugin.data.failedArchives = [];
@@ -161,7 +161,7 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
     
     plugin.addCommand({
         id: 'force-retry-failed-archives',
-        name: 'Retry failed archive attempts (Force Replace)',
+        name: 'Retry failed archive attempts (force replace)',
         callback: async () => {
             await plugin.retryFailedArchives(true);
         }
@@ -177,9 +177,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
             }
             new ConfirmationModal(
                 plugin.app,
-                "Clear Failed Archive Log",
+                "Clear failed archive log",
                 "Are you sure you want to clear the failed archive log?",
-                "Clear Log",
+                "Clear log",
                 async (confirmed: boolean) => {
                     if (confirmed) {
                         plugin.data.failedArchives = [];

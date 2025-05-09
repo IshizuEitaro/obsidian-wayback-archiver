@@ -30,11 +30,11 @@ export default class WaybackArchiverPlugin extends Plugin {
 	}
 
 	async onload() {
-		console.log("Wayback Archiver plugin loaded - version 0.1.0");
+		// console.log("Wayback Archiver plugin loaded - version 1.0.0");
 
 		addIcon('ribbon-icon', RIBBON_ICON);
 		await this.loadSettings();
-		console.log("Settings loaded successfully.");
+		// console.log("Settings loaded successfully.");
 
 		this.archiverService = new ArchiverService(this);
 
@@ -48,7 +48,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 
 		registerCommands(this);
 
-		console.log('Loading Wayback Archiver Plugin');
+		// console.log('Loading Wayback Archiver Plugin');
 
 
 		this.addSettingTab(new WaybackArchiverSettingTab(this.app, this));
@@ -56,7 +56,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 	} 
 
 	onunload() {
-		console.log('Unloading Wayback Archiver Plugin');
+		// console.log('Unloading Wayback Archiver Plugin');
 	}
 
 	async loadSettings() {

@@ -26,7 +26,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Archive.org SPN access key')
-			.setDesc('Your S3-like Access Key for the SPN API v2.')
+			.setDesc('Your S3-like access key for the SPN API v2.')
 			.addText(text => text
 				.setPlaceholder('Enter your access key')
 				.setValue(this.plugin.data.spnAccessKey || '')
@@ -37,7 +37,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Archive.org SPN secret key')
-			.setDesc('Your S3-like Secret Key for the SPN API v2.')
+			.setDesc('Your S3-like secret key for the SPN API v2.')
 			.addText(text => text
 				.setPlaceholder('Enter your secret key')
 				.setValue(this.plugin.data.spnSecretKey || '')
@@ -151,7 +151,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Word/Phrase patterns')
+			.setName('Word/phrase patterns')
 			.setDesc('Only archive links in notes containing ANY of these words or phrases (one per line, simple text match). Leave empty to ignore content.')
 			.addTextArea(text => text
 				.setPlaceholder('Project Alpha\n#research-topic')
@@ -228,7 +228,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					});
 			});
 
-		containerEl.createEl('h4', { text: 'SPN API v2 options' });
+		new Setting(containerEl).setName('SPN API v2 options').setHeading();
 
 		const spnDesc = containerEl.createEl('p', { cls: 'spnDesc' });
 		spnDesc.appendText('These options correspond to parameters available in the Archive.org SPN API v2. ');

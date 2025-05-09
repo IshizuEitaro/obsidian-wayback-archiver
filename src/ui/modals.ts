@@ -54,7 +54,7 @@ class ProfileNameModal extends Modal {
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: 'Enter Profile Name' });
+        contentEl.createEl('h2', { text: 'Enter profile name' });
 
         const inputEl = contentEl.createEl('input', { type: 'text', placeholder: 'Enter profile name' });
         inputEl.classList.add('inputEl');
@@ -96,7 +96,7 @@ class ExportFormatModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl('h2', { text: 'Choose Export Format' });
+		contentEl.createEl('h2', { text: 'Choose export format' });
 		contentEl.createEl('p', { text: 'Select the format for the failed archive log:' });
 
 		const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
@@ -139,7 +139,7 @@ class FileSelectModal extends Modal {
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: 'Select Failed Log File' });
+        contentEl.createEl('h2', { text: 'Select failed log file' });
         contentEl.createEl('p', { text: 'Choose a failed archive log file to retry:' });
 
         const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
