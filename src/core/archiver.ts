@@ -710,10 +710,7 @@ export class ArchiverService {
 
                 if (fileModified) {
                      try {
-                        await this.app.vault.process(file, (currentData) => {
-                            // console.log(`Applying modifications to ${file.path} via vault.process`);
-                            return fileContent;
-                        });
+                        await this.app.vault.modify(file, fileContent);
                         filesModified++;
                         // console.log(`Successfully processed ${file.path} with ${fileLinksArchived} new archives, ${fileLinksFailed} failures.`);
                     } catch (err: any) {
@@ -1041,10 +1038,7 @@ export class ArchiverService {
 
                 if (fileModified) {
                      try {
-                        await this.app.vault.process(file, (currentData) => {
-                            // console.log(`Applying modifications to ${file.path} via vault.process (force re-archive)`);
-                            return fileContent;
-                        });
+                        await this.app.vault.modify(file, fileContent);
                         filesModified++;
                         // console.log(`Successfully processed ${file.path} with ${fileLinksArchived} re-archives, ${fileLinksFailed} failures.`);
                     } catch (err: any) {
