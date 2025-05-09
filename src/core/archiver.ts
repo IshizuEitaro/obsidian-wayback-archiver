@@ -37,9 +37,8 @@ export class ArchiverService {
 
     private filterLinksForArchiving(
         allMatches: RegExpMatchArray[],
-        fullContent: string, // The content string where matches were found (selection or file)
-        isForce: boolean, // Add isForce parameter
-        // Context for adjacent check, especially needed if fullContent != actual document content
+        fullContent: string,
+        isForce: boolean,
         context: { isSelection?: boolean; selectionStartOffset?: number; fullDocContent?: string } = {}
     ): { linksToProcess: RegExpMatchArray[]; skippedCount: number } {
         let localSkippedCount = 0;
@@ -91,7 +90,7 @@ export class ArchiverService {
         const url = getUrlFromMatch(match);
         const matchIndex = match.index;
     
-        if (matchIndex === undefined) return false; // Cannot reliably check
+        if (matchIndex === undefined) return false;
     
         const checkStartIndex = matchIndex + match[0].length;
         const textAfter = fullContent.substring(checkStartIndex, checkStartIndex + 300);
@@ -115,7 +114,6 @@ export class ArchiverService {
             } else { // (cached.status === 'too_many_captures') 
                 return { status: 'cache_hit_limited', url: cached.url };
             }
-            // If cache contains something else (e.g., 'failed'), treat as stale/miss
         } else {
             // console.log(`[DEBUG] Calling archiveUrl (cache miss/stale) for: ${originalUrl}`);
             const archiveResult = await this.archiveUrl(originalUrl);
@@ -127,7 +125,6 @@ export class ArchiverService {
                 this.recentArchiveCache.set(originalUrl, { status: 'too_many_captures', url: archiveResult.url, timestamp: Date.now() });
                 return { status: 'archived_limited', url: archiveResult.url };
             } else { // status === 'failed'
-                // Note: We generally don't cache failures long-term here, but could if desired.
                 return { status: 'archived_failed', error: archiveResult.status_ext };
             }
         }
@@ -1240,25 +1237,19 @@ export class ArchiverService {
                             try {
                                 const file = this.app.vault.getAbstractFileByPath(entry.filePath);
                                 if (file && file instanceof TFile) {
-                                    const leaf = this.app.workspace.getLeaf(false);
-                                    await leaf.openFile(file); 
-                                    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-                                    if (view) {
-                                        const editor = view.editor;
-                                        const content = editor.getValue(); 
-                                        const matches = Array.from(content.matchAll(LINK_REGEX));
-                                        for (const match of matches.reverse()) { 
-                                            const originalUrl = match[1] || match[2] || match[3] || match[4] || '';
-                                            if (originalUrl !== entry.url) continue;
+                                    let fileModifiedInProcess = false;
+                                    await this.app.vault.process(file, (currentContent) => {
+                                        let newContent = currentContent;
+                                        const matches = Array.from(newContent.matchAll(LINK_REGEX));
+                                        for (const match of matches.reverse()) {
+                                            const originalUrlInFile = getUrlFromMatch(match);
+                                            if (originalUrlInFile !== entry.url) continue;
 
                                             const matchIndex = match.index;
                                             if (matchIndex === undefined) continue;
 
                                             const insertionPosIndex = matchIndex + match[0].length;
-                                            const insertionPos = editor.offsetToPos(insertionPosIndex);
-
-                                            // Check again right before insertion (redundant if pre-check worked, but safe)
-                                            const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
+                                            const textAfterLink = newContent.substring(insertionPosIndex, insertionPosIndex + 300);
                                             const isHtmlLink = match[2] || match[3];
                                             const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
@@ -1268,20 +1259,28 @@ export class ArchiverService {
                                                 ? ` <a href=\"${result.url}\">${archiveLinkText}</a>`
                                                 : ` [${archiveLinkText}](${result.url})`;
 
-                                            let replaceEndPos = insertionPos;
+                                            let startIndexToReplace = insertionPosIndex;
+                                            let endIndexToReplace = insertionPosIndex;
+
                                             if (existingArchiveMatch && forceReplace) {
-                                                replaceEndPos = editor.offsetToPos(insertionPosIndex + existingArchiveMatch[0].length);
-                                               } else if (existingArchiveMatch && !forceReplace) {
-                                                // console.log(`Skipping insertion for ${entry.url}, adjacent link found (final check).`); 
+                                                endIndexToReplace = insertionPosIndex + existingArchiveMatch[0].length;
+                                            } else if (existingArchiveMatch && !forceReplace) {
+                                                // console.log(`Skipping insertion for ${entry.url}, adjacent link found (final check with vault.process).`);
                                                 break;
-                                               }
-                                       
-                                               editor.replaceRange(archiveLink, insertionPos, replaceEndPos);
-                                               // console.log(`Updated note ${entry.filePath} for URL ${entry.url}`); 
-                                               break;
-                                              }
-                                             } else {
-                                         // console.warn(`Could not get MarkdownView for ${entry.filePath} to update content.`);
+                                            }
+
+                                            newContent = newContent.slice(0, startIndexToReplace) + archiveLink + newContent.slice(endIndexToReplace);
+                                            fileModifiedInProcess = true;
+                                            // console.log(`Updated note ${entry.filePath} for URL ${entry.url} via vault.process`);
+                                            break;
+                                        }
+                                        return newContent;
+                                    });
+
+                                    if (fileModifiedInProcess) {
+                                        // console.log(`File ${entry.filePath} was processed for URL ${entry.url}. Check content if update occurred.`);
+                                    } else {
+                                        // console.warn(`Link for ${entry.url} not found or not updated in ${entry.filePath} during retry (vault.process). This could be due to !forceReplace and existing link, or link not present.`);
                                     }
                                 } else {
                                      // console.warn(`File not found or not TFile: ${entry.filePath}`);
@@ -1422,54 +1421,55 @@ export class ArchiverService {
                                     try {
                                         const file = this.app.vault.getAbstractFileByPath(entry.filePath);
                                         if (file && file instanceof TFile) {
-                                            const leaf = this.app.workspace.getLeaf(false);
-                                            await leaf.openFile(file);
-                                            const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-                                            if (view) {
-                                                const editor = view.editor;
-                                                const content = editor.getValue(); 
-                                                const matches = Array.from(content.matchAll(LINK_REGEX));
-                                                for (const match of matches.reverse()) { 
-                                                    const originalUrl = match[1] || match[2] || match[3] || match[4] || '';
-                                                    if (originalUrl !== entry.url) continue;
+                                           let fileModifiedInProcess = false; 
+                                           await this.app.vault.process(file, (currentContent) => {
+                                               let newContent = currentContent;
+                                               const matches = Array.from(newContent.matchAll(LINK_REGEX));
+                                               for (const match of matches.reverse()) {
+                                                   const originalUrlInFile = getUrlFromMatch(match);
+                                                   if (originalUrlInFile !== entry.url) continue;
 
-                                                    const matchIndex = match.index;
-                                                    if (matchIndex === undefined) continue;
+                                                   const matchIndex = match.index;
+                                                   if (matchIndex === undefined) continue;
 
-                                                    const insertionPosIndex = matchIndex + match[0].length;
-                                                    const insertionPos = editor.offsetToPos(insertionPosIndex);
+                                                   const insertionPosIndex = matchIndex + match[0].length;
+                                                   const textAfterLink = newContent.substring(insertionPosIndex, insertionPosIndex + 300);
+                                                   const isHtmlLink = match[2] || match[3];
+                                                   const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
-                                                    // Check again right before insertion (redundant if pre-check worked, but safe)
-                                                    const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
-                                                    const isHtmlLink = match[2] || match[3];
-                                                    const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+                                                   const archiveDate = format(new Date(), this.activeSettings.dateFormat);
+                                                   const archiveLinkText = this.activeSettings.archiveLinkText.replace('{date}', archiveDate);
+                                                   const archiveLink = isHtmlLink
+                                                       ? ` <a href=\"${result.url}\">${archiveLinkText}</a>` 
+                                                       : ` [${archiveLinkText}](${result.url})`;
+                                                   
+                                                   let startIndexToReplace = insertionPosIndex;
+                                                   let endIndexToReplace = insertionPosIndex;
 
-                                                    const archiveDate = format(new Date(), this.activeSettings.dateFormat);
-                                                    const archiveLinkText = this.activeSettings.archiveLinkText.replace('{date}', archiveDate);
-                                                    const archiveLink = isHtmlLink
-                                                        ? ` <a href=\"${result.url}\">${archiveLinkText}</a>`
-                                                        : ` [${archiveLinkText}](${result.url})`;
-
-                                                    let replaceEndPos = insertionPos;
-                                                    if (existingArchiveMatch && forceReplace) {
-                                                        replaceEndPos = editor.offsetToPos(insertionPosIndex + existingArchiveMatch[0].length);
-                                                       } else if (existingArchiveMatch && !forceReplace) {
-                                                        // console.log(`Skipping insertion for ${entry.url}, adjacent link found (final check).`); 
-                                                        break;
-                                                       }
-                                             
-                                                       editor.replaceRange(archiveLink, insertionPos, replaceEndPos);
-                                                       // console.log(`Updated note ${entry.filePath} for URL ${entry.url}`); 
+                                                   if (existingArchiveMatch && forceReplace) {
+                                                       endIndexToReplace = insertionPosIndex + existingArchiveMatch[0].length;
+                                                   } else if (existingArchiveMatch && !forceReplace) {
+                                                       // console.log(`Skipping insertion for ${entry.url}, adjacent link found (final check with vault.process).`);
                                                        break;
-                                                      }
-                                                     } else {
-                                                 // console.warn(`Could not get MarkdownView for ${entry.filePath} to update content.`);
-                                            }
+                                                   }
+                                                   
+                                                   newContent = newContent.slice(0, startIndexToReplace) + archiveLink + newContent.slice(endIndexToReplace);
+                                                   fileModifiedInProcess = true;
+                                                   // console.log(`Updated note ${entry.filePath} for URL ${entry.url} via vault.process (modal flow)`);
+                                                   break;
+                                               }
+                                               return newContent;
+                                           });
+                                           if (fileModifiedInProcess) {
+                                               // console.log(`File ${entry.filePath} was processed for URL ${entry.url} (modal flow). Check content if update occurred.`);
+                                           } else {
+                                               // console.warn(`Link for ${entry.url} not found or not updated in ${entry.filePath} during retry (modal flow with vault.process).`);
+                                           }
                                         } else {
-                                             // console.warn(`File not found or not TFile: ${entry.filePath}`);
+                                             // console.warn(`File not found or not TFile: ${entry.filePath} (modal flow)`);
                                         }
                                     } catch (e) {
-                                        // console.warn(`Failed to update note ${entry.filePath} for URL ${entry.url}:`, e);
+                                        // console.warn(`Failed to update note ${entry.filePath} for URL ${entry.url} (modal flow):`, e);
                                     }
 
                                     const indexToRemove = parsedEntries.findIndex(e => e.url === entry.url && e.filePath === entry.filePath);
