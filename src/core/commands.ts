@@ -5,7 +5,7 @@ import { WaybackArchiverData, WaybackArchiverSettings } from './settings';
 
 export function registerCommands(plugin: WaybackArchiverPlugin) {
     // This creates an icon in the left ribbon.
-    const ribbonIconEl = plugin.addRibbonIcon('ribbon-icon', 'Archive links in curretn note', async () => {
+    const ribbonIconEl = plugin.addRibbonIcon('wayback-ribbon', 'Archive links in current note', async () => {
         const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
         if (view) {
             await plugin.archiveLinksAction(view.editor, view);

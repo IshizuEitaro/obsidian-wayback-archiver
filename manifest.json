@@ -2,7 +2,7 @@
   "id": "wayback-archiver",
   "name": "Wayback Archiver",
   "version": "1.0.3",
-  "minAppVersion": "0.15.0",
+  "minAppVersion": "1.8.10",
   "description": "Automatically archives web links via Wayback Machine and appends archived versions in notes.",
   "author": "ISHIZUE",
   "authorUrl": "https://github.com/IshizuEitaro",

@@ -32,7 +32,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 	async onload() {
 		// console.log("Wayback Archiver plugin loaded - version 1.0.0");
 
-		addIcon('ribbon-icon', RIBBON_ICON);
+		addIcon('wayback-ribbon', RIBBON_ICON);
 		await this.loadSettings();
 		// console.log("Settings loaded successfully.");
 
