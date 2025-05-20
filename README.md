@@ -2,6 +2,8 @@
 
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/IshizuEitaro/obsidian-wayback-archiver?style=for-the-badge&sort=semver) ![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%wayback-archiver%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ishizue)
+
 This is an Obsidian plugin which automatically archives web links via Wayback Machine and appends archived versions in notes. It has a vault-wide archiving, filtering (include/exclude), substitution rule, retrying failed archive, profile based settings, and more.
 
 ## Table of Contents
