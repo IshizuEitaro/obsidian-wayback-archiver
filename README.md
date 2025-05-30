@@ -1,6 +1,6 @@
 # Wayback Archiver
 
-![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/IshizuEitaro/obsidian-wayback-archiver?style=for-the-badge&sort=semver) ![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%wayback-archiver%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/IshizuEitaro/obsidian-wayback-archiver?style=for-the-badge&sort=semver) ![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22wayback-archiver%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ishizue)
 
@@ -35,6 +35,7 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
     - [Advanced Settings](#advanced-settings)
     - [SPN API v2 Options](#spn-api-v2-options)
 - [Troubleshooting FAQ](#troubleshooting-faq)
+- [Limitations](#limitations)
 - [LICENSE](#license)
 
 ## Installation
@@ -274,7 +275,7 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 
 **A:** This is expected behavior. Path and Word patterns are designed to filter which *notes* are processed during **vault-wide** operations ("Archive all links in vault", "Force Re-archive all links in vault"). They do not apply when using the "current note" commands. URL patterns, however, apply in all commands.
 
-## Out of Scope and Limitations
+## Limitations
 [Megalodon](https://megalodon.jp/) and [archive.today](https://archive.is/) won't be supported because they do not provide API.
 
 Wayback Machine often fails to archive pages and there's a rate limit. Please be patient and try them again later.
