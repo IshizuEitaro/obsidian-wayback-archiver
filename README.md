@@ -276,7 +276,7 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 **A:** This is expected behavior. Path and Word patterns are designed to filter which *notes* are processed during **vault-wide** operations ("Archive all links in vault", "Force Re-archive all links in vault"). They do not apply when using the "current note" commands. URL patterns, however, apply in all commands.
 
 ## Limitations
-[Megalodon](https://megalodon.jp/) and [archive.today](https://archive.is/) won't be supported because they do not provide API.
+[Megalodon](https://megalodon.jp/) and [archive.today](https://archive.is/) are not supported because they do not provide API.
 
 Wayback Machine often fails to archive pages and there's a rate limit. Please be patient and try them again later.
 
