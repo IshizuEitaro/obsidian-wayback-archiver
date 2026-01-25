@@ -1,8 +1,10 @@
 Taskfile.yml
+docs/
+.agent
 
-# npm
+# pnpm
 node_modules
-package-lock.json
+pnpm-lock.yaml
 
 # build
 main.js
