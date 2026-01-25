@@ -149,6 +149,164 @@ export class ArchiverService {
         await this.saveSettings();
     }
 
+    /**
+     * Unified link processing method that handles all archive modes.
+     * 
+     * @returns { archived: boolean, archiveUrl?: string }
+     */
+    private async processLinkWithContext(
+        match: RegExpMatchArray,
+        content: string,
+        ctx: ArchiveContext,
+        counters: { archivedCount: number; failedCount: number; skippedCount: number }
+    ): Promise<{ modifiedContent: string; archived: boolean }> {
+        const originalUrl = getUrlFromMatch(match);
+        const fullMatch = match[0];
+        const matchIndex = match.index;
+
+        if (matchIndex === undefined) {
+            counters.skippedCount++;
+            return { modifiedContent: content, archived: false };
+        }
+
+        // Calculate insertion position
+        const insertionPosIndex = matchIndex + fullMatch.length;
+        const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
+        const isAdjacent = isFollowedByArchiveLink(textAfterLink);
+
+        // For Force mode, pre-calculate the existing archive link range
+        let existingArchiveLinkEndIndex = insertionPosIndex;
+        if (ctx.isForce) {
+            const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+            if (existingArchiveMatch?.[0]) {
+                existingArchiveLinkEndIndex = insertionPosIndex + existingArchiveMatch[0].length;
+            }
+        }
+
+        // Standard mode freshness check
+        if (!ctx.isForce) {
+            const cached = this.recentArchiveCache.get(originalUrl);
+            if (isAdjacent && cached && (Date.now() - cached.timestamp) < getFreshnessThresholdMs(this.activeSettings)) {
+                counters.skippedCount++;
+                return { modifiedContent: content, archived: false };
+            }
+        }
+
+        // Perform API call
+        const archiveOutcome = await this.processSingleUrlArchival(originalUrl, ctx.isForce);
+
+        switch (archiveOutcome.status) {
+            case 'cache_hit_success':
+            case 'archived_success': {
+                const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
+                if (isAdjacent) {
+                    // Replace existing archive link
+                    const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+                    if (existingArchiveMatch) {
+                        const oldLinkEndIndex = insertionPosIndex + existingArchiveMatch[0].length;
+                        content = content.slice(0, insertionPosIndex) + newArchiveLink + content.slice(oldLinkEndIndex);
+                        counters.archivedCount++;
+                        return { modifiedContent: content, archived: true };
+                    }
+                }
+                // Insert new archive link
+                const nextChar = content.charAt(insertionPosIndex);
+                const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
+                const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
+                content = content.slice(0, insertionPosIndex) + insertionText + content.slice(insertionPosIndex);
+                counters.archivedCount++;
+                return { modifiedContent: content, archived: true };
+            }
+            case 'cache_hit_limited':
+            case 'archived_limited': {
+                if (ctx.isForce) {
+                    // Force mode: log failure for limited results
+                    counters.failedCount++;
+                    await this.logFailedArchive(originalUrl, ctx.file.path, `Force re-archiving failed (${archiveOutcome.status})`, 0);
+                    return { modifiedContent: content, archived: false };
+                }
+                // Standard mode: insert latest snapshot if no adjacent link exists
+                if (!isAdjacent) {
+                    const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
+                    const nextChar = content.charAt(insertionPosIndex);
+                    const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
+                    const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
+                    content = content.slice(0, insertionPosIndex) + insertionText + content.slice(insertionPosIndex);
+                    counters.archivedCount++;
+                    return { modifiedContent: content, archived: true };
+                }
+                counters.failedCount++;
+                return { modifiedContent: content, archived: false };
+            }
+            case 'archived_failed':
+                counters.failedCount++;
+                await this.logFailedArchive(originalUrl, ctx.file.path, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
+                return { modifiedContent: content, archived: false };
+        }
+    }
+
+    /**
+     * Unified file processing method using app.vault.modify for atomic updates.
+     * Handles both file-mode and vault-wide archiving with a single codebase.
+     */
+    private async processFileWithContext(
+        file: TFile,
+        isForce: boolean,
+        counters: { archivedCount: number; failedCount: number; skippedCount: number }
+    ): Promise<void> {
+        const ctx: ArchiveContext = {
+            mode: 'file',
+            isForce,
+            file
+        };
+
+        let fileContent: string;
+        try {
+            fileContent = await this.app.vault.read(file);
+        } catch (err) {
+            new Notice(`Error reading file: ${file.path}`);
+            return;
+        }
+
+        // Check path and word patterns if configured
+        if (this.activeSettings.pathPatterns?.length > 0 && !matchesAnyPattern(file.path, this.activeSettings.pathPatterns)) {
+            return; // File path doesn't match, silently skip
+        }
+        if (this.activeSettings.wordPatterns?.length > 0 && !this.activeSettings.wordPatterns.some(p => fileContent.includes(p))) {
+            return; // File content doesn't match word patterns, silently skip
+        }
+
+        const allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
+        const filterResult = this.filterLinksForArchiving(allMatches, fileContent, isForce);
+        const linksToProcess = filterResult.linksToProcess;
+        counters.skippedCount += filterResult.skippedCount;
+
+        if (!linksToProcess.length) {
+            return; // No links to process in this file
+        }
+
+        // Process links in reverse order to maintain index correctness
+        const reversedLinks = linksToProcess.reverse();
+        let currentContent = fileContent;
+        let fileModified = false;
+
+        for (const match of reversedLinks) {
+            const result = await this.processLinkWithContext(match, currentContent, ctx, counters);
+            if (result.archived) {
+                currentContent = result.modifiedContent;
+                fileModified = true;
+            }
+        }
+
+        if (fileModified) {
+            try {
+                await this.app.vault.modify(file, currentContent);
+            } catch (err) {
+                new Notice(`Error saving file: ${file.path}`);
+            }
+        }
+    }
+
     async archiveUrl(url: string): Promise<{ status: 'success', url: string } | { status: 'too_many_captures', url: string } | { status: 'failed', status_ext?: string }> {
         if (!this.data.spnAccessKey || !this.data.spnSecretKey) {
             // console.error("SPN API keys are not configured in the plugin settings.");
