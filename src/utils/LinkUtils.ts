@@ -23,12 +23,15 @@ export const LINK_REGEX = new RegExp(`${MARKDOWN_LINK}|${HTML_A_LINK}|${HTML_IMG
 
 export const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || '';
 
+// Helper for matching URLs with balanced parentheses
+const URL_PATTERN = /(?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\))*\))+/.source;
+
 // Regex to match both markdown and HTML adjacent archive links
 export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
     // Markdown: [text](https://web.archive.org/web/123456789/http...)
-    String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\))` +
+    String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\))` +
     // OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
-    String.raw`|(\s*\n*\s*<a [^>]*href=\\?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\\?"[^>]*>.*?<\/a>)`,
+    String.raw`|(\s*\n*\s*<a [^>]*href=\\?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\\?"[^>]*>.*?<\/a>)`,
     's'
 );
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LINK_REGEX, getUrlFromMatch } from './LinkUtils';
+import { LINK_REGEX, getUrlFromMatch, isFollowedByArchiveLink } from './LinkUtils';
 
 describe('Link Detection (Balanced Parentheses & Edge Cases)', () => {
     const getMatches = (text: string) => {
@@ -54,6 +54,18 @@ describe('Link Detection (Balanced Parentheses & Edge Cases)', () => {
         it('should include trailing parenthesis if it is balanced', () => {
             const text = 'Check out https://en.wikipedia.org/wiki/Erica_(plant)';
             expect(getMatches(text)).toContain('https://en.wikipedia.org/wiki/Erica_(plant)');
+        });
+    });
+
+    describe('Adjacent Archive Link Detection', () => {
+        it('should correctly detect archive links with parentheses', () => {
+            const nextText = ' [(Archived on 2026-01-25)](https://web.archive.org/web/20260125095621/https://www.rhs.org.uk/plants/68664/i-viola-i-belmont-blue-(c)/details)';
+            expect(isFollowedByArchiveLink(nextText)).toBe(true);
+        });
+
+        it('should handle HTML archive links with parentheses', () => {
+            const nextText = ' <a href="https://web.archive.org/web/20260125095621/https://www.rhs.org.uk/plants/68664/i-viola-i-belmont-blue-(c)/details">Archive</a>';
+            expect(isFollowedByArchiveLink(nextText)).toBe(true);
         });
     });
 });

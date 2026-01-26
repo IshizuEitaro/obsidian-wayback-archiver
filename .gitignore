@@ -1,6 +1,5 @@
 Taskfile.yml
 docs/
-.agent
 
 # pnpm
 node_modules

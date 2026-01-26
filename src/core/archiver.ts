@@ -4,7 +4,7 @@ import { ADJACENT_ARCHIVE_LINK_REGEX, applySubstitutionRules, checkAdjacentLinkF
 import { ConfirmationModal, FileSelectModal } from '../ui/modals';
 import { FailedArchiveEntry, getFreshnessThresholdMs, WaybackArchiverData, WaybackArchiverSettings } from './settings';
 import WaybackArchiverPlugin from '../main';
-import { applyLinkModification } from '../utils/contentManipulator';
+import { findLatestLinkIndex } from '../utils/contentManipulator';
 
 export type ArchiveMode = 'selection' | 'file' | 'vault';
 
@@ -76,7 +76,11 @@ export class ArchiverService {
                 localSkippedCount++; return false;
             }
 
-            if (matchesAnyPattern(url, this.activeSettings.ignorePatterns) || url.includes('web.archive.org/')) {
+            if (url.includes('web.archive.org/')) {
+                return false;
+            }
+
+            if (matchesAnyPattern(url, this.activeSettings.ignorePatterns)) {
                 localSkippedCount++; return false;
             }
 
@@ -93,28 +97,6 @@ export class ArchiverService {
         return { linksToProcess: filteredMatches, skippedCount: localSkippedCount };
     }
 
-    private shouldProcessLink(
-        match: RegExpMatchArray,
-        fullContent: string,
-        context: {} = {}
-    ): boolean {
-        const url = getUrlFromMatch(match);
-        const matchIndex = match.index;
-
-        if (matchIndex === undefined) return false;
-
-        const checkStartIndex = matchIndex + match[0].length;
-        const textAfter = fullContent.substring(checkStartIndex, checkStartIndex + 300);
-        if (isFollowedByArchiveLink(textAfter)) return false;
-
-        if (matchesAnyPattern(url, this.activeSettings.ignorePatterns) || url.includes('web.archive.org/')) return false;
-
-        if (this.activeSettings.urlPatterns?.length > 0 && !matchesAnyPattern(url, this.activeSettings.urlPatterns)) return false;
-
-        if (!url.match(/^https?:\/\//i)) return false;
-
-        return true;
-    }
 
     private async processSingleUrlArchival(originalUrl: string, isForce: boolean): Promise<SingleArchiveOutcome> {
         const cached = this.recentArchiveCache.get(originalUrl);
@@ -150,116 +132,15 @@ export class ArchiverService {
     }
 
     /**
-     * Unified link processing method that handles all archive modes.
-     * 
-     * @returns { archived: boolean, archiveUrl?: string }
-     */
-    private async processLinkWithContext(
-        match: RegExpMatchArray,
-        content: string,
-        ctx: ArchiveContext,
-        counters: { archivedCount: number; failedCount: number; skippedCount: number }
-    ): Promise<{ modifiedContent: string; archived: boolean }> {
-        const originalUrl = getUrlFromMatch(match);
-        const fullMatch = match[0];
-        const matchIndex = match.index;
-
-        if (matchIndex === undefined) {
-            counters.skippedCount++;
-            return { modifiedContent: content, archived: false };
-        }
-
-        // Calculate insertion position
-        const insertionPosIndex = matchIndex + fullMatch.length;
-        const textAfterLink = content.substring(insertionPosIndex, insertionPosIndex + 300);
-        const isAdjacent = isFollowedByArchiveLink(textAfterLink);
-
-        // For Force mode, pre-calculate the existing archive link range
-        let existingArchiveLinkEndIndex = insertionPosIndex;
-        if (ctx.isForce) {
-            const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
-            if (existingArchiveMatch?.[0]) {
-                existingArchiveLinkEndIndex = insertionPosIndex + existingArchiveMatch[0].length;
-            }
-        }
-
-        // Standard mode freshness check
-        if (!ctx.isForce) {
-            const cached = this.recentArchiveCache.get(originalUrl);
-            if (isAdjacent && cached && (Date.now() - cached.timestamp) < getFreshnessThresholdMs(this.activeSettings)) {
-                counters.skippedCount++;
-                return { modifiedContent: content, archived: false };
-            }
-        }
-
-        // Perform API call
-        const archiveOutcome = await this.processSingleUrlArchival(originalUrl, ctx.isForce);
-
-        switch (archiveOutcome.status) {
-            case 'cache_hit_success':
-            case 'archived_success': {
-                const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                if (isAdjacent) {
-                    // Replace existing archive link
-                    const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
-                    if (existingArchiveMatch) {
-                        const oldLinkEndIndex = insertionPosIndex + existingArchiveMatch[0].length;
-                        content = content.slice(0, insertionPosIndex) + newArchiveLink + content.slice(oldLinkEndIndex);
-                        counters.archivedCount++;
-                        return { modifiedContent: content, archived: true };
-                    }
-                }
-                // Insert new archive link
-                const nextChar = content.charAt(insertionPosIndex);
-                const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
-                const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
-                content = content.slice(0, insertionPosIndex) + insertionText + content.slice(insertionPosIndex);
-                counters.archivedCount++;
-                return { modifiedContent: content, archived: true };
-            }
-            case 'cache_hit_limited':
-            case 'archived_limited': {
-                if (ctx.isForce) {
-                    // Force mode: log failure for limited results
-                    counters.failedCount++;
-                    await this.logFailedArchive(originalUrl, ctx.file.path, `Force re-archiving failed (${archiveOutcome.status})`, 0);
-                    return { modifiedContent: content, archived: false };
-                }
-                // Standard mode: insert latest snapshot if no adjacent link exists
-                if (!isAdjacent) {
-                    const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                    const nextChar = content.charAt(insertionPosIndex);
-                    const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
-                    const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
-                    content = content.slice(0, insertionPosIndex) + insertionText + content.slice(insertionPosIndex);
-                    counters.archivedCount++;
-                    return { modifiedContent: content, archived: true };
-                }
-                counters.failedCount++;
-                return { modifiedContent: content, archived: false };
-            }
-            case 'archived_failed':
-                counters.failedCount++;
-                await this.logFailedArchive(originalUrl, ctx.file.path, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
-                return { modifiedContent: content, archived: false };
-        }
-    }
-
-    /**
-     * Unified file processing method using app.vault.modify for atomic updates.
+     * Unified file processing method using app.vault.process for atomic per-link updates.
      * Handles both file-mode and vault-wide archiving with a single codebase.
+     * Each link is processed and saved immediately, preventing stale state issues.
      */
     private async processFileWithContext(
         file: TFile,
         isForce: boolean,
         counters: { archivedCount: number; failedCount: number; skippedCount: number }
     ): Promise<void> {
-        const ctx: ArchiveContext = {
-            mode: 'file',
-            isForce,
-            file
-        };
-
         let fileContent: string;
         try {
             fileContent = await this.app.vault.read(file);
@@ -285,24 +166,81 @@ export class ArchiverService {
             return; // No links to process in this file
         }
 
-        // Process links in reverse order to maintain index correctness
-        const reversedLinks = linksToProcess.reverse();
-        let currentContent = fileContent;
-        let fileModified = false;
+        // Process each link individually with atomic vault.process calls
+        for (const match of linksToProcess) {
+            const originalUrl = getUrlFromMatch(match);
+            const originalMatchIndex = match.index;
 
-        for (const match of reversedLinks) {
-            const result = await this.processLinkWithContext(match, currentContent, ctx, counters);
-            if (result.archived) {
-                currentContent = result.modifiedContent;
-                fileModified = true;
+            if (originalMatchIndex === undefined) {
+                counters.skippedCount++;
+                continue;
             }
-        }
 
-        if (fileModified) {
+            // Perform API call first (this is the slow part)
+            const archiveOutcome = await this.processSingleUrlArchival(originalUrl, isForce);
+
+            if (archiveOutcome.status === 'archived_failed') {
+                counters.failedCount++;
+                await this.logFailedArchive(originalUrl, file.path, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
+                continue;
+            }
+
+            // Now apply the edit atomically using vault.process
             try {
-                await this.app.vault.modify(file, currentContent);
+                await this.app.vault.process(file, (latestContent: string) => {
+                    // Re-find the link in the latest content (user may have edited)
+                    const latestIndex = findLatestLinkIndex(latestContent, originalUrl, originalMatchIndex);
+
+                    if (latestIndex === null) {
+                        // Link was deleted by user during processing, skip
+                        return latestContent;
+                    }
+
+                    // Re-match to get the full match at the new index
+                    const latestMatches = Array.from(latestContent.matchAll(LINK_REGEX));
+                    const currentMatch = latestMatches.find(m => m.index === latestIndex);
+
+                    if (!currentMatch) {
+                        return latestContent;
+                    }
+
+                    const insertionPosIndex = latestIndex + currentMatch[0].length;
+                    const textAfterLink = latestContent.substring(insertionPosIndex, insertionPosIndex + 300);
+                    const isAdjacent = isFollowedByArchiveLink(textAfterLink);
+
+                    // Check freshness for existing adjacent links
+                    if (isAdjacent && !isForce) {
+                        const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+                        if (adjMatch) {
+                            const timestamp = adjMatch[2] || adjMatch[4];
+                            const freshness = checkAdjacentLinkFreshness(timestamp, this.activeSettings);
+                            if (!freshness.shouldProcess) {
+                                return latestContent; // Skip, already fresh
+                            }
+                        }
+                    }
+
+                    const newArchiveLink = createArchiveLink(currentMatch, archiveOutcome.url, this.activeSettings);
+
+                    if (isAdjacent) {
+                        // Replace existing archive link
+                        const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+                        if (existingArchiveMatch) {
+                            const oldLinkEndIndex = insertionPosIndex + existingArchiveMatch[0].length;
+                            return latestContent.slice(0, insertionPosIndex) + newArchiveLink + latestContent.slice(oldLinkEndIndex);
+                        }
+                    }
+
+                    // Insert new archive link
+                    const nextChar = latestContent.charAt(insertionPosIndex);
+                    const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
+                    const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
+                    return latestContent.slice(0, insertionPosIndex) + insertionText + latestContent.slice(insertionPosIndex);
+                });
+                counters.archivedCount++;
             } catch (err) {
-                new Notice(`Error saving file: ${file.path}`);
+                counters.failedCount++;
+                new Notice(`Error saving archive link for ${originalUrl}`);
             }
         }
     }
@@ -481,766 +419,216 @@ export class ArchiverService {
     }
 
     archiveLinksAction = async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo): Promise<void> => {
-        let linksToProcess: RegExpMatchArray[] = [];
-        let archivedCount = 0;
-        let failedCount = 0;
-        let skippedCount = 0;
-        const selectedText = editor.getSelection();
-        const isSelection = selectedText.length > 0;
         const file = ctx.file;
-        let filePath = file?.path || 'unknown';
-
         if (!file) {
             new Notice('Error: Could not get the current file.');
-            // console.error('archiveLinksAction: ctx.file is null or undefined.');
             return;
         }
 
+        const selectedText = editor.getSelection();
+        const isSelection = selectedText.length > 0;
+        let archivedCount = 0;
+        let failedCount = 0;
+        let skippedCount = 0;
+        const counters = { archivedCount, failedCount, skippedCount };
+
         if (isSelection) {
-            // console.log('Archiving links in current selection (Editor Mode)...'); 
             const selectionStartOffset = editor.posToOffset(editor.getCursor('from'));
-            const content = selectedText;
-            let allMatches = Array.from(content.matchAll(LINK_REGEX));
-            // console.log(`Found potential links in selection:`, allMatches.map(link => getUrlFromMatch(link))); 
-
             const fullDocContent = editor.getValue();
-            let skippedCount = 0;
+            const allMatches = Array.from(selectedText.matchAll(LINK_REGEX));
 
-            const filterResult = this.filterLinksForArchiving(
-                allMatches,
-                selectedText,
-                false,
-                {
-                    isSelection: true,
-                    selectionStartOffset: selectionStartOffset,
-                    fullDocContent: fullDocContent
-                }
-            );
+            const filterResult = this.filterLinksForArchiving(allMatches, selectedText, false, {
+                isSelection: true,
+                selectionStartOffset,
+                fullDocContent
+            });
 
-            linksToProcess = filterResult.linksToProcess;
-            skippedCount += filterResult.skippedCount;
-
-            if (!linksToProcess.length) {
-                new Notice('No suitable links found in selection to process.');
+            if (!filterResult.linksToProcess.length) {
+                new Notice('No suitable links found in selection.');
                 return;
             }
 
-            new Notice(`Found ${linksToProcess.length} links in selection to process. Starting archival...`);
-            // console.log(`Links to process (selection):`, linksToProcess.map(link => getUrlFromMatch(link))); 
+            new Notice(`Processing ${filterResult.linksToProcess.length} links in selection...`);
 
-            const reversedLinks = linksToProcess.reverse();
-
-            const processSingleLinkEditor = async (match: RegExpMatchArray) => {
+            // For Selection mode, we process each link and apply it to the editor immediately.
+            for (const match of filterResult.linksToProcess) {
                 const originalUrl = getUrlFromMatch(match);
-                const fullMatch = match[0];
-                const matchIndex = match.index;
+                const originalMatchIndexInSelection = match.index;
+                if (originalMatchIndexInSelection === undefined) continue;
 
-                if (matchIndex === undefined) {
-                    // console.warn("Match found without index (selection), skipping:", fullMatch);
-                    skippedCount++;
-                    return;
-                }
+                const absoluteOriginalIndex = selectionStartOffset + originalMatchIndexInSelection;
 
-                // Calculate absolute position in the document for insertion check and insertion
-                const absoluteMatchIndex = selectionStartOffset + matchIndex;
-                const insertionOffset = absoluteMatchIndex + fullMatch.length; // Position *after* the original link text `[text](url)`
-                const insertionPos = editor.offsetToPos(insertionOffset);
-                const textAfterLink = fullDocContent.substring(insertionOffset, insertionOffset + 300);
-                const isAdjacent = isFollowedByArchiveLink(textAfterLink);
-
+                // API call
                 const archiveOutcome = await this.processSingleUrlArchival(originalUrl, false);
-                const cached = this.recentArchiveCache.get(originalUrl);
-                if (isAdjacent && cached && (Date.now() - cached.timestamp) < getFreshnessThresholdMs(this.activeSettings)) {
-                    // console.log(`Skipping link (selection) already followed by an archive link (pre-insert check): ${originalUrl}`); 
-                    skippedCount++;
-                    return;
+                if (archiveOutcome.status === 'archived_failed') {
+                    counters.failedCount++;
+                    await this.logFailedArchive(originalUrl, file.path, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
+                    continue;
                 }
-                switch (archiveOutcome.status) {
-                    case 'cache_hit_success':
-                    case 'archived_success': {
-                        const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                        // console.log(`Successfully processed (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);                      
-                        if (isAdjacent) {
-                            const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
-                            if (existingArchiveMatch) {
-                                const oldLinkText = existingArchiveMatch[0];
-                                const oldLinkLength = oldLinkText.length;
-                                const oldLinkToRemoveEndPos = editor.offsetToPos(insertionOffset + oldLinkLength);
-                                editor.replaceRange(newArchiveLink, insertionPos, oldLinkToRemoveEndPos);
-                                // console.log(`Successfully REPLACED archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                                archivedCount++;
-                            }
-                        } else {
-                            editor.replaceRange(newArchiveLink, insertionPos);
-                            // console.log(`Successfully INSERTED archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                            archivedCount++;
-                        }
-                    }
-                        break;
-                    case 'cache_hit_limited':
-                    case 'archived_limited': {
-                        const archiveLinkLimited = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                        // console.log(`Inserted latest archive link (${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);           
-                        if (isAdjacent) {
-                            // If adjacent exists but archive returns limited/same, do nothing.
-                            // console.warn(`Archive limited/same snapshot, adjacent link exists. Skipping insertion for ${originalUrl}`);
-                            failedCount++;
-                        } else {
-                            // If no adjacent link and archive returns limited/same snapshot, insert the returned URL (latest snapshot/wildcard). 
-                            // Freshness was implicitly checked by API.
-                            editor.replaceRange(archiveLinkLimited, insertionPos);
-                            // console.log(`Successfully INSERTED latest/limited archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                            archivedCount++;
-                        }
-                    }
-                        break;
-                    case 'archived_failed':
-                        // Logic for failed archive
-                        failedCount++;
-                        // console.log(`Failed to archive: ${originalUrl}`);
-                        this.logFailedArchive(originalUrl, filePath, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
-                        break;
-                }
-            };
 
-            for (const match of reversedLinks) {
-                await processSingleLinkEditor(match);
-                // Delay is handled within archiveUrl before the API call
-                // await new Promise(resolve => setTimeout(resolve, 50)); Optional small delay
+                // Apply edit surgically to editor
+                const applied = this.applyLinkEditToEditor(editor, originalUrl, absoluteOriginalIndex, archiveOutcome.url, false);
+                if (applied) {
+                    counters.archivedCount++;
+                } else {
+                    counters.skippedCount++;
+                }
             }
-
+            counters.skippedCount += filterResult.skippedCount;
         } else {
-            // console.log('Archiving links in current note (File Mode)...'); 
-            // console.log(`Processing file: ${file.path}`); 
-
-            let fileContent: string;
-            try {
-                fileContent = await this.app.vault.read(file);
-            } catch (err) {
-                new Notice(`Error reading file: ${file.path}`);
-                // console.error(`Error reading file ${file.path}:`, err);
-                return;
-            }
-            let fileModified = false;
-
-            let allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
-            let skippedCount = 0;
-
-            const filterResult = this.filterLinksForArchiving(
-                allMatches,
-                fileContent,
-                false
-            );
-
-            linksToProcess = filterResult.linksToProcess;
-            skippedCount += filterResult.skippedCount;
-
-            if (!linksToProcess.length) {
-                new Notice('No suitable links found after filtering.');
-                return;
-            }
-
-            new Notice(`Found ${linksToProcess.length} links to process. Starting archival...`);
-            // console.log(`Links to process:`, linksToProcess.map(link => getUrlFromMatch(link))); 
-
-            const reversedLinks = linksToProcess.reverse();
-            const processSingleLinkFile = async (match: RegExpMatchArray) => {
-                const originalUrl = getUrlFromMatch(match);
-                const fullMatch = match[0];
-                const matchIndex = match.index;
-
-                if (matchIndex === undefined) {
-                    // console.warn("Match found without index, skipping:", fullMatch);
-                    skippedCount++;
-                    return;
-                }
-
-                const insertionPosIndex = matchIndex + fullMatch.length; // Position *after* the original link text `[text](url)`
-                const textAfterLink = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                const isAdjacent = isFollowedByArchiveLink(textAfterLink);
-                const nextChar = fileContent.charAt(insertionPosIndex);
-                const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
-
-                if (!originalUrl.match(/^https?:\/\//i)) {
-                    // console.log(`Skipping non-HTTP(S) link: ${originalUrl}`);
-                    skippedCount++;
-                    return;
-                }
-
-                const archiveOutcome = await this.processSingleUrlArchival(originalUrl, false);
-                const cached = this.recentArchiveCache.get(originalUrl);
-                if (isAdjacent && cached && (Date.now() - cached.timestamp) < getFreshnessThresholdMs(this.activeSettings)) {
-                    // console.log(`Skipping link (file) already followed by an archive link (pre-insert check): ${originalUrl}`); 
-                    skippedCount++;
-                    return;
-                }
-                switch (archiveOutcome.status) {
-                    case 'cache_hit_success':
-                    case 'archived_success': {
-                        const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                        if (isAdjacent) {
-                            const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
-                            if (existingArchiveMatch) {
-                                const oldLinkText = existingArchiveMatch[0];
-                                const oldLinkStartIndex = insertionPosIndex;
-                                const oldLinkEndIndex = insertionPosIndex + oldLinkText.length;
-                                fileContent = fileContent.slice(0, oldLinkStartIndex) + newArchiveLink + fileContent.slice(oldLinkEndIndex);
-                                fileModified = true;
-                                // console.log(`Successfully REPLACED archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                                archivedCount++;
-                            }
-                        } else {
-                            const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
-                            fileContent = fileContent.slice(0, insertionPosIndex) + insertionText + fileContent.slice(insertionPosIndex);
-                            fileModified = true;
-                            // console.log(`Successfully INSERTED archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                            archivedCount++;
-                        }
-                        break;
-                    }
-                    case 'cache_hit_limited':
-                    case 'archived_limited': {
-                        const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                        if (isAdjacent) {
-                            // console.warn(`Archive limited/same snapshot, adjacent link exists. Skipping insertion for ${originalUrl}`);
-                            failedCount++;
-                        } else {
-                            const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
-                            fileContent = fileContent.slice(0, insertionPosIndex) + insertionText + fileContent.slice(insertionPosIndex);
-                            fileModified = true;
-                            // console.log(`Successfully INSERTED latest/limited archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                            archivedCount++;
-                        }
-                        break;
-                    }
-                    case 'archived_failed':
-                        failedCount++;
-                        this.logFailedArchive(originalUrl, filePath, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
-                        break;
-                }
-            };
-
-            // Process links sequentially to avoid race conditions with index calculation
-            for (const match of reversedLinks) {
-                await processSingleLinkFile(match);
-                // The delay is now handled within archiveUrl or processSingleLinkFile if needed,
-                // but the primary delay should be before the API call itself.
-                // A small delay here might still be useful if API calls are very fast,
-                // but let's rely on the pre-API call delay for now.
-                // await new Promise(resolve => setTimeout(resolve, 50)); Optional small delay between links
-            }
-
-            if (fileModified) {
-                try {
-                    await this.app.vault.modify(file, fileContent);
-                    // console.log(`Modified ${file.path} with ${archivedCount} new archives, ${failedCount} failures.`);
-                } catch (err) {
-                    new Notice(`Error saving file: ${file.path}`);
-                    // console.error(`Error saving file ${file.path}:`, err);
-                }
-            } else {
-                // console.log(`No changes made to ${file.path}.`);
-            }
+            new Notice(`Archiving links in ${file.basename}...`);
+            await this.processFileWithContext(file, false, counters);
         }
 
-        let summary = `Archival complete. Archived: ${archivedCount}, Failed: ${failedCount}`;
-        if (skippedCount > 0) {
-            summary += `, Skipped: ${skippedCount}`;
-        }
+        let summary = `Archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
+        if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
         new Notice(summary);
     };
 
     archiveAllLinksVaultAction = async (): Promise<void> => {
-        // console.log('Initiating archive all links in vault command...');
         new Notice('Starting vault-wide link archiving... This may take time.');
-
         const markdownFiles = this.app.vault.getMarkdownFiles();
-        let totalLinksFound = 0;
-        let totalArchived = 0;
-        let totalFailed = 0;
-        let totalSkipped = 0; // Includes ignored, non-http, already archived
-        let filesProcessed = 0;
-        let filesModified = 0;
-
-        // console.log(`Found ${markdownFiles.length} markdown files to process.`);
+        const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0 };
 
         for (const file of markdownFiles) {
-            filesProcessed++;
-            // console.log(`Processing file ${filesProcessed}/${markdownFiles.length}: ${file.path}`);
-            let fileContent = await this.app.vault.read(file);
-            let fileLinksArchived = 0;
-            let fileLinksFailed = 0;
-            let fileLinksSkipped = 0;
-            let fileModified = false;
-
-            try {
-                if (this.activeSettings.pathPatterns && this.activeSettings.pathPatterns.length > 0) {
-                    if (!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)) {
-                        // console.log(`Skipping file ${file.path} - does not match path patterns.`);
-                        continue;
-                    }
-                }
-                if (this.activeSettings.wordPatterns.length > 0) {
-                    const fileHasWord = this.activeSettings.wordPatterns.some(pattern =>
-                        pattern && pattern.trim() !== '' && fileContent.includes(pattern)
-                    );
-                    if (!fileHasWord) {
-                        // console.log(`Skipping file ${file.path} - no matching word patterns found`); 
-                        continue;
-                    }
-                }
-
-                const allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
-                for (const match of allMatches.reverse()) { // Process reversed to avoid index issues
-                    const originalUrl = getUrlFromMatch(match);
-                    const fullMatch = match[0];
-                    const matchIndex = match.index;
-
-                    if (matchIndex === undefined) { fileLinksSkipped++; continue; }
-
-                    if (matchesAnyPattern(originalUrl, this.activeSettings.ignorePatterns) || originalUrl.includes('web.archive.org/')) {
-                        fileLinksSkipped++; continue;
-                    }
-                    if (this.activeSettings.urlPatterns?.length > 0 && !matchesAnyPattern(originalUrl, this.activeSettings.urlPatterns)) {
-                        fileLinksSkipped++; continue;
-                    }
-                    if (!originalUrl.match(/^https?:\/\//i)) {
-                        fileLinksSkipped++; continue;
-                    }
-
-                    totalLinksFound++;
-
-                    const insertionPosIndex = matchIndex + fullMatch.length;
-                    const textAfterLink = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                    const isAdjacent = isFollowedByArchiveLink(textAfterLink);
-                    const needsSpace = !(fileContent.charAt(insertionPosIndex) === '' || fileContent.charAt(insertionPosIndex) === '\n' || fileContent.charAt(insertionPosIndex) === ' ');
-
-                    let shouldProcess = true;
-                    let replaceExisting = false;
-                    let existingLinkLength = 0;
-
-                    if (isAdjacent) {
-                        const existingMatch = ADJACENT_ARCHIVE_LINK_REGEX.exec(textAfterLink);
-                        if (existingMatch && existingMatch[0]) {
-                            existingLinkLength = existingMatch[0].length;
-                            const adjacentTimestamp = existingMatch[3];
-                            const { shouldProcess: shouldProcessAdjacent, replaceExisting: replaceExistingAdjacent } = checkAdjacentLinkFreshness(adjacentTimestamp, this.activeSettings);
-                            shouldProcess = shouldProcessAdjacent;
-                            replaceExisting = replaceExistingAdjacent;
-                            if (!shouldProcess) {
-                                fileLinksSkipped++;
-                            }
-                        }
-                    }
-
-                    if (!shouldProcess) {
-                        continue;
-                    }
-
-                    const archiveOutcome = await this.processSingleUrlArchival(originalUrl, false); // isForce = false for standard vault archive
-
-                    switch (archiveOutcome.status) {
-                        case 'cache_hit_success':
-                        case 'archived_success': {
-                            const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                            const insertionText = needsSpace && !replaceExisting ? ' ' + newArchiveLink : newArchiveLink;
-                            const startIndex = insertionPosIndex;
-                            const endIndex = replaceExisting ? insertionPosIndex + existingLinkLength : insertionPosIndex;
-
-                            fileContent = fileContent.slice(0, startIndex) + insertionText + fileContent.slice(endIndex);
-                            fileModified = true;
-                            fileLinksArchived++;
-                            // console.log(`Successfully ${replaceExisting ? 'REPLACED' : 'INSERTED'} archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                            break;
-                        }
-                        case 'cache_hit_limited':
-                        case 'archived_limited': {
-                            if (replaceExisting) {
-                                // console.warn(`Archive limited/same snapshot, adjacent link exists (and was old). Skipping replacement for ${originalUrl}`);
-                                fileLinksFailed++;
-                            } else {
-                                const newArchiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                                const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
-                                fileContent = fileContent.slice(0, insertionPosIndex) + insertionText + fileContent.slice(insertionPosIndex);
-                                fileModified = true;
-                                // console.log(`Successfully INSERTED latest/limited archive link (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                                fileLinksArchived++;
-                            }
-                            break;
-                        }
-                        case 'archived_failed':
-                            fileLinksFailed++;
-                            this.logFailedArchive(originalUrl, file.path, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
-                            break;
-                    }
-                }
-
-                if (fileModified) {
-                    try {
-                        await this.app.vault.modify(file, fileContent);
-                        filesModified++;
-                        // console.log(`Successfully processed ${file.path} with ${fileLinksArchived} new archives, ${fileLinksFailed} failures.`);
-                    } catch (err: any) {
-                        // console.error(`Error processing file ${file.path} via vault.process:`, err);
-                        totalFailed++;
-                        if (!this.data.failedArchives) this.data.failedArchives = [];
-                        this.data.failedArchives.push({
-                            url: `Error processing file during vault.process`,
-                            filePath: file.path,
-                            timestamp: Date.now(),
-                            error: `vault.process Error: ${err?.message || 'Unknown error'}`,
-                            retryCount: 0
-                        });
-                    }
-                }
-
-                totalArchived += fileLinksArchived;
-                totalFailed += fileLinksFailed;
-                totalSkipped += fileLinksSkipped;
-
-            } catch (error: any) {
-                // console.error(`Error processing file ${file.path}:`, error);
-                totalFailed++;
-                if (!this.data.failedArchives) this.data.failedArchives = [];
-                this.data.failedArchives.push({
-                    url: `Error processing file`,
-                    filePath: file.path,
-                    timestamp: Date.now(),
-                    error: `Error: ${error?.message || 'Unknown error'}`,
-                    retryCount: 0
-                });
-            }
+            await this.processFileWithContext(file, false, counters);
         }
 
         await this.saveSettings();
-        // console.log(`Vault-wide archiving complete. Processed ${filesProcessed} files, modified ${filesModified}.`);
-        new Notice(`Vault archival complete. Found: ${totalLinksFound}, archived: ${totalArchived}, failed: ${totalFailed}, skipped: ${totalSkipped}.`);
-    }
+        new Notice(`Vault archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}, Skipped: ${counters.skippedCount}.`);
+    };
 
     forceReArchiveLinksAction = async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo): Promise<void> => {
-        let linksToProcess: RegExpMatchArray[] = [];
-        let archivedCount = 0;
-        let failedCount = 0;
-        let skippedCount = 0;
-        const selectedText = editor.getSelection();
-        const isSelection = selectedText.length > 0;
         const file = ctx.file;
-        let filePath = file?.path || 'unknown';
-
         if (!file) {
             new Notice('Error: Could not get the current file.');
-            // console.error('forceReArchiveLinksAction: ctx.file is null or undefined.');
             return;
         }
 
+        const selectedText = editor.getSelection();
+        const isSelection = selectedText.length > 0;
+        const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0 };
+
         if (isSelection) {
-            // console.log('Force Re-archiving links in current selection (Editor Mode)...'); 
             const selectionStartOffset = editor.posToOffset(editor.getCursor('from'));
-            const content = selectedText;
             const fullDocContent = editor.getValue();
-            let allMatches = Array.from(content.matchAll(LINK_REGEX));
-            let skippedCount = 0;
-            // console.log(`Found potential links in selection:`, allMatches.map(link => getUrlFromMatch(link))); 
+            const allMatches = Array.from(selectedText.matchAll(LINK_REGEX));
 
-            const filterResult = this.filterLinksForArchiving(
-                allMatches,
-                selectedText,
-                true,
-                {
-                    isSelection: true,
-                    selectionStartOffset: selectionStartOffset,
-                    fullDocContent: fullDocContent
-                }
-            );
+            const filterResult = this.filterLinksForArchiving(allMatches, selectedText, true, {
+                isSelection: true,
+                selectionStartOffset,
+                fullDocContent
+            });
 
-            linksToProcess = filterResult.linksToProcess;
-            skippedCount += filterResult.skippedCount;
-
-            if (!linksToProcess.length) {
+            if (!filterResult.linksToProcess.length) {
                 new Notice('No suitable links found in selection to force re-archive.');
                 return;
             }
 
-            new Notice(`Found ${linksToProcess.length} links in selection to force re-archive. Starting...`);
-            // console.log(`Links to process (selection - force):`, linksToProcess.map(link => getUrlFromMatch(link))); 
+            new Notice(`Force re-archiving ${filterResult.linksToProcess.length} links in selection...`);
 
-            const reversedLinks = linksToProcess.reverse();
-            const processSingleLinkEditorForce = async (match: RegExpMatchArray) => {
+            for (const match of filterResult.linksToProcess) {
                 const originalUrl = getUrlFromMatch(match);
-                const fullMatch = match[0];
-                const matchIndexRelative = match.index;
-                if (matchIndexRelative === undefined) {
-                    skippedCount++;
-                    return;
-                }
-                const absoluteMatchStartIndex = selectionStartOffset + matchIndexRelative;
-                const absoluteInsertionOffset = absoluteMatchStartIndex + fullMatch.length;
-                const insertionPos = editor.offsetToPos(absoluteInsertionOffset);
-                let oldLinkToRemoveEndPos = insertionPos;
-                const textAfterLinkInDoc = fullDocContent.substring(absoluteInsertionOffset, absoluteInsertionOffset + 300);
-                const existingArchiveMatch = textAfterLinkInDoc.match(ADJACENT_ARCHIVE_LINK_REGEX);
-                if (existingArchiveMatch && existingArchiveMatch[0]) {
-                    const oldLinkText = existingArchiveMatch[0];
-                    const oldLinkLength = oldLinkText.length;
-                    oldLinkToRemoveEndPos = editor.offsetToPos(absoluteInsertionOffset + oldLinkLength);
-                }
+                const originalMatchIndexInSelection = match.index;
+                if (originalMatchIndexInSelection === undefined) continue;
+
+                const absoluteOriginalIndex = selectionStartOffset + originalMatchIndexInSelection;
+
+                // API call
                 const archiveOutcome = await this.processSingleUrlArchival(originalUrl, true);
-                switch (archiveOutcome.status) {
-                    case 'archived_success':
-                    case 'archived_limited':
-                        {
-                            const archiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                            editor.replaceRange(archiveLink, insertionPos, oldLinkToRemoveEndPos);
-                            archivedCount++;
-                        }
-                        break;
-                    case 'archived_failed':
-                        failedCount++;
-                        this.logFailedArchive(originalUrl, filePath, `Force re-archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
-                        break;
+                if (archiveOutcome.status === 'archived_failed') {
+                    counters.failedCount++;
+                    await this.logFailedArchive(originalUrl, file.path, `Archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
+                    continue;
                 }
-            };
-            for (const match of reversedLinks) {
-                await processSingleLinkEditorForce(match);
+
+                // Apply edit surgically to editor
+                const applied = this.applyLinkEditToEditor(editor, originalUrl, absoluteOriginalIndex, archiveOutcome.url, true);
+                if (applied) {
+                    counters.archivedCount++;
+                } else {
+                    counters.skippedCount++;
+                }
             }
+            counters.skippedCount += filterResult.skippedCount;
         } else {
-            // console.log('Force Re-archiving links in current note (File Mode)...'); 
-            // console.log(`Processing file: ${file.path}`); 
-
-            let fileContent: string;
-            try {
-                fileContent = await this.app.vault.read(file);
-            } catch (err) {
-                new Notice(`Error reading file: ${file.path}`);
-                // console.error(`Error reading file ${file.path}:`, err);
-                return;
-            }
-            let fileModified = false;
-            let allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
-            let skippedCount = 0;
-            // console.log(`Found all potential links:`, allMatches.map(link => getUrlFromMatch(link))); 
-
-            const filterResult = this.filterLinksForArchiving(
-                allMatches,
-                fileContent,
-                true
-            );
-
-            linksToProcess = filterResult.linksToProcess;
-            skippedCount += filterResult.skippedCount;
-
-            if (!linksToProcess.length) {
-                new Notice('No suitable links found in file to force re-archive.');
-                return;
-            }
-
-            new Notice(`Found ${linksToProcess.length} links in file to force re-archive. Starting...`);
-            // console.log(`Links to process (file - force):`, linksToProcess.map(link => getUrlFromMatch(link))); 
-
-            const reversedLinks = linksToProcess.reverse();
-            const processSingleLinkFileForce = async (match: RegExpMatchArray) => {
-                const originalUrl = getUrlFromMatch(match);
-                const fullMatch = match[0];
-                const matchIndex = match.index;
-                if (matchIndex === undefined) {
-                    skippedCount++;
-                    return;
-                }
-                const insertionPosIndex = matchIndex + fullMatch.length;
-                let startIndexToRemove = insertionPosIndex;
-                let endIndexToRemove = insertionPosIndex;
-                const textAfterLinkInContent = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                const existingArchiveMatch = textAfterLinkInContent.match(ADJACENT_ARCHIVE_LINK_REGEX);
-                if (existingArchiveMatch && existingArchiveMatch[0]) {
-                    const oldLinkLength = existingArchiveMatch[0].length;
-                    endIndexToRemove = insertionPosIndex + oldLinkLength;
-                }
-                const archiveOutcome = await this.processSingleUrlArchival(originalUrl, true);
-                switch (archiveOutcome.status) {
-                    case 'archived_success':
-                        {
-                            const archiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                            fileContent = fileContent.slice(0, startIndexToRemove) + archiveLink + fileContent.slice(endIndexToRemove);
-                            fileModified = true;
-                            archivedCount++;
-                        }
-                        break;
-                    case 'archived_limited':
-                        failedCount++;
-                        this.logFailedArchive(originalUrl, filePath, `Force re-archiving failed (${archiveOutcome.status || 'Too many captures'})`, 0);
-                        break;
-                    case 'archived_failed':
-                        failedCount++;
-                        this.logFailedArchive(originalUrl, filePath, `Force re-archiving failed (${archiveOutcome.error || 'Unknown error'})`, 0);
-                        break;
-                }
-            };
-            for (const match of reversedLinks) {
-                await processSingleLinkFileForce(match);
-            }
-            if (fileModified) {
-                await this.app.vault.modify(file, fileContent);
-            }
+            new Notice(`Force re-archiving links in ${file.basename}...`);
+            await this.processFileWithContext(file, true, counters);
         }
 
-        let summary = `Force re-archival complete. Re-archived: ${archivedCount}, failed: ${failedCount}`;
-        if (skippedCount > 0) {
-            summary += `, skipped: ${skippedCount}`;
-        }
+        let summary = `Force re-archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
+        if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
         new Notice(summary);
     };
 
-    forceReArchiveAllLinksAction = async (): Promise<void> => {
-        // console.log('Initiating force re-archive all links in vault command...');
-        // console.log('User confirmed vault-wide force re-archiving.');
-        new Notice('Starting vault-wide force re-archiving... This may take time.');
+    /**
+     * Helper to apply a link edit (insertion or replacement) surgically to the editor.
+     * Uses findLatestLinkIndex to be resilient to text shifts during the delay.
+     */
+    private applyLinkEditToEditor(
+        editor: Editor,
+        originalUrl: string,
+        originalAbsoluteIndex: number,
+        archiveUrl: string,
+        isForce: boolean
+    ): boolean {
+        const latestContent = editor.getValue();
+        const latestIndex = findLatestLinkIndex(latestContent, originalUrl, originalAbsoluteIndex);
 
-        const markdownFiles = this.app.vault.getMarkdownFiles();
-        let totalLinksFound = 0;
-        let totalArchived = 0;
-        let totalFailed = 0;
-        let totalSkipped = 0;
-        let filesProcessed = 0;
-        let filesModified = 0;
+        if (latestIndex === null) {
+            return false; // Link was deleted
+        }
 
-        for (const file of markdownFiles) {
-            filesProcessed++;
-            // console.log(`Processing file ${filesProcessed}/${markdownFiles.length}: ${file.path}`);
-            let fileContent = await this.app.vault.read(file);
-            let fileLinksArchived = 0;
-            let fileLinksFailed = 0;
-            let fileLinksSkipped = 0;
-            let fileModified = false;
+        const latestMatches = Array.from(latestContent.matchAll(LINK_REGEX));
+        const currentMatch = latestMatches.find(m => m.index === latestIndex);
+        if (!currentMatch) return false;
 
-            try {
-                if (this.activeSettings.pathPatterns && this.activeSettings.pathPatterns.length > 0) {
-                    if (!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)) {
-                        // console.log(`Skipping file ${file.path} - does not match path patterns.`);
-                        continue;
-                    }
-                }
-                if (this.activeSettings.wordPatterns.length > 0) {
-                    const fileHasWord = this.activeSettings.wordPatterns.some(pattern =>
-                        pattern && pattern.trim() !== '' && fileContent.includes(pattern)
-                    );
-                    if (!fileHasWord) {
-                        // console.log(`Skipping file ${file.path} - no matching word patterns found`); 
-                        continue;
-                    }
-                }
+        const insertionPosIndex = latestIndex + currentMatch[0].length;
+        const textAfterLink = latestContent.substring(insertionPosIndex, insertionPosIndex + 300);
+        const isAdjacent = isFollowedByArchiveLink(textAfterLink);
 
-                const allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
-                if (!allMatches.length) continue;
-
-                for (const match of allMatches.reverse()) {
-                    const originalUrl = getUrlFromMatch(match);
-                    const fullMatch = match[0];
-                    const matchIndex = match.index;
-
-                    if (matchIndex === undefined) { fileLinksSkipped++; continue; }
-
-                    if (matchesAnyPattern(originalUrl, this.activeSettings.ignorePatterns) || originalUrl.includes('web.archive.org/')) {
-                        fileLinksSkipped++;
-                        continue;
-                    }
-
-                    if (this.activeSettings.urlPatterns && this.activeSettings.urlPatterns.length > 0) {
-                        if (!matchesAnyPattern(originalUrl, this.activeSettings.urlPatterns)) {
-                            fileLinksSkipped++;
-                            continue;
-                        }
-                    }
-                    if (!originalUrl.match(/^https?:\/\//i)) { fileLinksSkipped++; continue; }
-
-                    const insertionPosIndex = matchIndex + fullMatch.length;
-                    const textAfterLink = fileContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                    const archiveUrlPattern = 'https?:\\/\\/web\\.archive\\.org\\/web\\/\\d+\\/.+?';
-                    const fullArchiveLinkRegex = new RegExp(`^(\\s*\\n*\\s*\\[.*?\\]\\(${archiveUrlPattern}\\))|(\\s*\\n*\\s*<a [^>]*href=\\"${archiveUrlPattern}\\"[^>]*>.*?<\\/a>)`, 's');
-                    const existingArchiveMatch = textAfterLink.match(fullArchiveLinkRegex);
-                    let startIndexToRemove = insertionPosIndex;
-                    let endIndexToRemove = insertionPosIndex;
-
-                    if (existingArchiveMatch && existingArchiveMatch[0]) {
-                        const oldLinkLength = existingArchiveMatch[0].length;
-                        endIndexToRemove = insertionPosIndex + oldLinkLength;
-                        // console.log(`Found existing archive link to remove in ${file.path}: ${existingArchiveMatch[0]}`); 
-                    } else {
-                        totalLinksFound++;
-                    }
-
-                    // console.log(`Waiting ${this.activeSettings.apiDelay}ms before re-archiving ${originalUrl} in ${file.path}`); 
-                    const archiveOutcome = await this.processSingleUrlArchival(originalUrl, true); // Pass isForce = true
-                    switch (archiveOutcome.status) {
-                        case 'archived_success':
-                            {
-                                const archiveLink = createArchiveLink(match, archiveOutcome.url, this.activeSettings);
-                                fileContent = fileContent.slice(0, startIndexToRemove) + archiveLink + fileContent.slice(endIndexToRemove);
-                                fileModified = true;
-                                fileLinksArchived++;
-                                // console.log(`Force re-archived (from ${archiveOutcome.status}): ${originalUrl} -> ${archiveOutcome.url}`);
-                            }
-                            break;
-                        case 'archived_limited':
-                            fileLinksFailed++;
-                            this.logFailedArchive(
-                                originalUrl,
-                                file.path,
-                                `Force re-archiving limited (status: ${archiveOutcome.status}, fallback not inserted in vault-force mode)`,
-                                0
-                            );
-                            // console.log(`Force re-archive limited, no new link inserted for: ${originalUrl} in ${file.path}`);
-                            break;
-                        case 'archived_failed':
-                            fileLinksFailed++;
-                            this.logFailedArchive(
-                                originalUrl,
-                                file.path,
-                                `Force re-archiving failed (${archiveOutcome.error || 'Unknown error'})`,
-                                0
-                            );
-                            // console.log(`Failed to force re-archive: ${originalUrl}`);
-                            break;
-                    }
-                }
-
-                if (fileModified) {
-                    try {
-                        await this.app.vault.modify(file, fileContent);
-                        filesModified++;
-                        // console.log(`Successfully processed ${file.path} with ${fileLinksArchived} re-archives, ${fileLinksFailed} failures.`);
-                    } catch (err: any) {
-                        // console.error(`Error processing file ${file.path} via vault.process (force re-archive):`, err);
-                        totalFailed++;
-                        if (!this.data.failedArchives) this.data.failedArchives = [];
-                        this.data.failedArchives.push({
-                            url: `Error processing file during vault.process (force re-archive)`,
-                            filePath: file.path,
-                            timestamp: Date.now(),
-                            error: `vault.process Error: ${err?.message || 'Unknown error'}`,
-                            retryCount: 0
-                        });
-                    }
-                }
-                totalArchived += fileLinksArchived;
-                totalFailed += fileLinksFailed;
-                totalSkipped += fileLinksSkipped;
-            } catch (error: any) {
-                // console.error(`Error processing file ${file.path} during force re-archive:`, error);
-                totalFailed++;
-                if (!this.data.failedArchives) this.data.failedArchives = [];
-                this.data.failedArchives.push({
-                    url: `Error processing file`,
-                    filePath: file.path,
-                    timestamp: Date.now(),
-                    error: `Force re-archive Error: ${error?.message || 'Unknown error'}`,
-                    retryCount: 0
-                });
+        // Freshness check for standard mode
+        if (isAdjacent && !isForce) {
+            const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+            if (adjMatch) {
+                const timestamp = adjMatch[2] || adjMatch[4];
+                const freshness = checkAdjacentLinkFreshness(timestamp, this.activeSettings);
+                if (!freshness.shouldProcess) return false;
             }
         }
 
+        const newArchiveLink = createArchiveLink(currentMatch, archiveUrl, this.activeSettings);
+
+        if (isAdjacent) {
+            const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+            if (adjMatch) {
+                const startPos = editor.offsetToPos(insertionPosIndex);
+                const endPos = editor.offsetToPos(insertionPosIndex + adjMatch[0].length);
+                editor.replaceRange(newArchiveLink, startPos, endPos);
+                return true;
+            }
+        }
+
+        // Standard insertion
+        const nextChar = latestContent.charAt(insertionPosIndex);
+        const needsSpace = !(nextChar === '' || nextChar === '\n' || nextChar === ' ');
+        const insertionText = needsSpace ? ' ' + newArchiveLink : newArchiveLink;
+        const pos = editor.offsetToPos(insertionPosIndex);
+        editor.replaceRange(insertionText, pos);
+        return true;
+    }
+
+    forceReArchiveAllLinksAction = async (): Promise<void> => {
+        new Notice('Starting vault-wide force re-archiving... This may take time.');
+        const markdownFiles = this.app.vault.getMarkdownFiles();
+        const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0 };
+
+        for (const file of markdownFiles) {
+            await this.processFileWithContext(file, true, counters);
+        }
+
         await this.saveSettings();
-        // console.log(`Vault-wide force re-archiving complete. Processed ${filesProcessed} files, modified ${filesModified}.`);
-        new Notice(`Vault force re-Archival complete. Found: ${totalLinksFound}, re-Archived: ${totalArchived}, failed: ${totalFailed}, skipped: ${totalSkipped}.`);
+        new Notice(`Vault force re-Archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}, Skipped: ${counters.skippedCount}.`);
     };
 
     retryFailedArchives = async (forceReplace: boolean): Promise<void> => {
