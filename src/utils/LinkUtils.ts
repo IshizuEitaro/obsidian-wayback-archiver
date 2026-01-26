@@ -5,9 +5,11 @@ import { getFreshnessThresholdMs, WaybackArchiverSettings } from '../core/settin
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
  * - Group 0: The primary link structure (Markdown, HTML A, HTML Img, or Plain URL)
  * - Group 1: URL from Markdown `(![...](URL) or [...](URL))`
- * - Group 2: URL from HTML `<a href="URL">`
- * - Group 3: URL from HTML `<img src="URL">`
- * - Group 4: Plain HTTP/HTTPS URL
+ * - Group 2: URL from HTML `<a href="URL">` (double quotes)
+ * - Group 3: URL from HTML `<a href='URL'>` (single quotes)
+ * - Group 4: URL from HTML `<img src="URL">` (double quotes)
+ * - Group 5: URL from HTML `<img src='URL'>` (single quotes)
+ * - Group 6: Plain HTTP/HTTPS URL
  * Markdown URL/Img Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)
  * HTML A/Img Regex: <a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>
  * Raw URL Regex: ^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})
@@ -102,7 +104,7 @@ export function createArchiveLink(
 
     const archiveLinkText = settings.archiveLinkText.replace('{date}', archiveDate);
 
-    const isHtmlLink = match[2] || match[3];
+    const isHtmlLink = match[2] || match[3] || match[4] || match[5];
 
     if (isHtmlLink) {
         const escapedArchiveUrl = archiveUrl.replace(/"/g, '&quot;');
