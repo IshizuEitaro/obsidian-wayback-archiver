@@ -741,7 +741,7 @@ export class ArchiverService {
                                     const content = await this.app.vault.read(file);
                                     const matches = Array.from(content.matchAll(LINK_REGEX));
                                     for (const match of matches) {
-                                        const originalUrl = match[1] || match[2] || match[3] || match[4] || '';
+                                        const originalUrl = getUrlFromMatch(match);
                                         if (originalUrl !== entry.url) continue;
 
                                         const matchIndex = match.index;
@@ -808,7 +808,7 @@ export class ArchiverService {
 
                                             const insertionPosIndex = matchIndex + match[0].length;
                                             const textAfterLink = newContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                                            const isHtmlLink = match[2] || match[3];
+                                            const isHtmlLink = match[2] || match[3] || match[4] || match[5];
                                             const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
                                             const archiveDate = format(new Date(), this.activeSettings.dateFormat);
@@ -925,7 +925,7 @@ export class ArchiverService {
                                             const content = await this.app.vault.read(file);
                                             const matches = Array.from(content.matchAll(LINK_REGEX));
                                             for (const match of matches) {
-                                                const originalUrl = match[1] || match[2] || match[3] || match[4] || '';
+                                                const originalUrl = getUrlFromMatch(match);
                                                 if (originalUrl !== entry.url) continue;
 
                                                 const matchIndex = match.index;
@@ -992,7 +992,7 @@ export class ArchiverService {
 
                                                     const insertionPosIndex = matchIndex + match[0].length;
                                                     const textAfterLink = newContent.substring(insertionPosIndex, insertionPosIndex + 300);
-                                                    const isHtmlLink = match[2] || match[3];
+                                                    const isHtmlLink = match[2] || match[3] || match[4] || match[5];
                                                     const existingArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 
                                                     const archiveDate = format(new Date(), this.activeSettings.dateFormat);
