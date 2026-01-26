@@ -12,12 +12,16 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v3
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
+          cache: 'pnpm'
 
-      - run: npm install
-      - run: npm run build
+      - run: pnpm install
+      - run: pnpm run build
 
       - name: Create Release
         id: create_release
