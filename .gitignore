@@ -3,7 +3,7 @@ docs/
 
 # pnpm
 node_modules
-pnpm-lock.yaml
+
 
 # build
 main.js
