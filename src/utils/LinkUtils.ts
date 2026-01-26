@@ -1,30 +1,40 @@
 import { format } from 'date-fns';
-import { getFreshnessThresholdMs,WaybackArchiverSettings } from '../core/settings';
+import { getFreshnessThresholdMs, WaybackArchiverSettings } from '../core/settings';
 
 /**
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
  * - Group 0: The primary link structure (Markdown, HTML A, HTML Img, or Plain URL)
  * - Group 1: URL from Markdown `(![...](URL) or [...](URL))`
- * - Group 2: URL from HTML `<a href="URL">`
- * - Group 3: URL from HTML `<img src="URL">`
- * - Group 4: Plain HTTP/HTTPS URL
+ * - Group 2: URL from HTML `<a href="URL">` (double quotes)
+ * - Group 3: URL from HTML `<a href='URL'>` (single quotes)
+ * - Group 4: URL from HTML `<img src="URL">` (double quotes)
+ * - Group 5: URL from HTML `<img src='URL'>` (single quotes)
+ * - Group 6: Plain HTTP/HTTPS URL
  * Markdown URL/Img Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)
  * HTML A/Img Regex: <a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>
  * Raw URL Regex: ^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})
  * Combined Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)|<a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>|^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})
  * Thank you https://regex101.com/ and zolrath for auto link title 
  */
-export const LINK_REGEX = new RegExp('!?\\[[^\\[\\]]*\\]\\((https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})\\)|<a\\b(?=[^>]*href=["\'])[^>]*href="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>.*?<\\\/a>|<img\\b(?=[^>]*src=["\'])[^>]*src="((?:https?:\\\/\\\/|www\\.)[^"]+)"[^>]*>|^(https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\\/\\\/(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})', 'img')
+const MARKDOWN_LINK = /!?\[(?:[^[\]]|\[[^[\]]*\])*\]\(((?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\))*\))+)\)/.source;
+const HTML_A_LINK = /<a\b(?=[^>]*href=["'])[^>]*href=(?:"((?:https?:\/\/|www\.)[^"]*)"|'((?:https?:\/\/|www\.)[^']*)')[^>]*>.*?<\/a>/.source;
+const HTML_IMG_LINK = /<img\b(?=[^>]*src=["'])[^>]*src=(?:"((?:https?:\/\/|www\.)[^"]*)"|'((?:https?:\/\/|www\.)[^']*)')[^>]*\/?>/.source;
+const PLAIN_URL = /((?:https?:\/\/|www\.)(?:[^\s()<>]+|\([^()]*\))+(?:\([^()]*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/.source;
 
-export const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || '';
+export const LINK_REGEX = new RegExp(`${MARKDOWN_LINK}|${HTML_A_LINK}|${HTML_IMG_LINK}|${PLAIN_URL}`, 'img');
+
+export const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || '';
+
+// Helper for matching URLs with balanced parentheses
+const URL_PATTERN = /(?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\))*\))+/.source;
 
 // Regex to match both markdown and HTML adjacent archive links
 export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
-	// Markdown: [text](https://web.archive.org/web/123456789/http...)
-	String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\))` +
-	// OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
-	String.raw`|(\s*\n*\s*<a [^>]*href=\\?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/.+?\\?"[^>]*>.*?<\/a>)`,
-	's'
+    // Markdown: [text](https://web.archive.org/web/123456789/http...)
+    String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\))` +
+    // OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
+    String.raw`|(\s*\n*\s*<a [^>]*href=\\?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\\?"[^>]*>.*?<\/a>)`,
+    's'
 );
 
 export function isFollowedByArchiveLink(textFollowingLink: string): boolean {
@@ -60,21 +70,21 @@ export function matchesAnyPattern(text: string, patterns: string[] | null | unde
 }
 
 export function applySubstitutionRules(url: string, rules: { find: string; replace: string; regex?: boolean }[]): string {
-	let result = url;
-	for (const rule of rules) {
-		if (!rule.find) continue;
-		try {
-			if (rule.regex) {
-				const regex = new RegExp(rule.find, 'g');
-				result = result.replace(regex, rule.replace || '');
-			} else {
-				result = result.split(rule.find).join(rule.replace || '');
-			}
-		} catch (e: any) {
-			console.warn(`Error applying substitution rule: Find="${rule.find}", Regex=${rule.regex}. Error: ${e.message}`);
-		}
-	}
-	return result;
+    let result = url;
+    for (const rule of rules) {
+        if (!rule.find) continue;
+        try {
+            if (rule.regex) {
+                const regex = new RegExp(rule.find, 'g');
+                result = result.replace(regex, rule.replace || '');
+            } else {
+                result = result.split(rule.find).join(rule.replace || '');
+            }
+        } catch (e: any) {
+            console.warn(`Error applying substitution rule: Find="${rule.find}", Regex=${rule.regex}. Error: ${e.message}`);
+        }
+    }
+    return result;
 }
 
 /**
@@ -89,12 +99,12 @@ export function createArchiveLink(
     match: RegExpMatchArray,
     archiveUrl: string,
     settings: WaybackArchiverSettings
-	): string {
+): string {
     const archiveDate = format(new Date(), settings.dateFormat);
 
     const archiveLinkText = settings.archiveLinkText.replace('{date}', archiveDate);
 
-    const isHtmlLink = match[2] || match[3];
+    const isHtmlLink = match[2] || match[3] || match[4] || match[5];
 
     if (isHtmlLink) {
         const escapedArchiveUrl = archiveUrl.replace(/"/g, '&quot;');

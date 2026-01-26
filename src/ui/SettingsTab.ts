@@ -14,7 +14,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		
+
 		new Setting(containerEl).setName('Archive.org API keys (global)').setHeading();
 
 		const apiDesc = containerEl.createEl('p', { cls: 'wa-apiDesc' });
@@ -27,24 +27,30 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Archive.org SPN access key')
 			.setDesc('Your S3-like access key for the SPN API v2.')
-			.addText(text => text
-				.setPlaceholder('Enter your access key')
-				.setValue(this.plugin.data.spnAccessKey || '')
-				.onChange(async (value) => {
-					this.plugin.data.spnAccessKey = value.trim();
-					await this.plugin.saveSettings();
-				}));
+			.addText(text => {
+				text
+					.setPlaceholder('Enter your access key')
+					.setValue(this.plugin.data.spnAccessKey || '')
+					.onChange(async (value) => {
+						this.plugin.data.spnAccessKey = value.trim();
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+			});
 
 		new Setting(containerEl)
 			.setName('Archive.org SPN secret key')
 			.setDesc('Your S3-like secret key for the SPN API v2.')
-			.addText(text => text
-				.setPlaceholder('Enter your secret key')
-				.setValue(this.plugin.data.spnSecretKey || '')
-				.onChange(async (value) => {
-					this.plugin.data.spnSecretKey = value.trim();
-					await this.plugin.saveSettings();
-				}));
+			.addText(text => {
+				text
+					.setPlaceholder('Enter your secret key')
+					.setValue(this.plugin.data.spnSecretKey || '')
+					.onChange(async (value) => {
+						this.plugin.data.spnSecretKey = value.trim();
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+			});
 
 		new Setting(containerEl).setName('Profiles').setHeading();
 
@@ -59,7 +65,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.data.activeProfileId = value;
 					await this.plugin.saveSettings();
-					this.display(); 
+					this.display();
 				});
 			});
 
@@ -112,7 +118,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					activeSettings.archiveLinkText = value || '(Archived on {date})';
 					await this.plugin.saveSettings();
 				}));
-				
+
 		new Setting(containerEl).setName('Filtering rules (optional)').setHeading();
 
 		new Setting(containerEl)
@@ -170,12 +176,12 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.addButton(button => button
-			.setButtonText('Add substitution rule')
-			.onClick(async () => {
-				activeSettings.substitutionRules.push({ find: '', replace: '', regex: false });
-				await this.plugin.saveSettings();
-				this.renderSubstitutionRules(substitutionDiv);
-			}));
+				.setButtonText('Add substitution rule')
+				.onClick(async () => {
+					activeSettings.substitutionRules.push({ find: '', replace: '', regex: false });
+					await this.plugin.saveSettings();
+					this.renderSubstitutionRules(substitutionDiv);
+				}));
 
 		new Setting(containerEl).setName('Advanced').setHeading();
 
@@ -215,7 +221,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 					text.setValue(String(activeSettings.archiveFreshnessDays));
 				}));
-				
+
 		new Setting(containerEl)
 			.setName('Auto clear failed logs')
 			.setDesc('Automatically clear failed logs after successful retries without confirmation.')
@@ -290,11 +296,11 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					activeSettings.captureOutlinks = value;
 					await this.plugin.saveSettings();
 				}));
-	} 
+	}
 
 
 	private renderSubstitutionRules(containerEl: HTMLElement): void {
-		containerEl.empty(); 
+		containerEl.empty();
 		const activeSettings = this.plugin.activeSettings;
 
 		if (!activeSettings.substitutionRules || activeSettings.substitutionRules.length === 0) {
@@ -319,7 +325,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				await this.plugin.saveSettings();
 			});
 
-			const regexToggleLabel = ruleEl.createEl('label', {text: 'Regex?',cls: 'wa-regexToggleLabel'});
+			const regexToggleLabel = ruleEl.createEl('label', { text: 'Regex?', cls: 'wa-regexToggleLabel' });
 			const regexToggle = regexToggleLabel.createEl('input', { type: 'checkbox' });
 			regexToggle.checked = rule.regex;
 			regexToggle.addEventListener('change', async (e) => {
@@ -342,9 +348,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		const modal = new ProfileNameModal(this.app, async (newName: string | null) => {
 			if (newName && !this.plugin.data.profiles[newName]) {
 				this.plugin.data.profiles[newName] = { ...DEFAULT_SETTINGS };
-				this.plugin.data.activeProfileId = newName; 
+				this.plugin.data.activeProfileId = newName;
 				await this.plugin.saveSettings();
-				this.display(); 
+				this.display();
 				new Notice(`Profile "${newName}" created and activated.`);
 			} else if (newName) {
 				new Notice(`Profile "${newName}" already exists.`);
@@ -377,7 +383,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			} else {
 				new Notice('Profile rename cancelled.');
 			}
-		}, currentId); 
+		}, currentId);
 		modal.open();
 	}
 
@@ -396,7 +402,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			async (confirmed: boolean) => {
 				if (confirmed) {
 					delete this.plugin.data.profiles[profileIdToDelete];
-					this.plugin.data.activeProfileId = 'default'; 
+					this.plugin.data.activeProfileId = 'default';
 					await this.plugin.saveSettings();
 					this.display();
 					new Notice(`Profile "${profileIdToDelete}" deleted.`);
