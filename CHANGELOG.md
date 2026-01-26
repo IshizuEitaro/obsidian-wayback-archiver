@@ -1,8 +1,8 @@
 # Changelog
 
-## [Unreleased](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/HEAD)
+## [v1.1.0](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/v1.1.0) (2026-01-26)
 
-[Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.0.5...HEAD)
+[Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.0.5...v1.1.0)
 
 **Closed issues:**
 
