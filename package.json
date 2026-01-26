@@ -1,6 +1,6 @@
 {
   "name": "wayback-archiver",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "Automatically archives web links via Wayback Machine and appends archived versions in notes.",
   "main": "main.js",
   "scripts": {
