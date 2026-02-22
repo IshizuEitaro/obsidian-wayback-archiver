@@ -20,8 +20,8 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@types/node": "^25.0.10",
-    "@typescript-eslint/eslint-plugin": "8.54.0",
-    "@typescript-eslint/parser": "8.54.0",
+    "@typescript-eslint/eslint-plugin": "8.56.0",
+    "@typescript-eslint/parser": "8.56.0",
     "@vitest/ui": "^4.0.18",
     "builtin-modules": "5.0.0",
     "esbuild": ">=0.25.0",
@@ -39,6 +39,7 @@
     "axios": "^1.13.5",
     "date-fns": "^4.1.0",
     "esbuild": "^0.27.2",
-    "obsidian": "^1.11.4"
+    "obsidian": "^1.11.4",
+    "minimatch": "^10.2.1"
   }
 }
