@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.2](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/1.1.2) (2026-02-22)
+
+[Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.1.1...1.1.2)
+
+## [1.1.1](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/1.1.1) (2026-02-17)
+
+[Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.1.0...1.1.1)
+
+**Merged pull requests:**
+
+- Bump axios from 1.13.3 to 1.13.5 [\#3](https://github.com/IshizuEitaro/obsidian-wayback-archiver/pull/3) ([dependabot[bot]](https://github.com/apps/dependabot))
+
 ## [1.1.0](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/1.1.0) (2026-01-26)
 
 [Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.0.5...1.1.0)
