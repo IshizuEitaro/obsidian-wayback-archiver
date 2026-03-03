@@ -40,7 +40,7 @@
     "date-fns": "^4.1.0",
     "esbuild": "^0.27.2",
     "obsidian": "^1.11.4",
-    "minimatch": "^10.2.1"
+    "minimatch": "^10.2.3"
   },
   "pnpm": {
   "overrides": {
