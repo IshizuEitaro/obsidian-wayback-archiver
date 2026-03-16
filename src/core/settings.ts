@@ -20,9 +20,9 @@ export interface WaybackArchiverSettings {
 }
 
 export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
-	dateFormat: 'yyyy-MM-dd',
-	archiveLinkText: '(Archived on {date})',
-	ignorePatterns: ['web.archive.org/'],
+	dateFormat: "yyyy-MM-dd",
+	archiveLinkText: "(Archived on {date})",
+	ignorePatterns: ["web.archive.org/"],
 	substitutionRules: [],
 	apiDelay: 2000, // Default 2 seconds delay
 	maxRetries: 3,
@@ -37,11 +37,11 @@ export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 	forceGet: false,
 	captureOutlinks: false,
 	//
-	autoClearFailedLogs: false
-}
+	autoClearFailedLogs: false,
+};
 
 export const getFreshnessThresholdMs = (settings: WaybackArchiverSettings) =>
-    settings.archiveFreshnessDays * 24 * 60 * 60 * 1000; // Convert days to ms
+	settings.archiveFreshnessDays * 24 * 60 * 60 * 1000; // Convert days to ms
 
 export interface FailedArchiveEntry {
 	url: string;

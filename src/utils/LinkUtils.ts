@@ -1,5 +1,5 @@
-import { format } from 'date-fns';
-import { getFreshnessThresholdMs, WaybackArchiverSettings } from '../core/settings';
+import { format } from "date-fns";
+import { getFreshnessThresholdMs, WaybackArchiverSettings } from "../core/settings";
 
 /**
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
@@ -14,31 +14,43 @@ import { getFreshnessThresholdMs, WaybackArchiverSettings } from '../core/settin
  * HTML A/Img Regex: <a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>
  * Raw URL Regex: ^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})
  * Combined Regex: !?\[[^\[\]]*\]\((https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})\)|<a\b(?=[^>]*href=["'])[^>]*href="((?:https?:\/\/|www\.)[^"]+)"[^>]*>.*?<\/a>|<img\b(?=[^>]*src=["'])[^>]*src="((?:https?:\/\/|www\.)[^"]+)"[^>]*>|^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})
- * Thank you https://regex101.com/ and zolrath for auto link title 
+ * Thank you https://regex101.com/ and zolrath for auto link title
  */
-const MARKDOWN_LINK = /!?\[(?:[^[\]]|\[[^[\]]*\])*\]\(((?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\))*\))+)\)/.source;
-const HTML_A_LINK = /<a\b(?=[^>]*href=["'])[^>]*href=(?:"((?:https?:\/\/|www\.)[^"]*)"|'((?:https?:\/\/|www\.)[^']*)')[^>]*>.*?<\/a>/.source;
-const HTML_IMG_LINK = /<img\b(?=[^>]*src=["'])[^>]*src=(?:"((?:https?:\/\/|www\.)[^"]*)"|'((?:https?:\/\/|www\.)[^']*)')[^>]*\/?>/.source;
-const PLAIN_URL = /((?:https?:\/\/|www\.)(?:[^\s()<>]+|\([^()]*\))+(?:\([^()]*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))/.source;
+const MARKDOWN_LINK =
+	/!?\[(?:[^[\]]|\[[^[\]]*\])*\]\(((?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\))*\))+)\)/
+		.source;
+const HTML_A_LINK =
+	/<a\b(?=[^>]*href=["'])[^>]*href=(?:"((?:https?:\/\/|www\.)[^"]*)"|'((?:https?:\/\/|www\.)[^']*)')[^>]*>.*?<\/a>/
+		.source;
+const HTML_IMG_LINK =
+	/<img\b(?=[^>]*src=["'])[^>]*src=(?:"((?:https?:\/\/|www\.)[^"]*)"|'((?:https?:\/\/|www\.)[^']*)')[^>]*\/?>/
+		.source;
+const PLAIN_URL =
+	/((?:https?:\/\/|www\.)(?:[^\s()<>]+|\([^()]*\))+(?:\([^()]*\)|[^\s`!()[\]{};:'".,<>?«»“”‘’]))/
+		.source;
 
-export const LINK_REGEX = new RegExp(`${MARKDOWN_LINK}|${HTML_A_LINK}|${HTML_IMG_LINK}|${PLAIN_URL}`, 'img');
+export const LINK_REGEX = new RegExp(
+	`${MARKDOWN_LINK}|${HTML_A_LINK}|${HTML_IMG_LINK}|${PLAIN_URL}`,
+	"img",
+);
 
-export const getUrlFromMatch = (match: RegExpMatchArray) => match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || '';
+export const getUrlFromMatch = (match: RegExpMatchArray) =>
+	match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || "";
 
 // Helper for matching URLs with balanced parentheses
 const URL_PATTERN = /(?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\))*\))+/.source;
 
 // Regex to match both markdown and HTML adjacent archive links
 export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
-    // Markdown: [text](https://web.archive.org/web/123456789/http...)
-    String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\))` +
-    // OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
-    String.raw`|(\s*\n*\s*<a [^>]*href=\\?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\\?"[^>]*>.*?<\/a>)`,
-    's'
+	// Markdown: [text](https://web.archive.org/web/123456789/http...)
+	String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\))` +
+		// OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
+		String.raw`|(\s*\n*\s*<a [^>]*href=[]?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}[]?"[^>]*>.*?<\/a>)`,
+	"s",
 );
 
 export function isFollowedByArchiveLink(textFollowingLink: string): boolean {
-    return ADJACENT_ARCHIVE_LINK_REGEX.test(textFollowingLink);
+	return ADJACENT_ARCHIVE_LINK_REGEX.test(textFollowingLink);
 }
 
 /**
@@ -51,40 +63,47 @@ export function isFollowedByArchiveLink(textFollowingLink: string): boolean {
  *          Returns false if the patterns array is null or empty.
  */
 export function matchesAnyPattern(text: string, patterns: string[] | null | undefined): boolean {
-    if (!patterns || patterns.length === 0) {
-        return false;
-    }
+	if (!patterns || patterns.length === 0) {
+		return false;
+	}
 
-    return patterns.some(pattern => {
-        if (!pattern || pattern.trim() === '') {
-            return false;
-        }
+	return patterns.some((pattern) => {
+		if (!pattern || pattern.trim() === "") {
+			return false;
+		}
 
-        try {
-            return new RegExp(pattern, 'iu').test(text);
-        } catch (e) {
-            console.warn(`Invalid regex pattern: "${pattern}". Falling back to string inclusion check.`);
-            return text.includes(pattern);
-        }
-    });
+		try {
+			return new RegExp(pattern, "iu").test(text);
+		} catch {
+			console.warn(
+				`Invalid regex pattern: "${pattern}". Falling back to string inclusion check.`,
+			);
+			return text.includes(pattern);
+		}
+	});
 }
 
-export function applySubstitutionRules(url: string, rules: { find: string; replace: string; regex?: boolean }[]): string {
-    let result = url;
-    for (const rule of rules) {
-        if (!rule.find) continue;
-        try {
-            if (rule.regex) {
-                const regex = new RegExp(rule.find, 'g');
-                result = result.replace(regex, rule.replace || '');
-            } else {
-                result = result.split(rule.find).join(rule.replace || '');
-            }
-        } catch (e: any) {
-            console.warn(`Error applying substitution rule: Find="${rule.find}", Regex=${rule.regex}. Error: ${e.message}`);
-        }
-    }
-    return result;
+export function applySubstitutionRules(
+	url: string,
+	rules: { find: string; replace: string; regex?: boolean }[],
+): string {
+	let result = url;
+	for (const rule of rules) {
+		if (!rule.find) continue;
+		try {
+			if (rule.regex) {
+				const regex = new RegExp(rule.find, "g");
+				result = result.replace(regex, rule.replace || "");
+			} else {
+				result = result.split(rule.find).join(rule.replace || "");
+			}
+		} catch (error) {
+			console.warn(
+				`Error applying substitution rule: Find="${rule.find}", Regex=${rule.regex}. Error: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+	return result;
 }
 
 /**
@@ -96,66 +115,70 @@ export function applySubstitutionRules(url: string, rules: { find: string; repla
  * @returns The formatted archive link string (e.g., " [archive](url)" or " <a href='url'>archive</a>").
  */
 export function createArchiveLink(
-    match: RegExpMatchArray,
-    archiveUrl: string,
-    settings: WaybackArchiverSettings
+	match: RegExpMatchArray,
+	archiveUrl: string,
+	settings: WaybackArchiverSettings,
 ): string {
-    const archiveDate = format(new Date(), settings.dateFormat);
+	const archiveDate = format(new Date(), settings.dateFormat);
 
-    const archiveLinkText = settings.archiveLinkText.replace('{date}', archiveDate);
+	const archiveLinkText = settings.archiveLinkText.replace("{date}", archiveDate);
 
-    const isHtmlLink = match[2] || match[3] || match[4] || match[5];
+	const isHtmlLink = match[2] || match[3] || match[4] || match[5];
 
-    if (isHtmlLink) {
-        const escapedArchiveUrl = archiveUrl.replace(/"/g, '&quot;');
-        return ` <a href="${escapedArchiveUrl}">${archiveLinkText}</a>`;
-    } else {
-        return ` [${archiveLinkText}](${archiveUrl})`;
-    }
+	if (isHtmlLink) {
+		const escapedArchiveUrl = archiveUrl.replace(/"/g, "&quot;");
+		return ` <a href="${escapedArchiveUrl}">${archiveLinkText}</a>`;
+	} else {
+		return ` [${archiveLinkText}](${archiveUrl})`;
+	}
 }
 
 /**
-     * Checks the freshness of an existing adjacent archive link based on its timestamp.
-     * Determines if the original link should be processed and if the adjacent link should be replaced.
-     * @param adjacentTimestamp The timestamp string (YYYYMMDDHHMMSS) extracted from the adjacent link, or undefined if none found.
-     * @returns An object { shouldProcess: boolean, replaceExisting: boolean }
-     */
-export const checkAdjacentLinkFreshness = (adjacentTimestamp: string | undefined, settings: WaybackArchiverSettings): { shouldProcess: boolean, replaceExisting: boolean } => {
-    let shouldProcess = true;
-    let replaceExisting = false;
+ * Checks the freshness of an existing adjacent archive link based on its timestamp.
+ * Determines if the original link should be processed and if the adjacent link should be replaced.
+ * @param adjacentTimestamp The timestamp string (YYYYMMDDHHMMSS) extracted from the adjacent link, or undefined if none found.
+ * @returns An object { shouldProcess: boolean, replaceExisting: boolean }
+ */
+export const checkAdjacentLinkFreshness = (
+	adjacentTimestamp: string | undefined,
+	settings: WaybackArchiverSettings,
+): { shouldProcess: boolean; replaceExisting: boolean } => {
+	let shouldProcess = true;
+	let replaceExisting = false;
 
-    if (adjacentTimestamp) {
-        try {
-            const adjacentDate = new Date(
-                parseInt(adjacentTimestamp.substring(0, 4)),     // Year
-                parseInt(adjacentTimestamp.substring(4, 6)) - 1, // Month (0-indexed)
-                parseInt(adjacentTimestamp.substring(6, 8)),     // Day
-                parseInt(adjacentTimestamp.substring(8, 10)),    // Hour
-                parseInt(adjacentTimestamp.substring(10, 12)),   // Minute
-                parseInt(adjacentTimestamp.substring(12, 14))    // Second
-            );
-            if (!isNaN(adjacentDate.getTime())) {
-                const isFresh = (Date.now() - adjacentDate.getTime()) < getFreshnessThresholdMs(settings);
-                if (isFresh) {
-                    // Adjacent link exists and is fresh, skip.
-                    shouldProcess = false;
-                } else {
-                    // Adjacent link exists but is older, mark for replacement.
-                    replaceExisting = true;
-                }
-            } else {
-                // Could not parse timestamp, assume it's old/invalid, mark for replacement
-                replaceExisting = true;
-            }
-        } catch (e) {
-            // Error parsing date, assume old/invalid
-            console.warn("Error parsing adjacent link timestamp:", adjacentTimestamp, e);
-            replaceExisting = true;
-        }
-    } else {
-        // Adjacent link exists but no timestamp captured (e.g., wildcard), treat as old, mark for replacement
-        replaceExisting = true;
-    }
+	if (adjacentTimestamp) {
+		try {
+			const adjacentDate = new Date(
+				parseInt(adjacentTimestamp.substring(0, 4)), // Year
+				parseInt(adjacentTimestamp.substring(4, 6)) - 1, // Month (0-indexed)
+				parseInt(adjacentTimestamp.substring(6, 8)), // Day
+				parseInt(adjacentTimestamp.substring(8, 10)), // Hour
+				parseInt(adjacentTimestamp.substring(10, 12)), // Minute
+				parseInt(adjacentTimestamp.substring(12, 14)), // Second
+			);
+			if (!isNaN(adjacentDate.getTime())) {
+				const isFresh =
+					Date.now() - adjacentDate.getTime() < getFreshnessThresholdMs(settings);
+				if (isFresh) {
+					// Adjacent link exists and is fresh, skip.
+					shouldProcess = false;
+				} else {
+					// Adjacent link exists but is older, mark for replacement.
+					replaceExisting = true;
+				}
+			} else {
+				// Could not parse timestamp, assume it's old/invalid, mark for replacement
+				replaceExisting = true;
+			}
+		} catch (error) {
+			// Error parsing date, assume old/invalid
+			console.warn("Error parsing adjacent link timestamp:", adjacentTimestamp, error);
+			replaceExisting = true;
+		}
+	} else {
+		// Adjacent link exists but no timestamp captured (e.g., wildcard), treat as old, mark for replacement
+		replaceExisting = true;
+	}
 
-    return { shouldProcess, replaceExisting };
-}
+	return { shouldProcess, replaceExisting };
+};
