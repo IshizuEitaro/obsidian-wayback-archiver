@@ -1,42 +1,41 @@
 /* modals */
-  .wa-inputEl {
-    width: 100%;
-  }
+.wa-inputEl {
+	width: 100%;
+}
 
 /* SettingsTab */
-  .wa-apiDesc {
-    margin-bottom: 10px;
-  }
+.wa-apiDesc {
+	margin-bottom: 10px;
+}
 
+.wa-findInput {
+	flex-grow: 1;
+	margin-right: 5px;
+}
 
-  .wa-findInput {
-    flex-grow: 1;
-    margin-right: 5px;
-  }
+.wa-profileButtonContainer {
+	margin-bottom: 20px;
+}
 
-  .wa-profileButtonContainer {
-    margin-bottom: 20px;
-  }
+.wa-profileButton {
+	margin-right: 5px;
+}
 
-  .wa-profileButton {
-    margin-right: 5px;
-  }
+.wa-regexToggleLabel {
+	margin-right: 5px;
+}
 
-  .wa-regexToggleLabel {
-    margin-right: 5px;
-  }
+.wa-replaceInput {
+	flex-grow: 1;
+	margin-right: 5px;
+}
 
-  .wa-replaceInput {
-    flex-grow: 1;
-    margin-right: 5px;
-  }
+.wa-ruleEl {
+	align-items: center;
+	display: flex;
+	margin-bottom: 10px;
+}
 
-  .wa-ruleEl {
-    align-items: center;
-    display: flex;
-    margin-bottom: 10px;
-  }
-
-  .wa-spnDesc {
-    margin-bottom: 10px;
-  }
+.wa-spnDesc {
+	margin-bottom: 10px;
+}

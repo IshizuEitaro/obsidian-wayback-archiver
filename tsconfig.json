@@ -1,28 +1,21 @@
 {
-  "compilerOptions": {
-    "baseUrl": ".",
-    "inlineSourceMap": true,
-    "inlineSources": true,
-    "module": "ESNext",
-    "target": "ES2022",
-    "allowJs": true,
-    "noImplicitAny": true,
-    "moduleResolution": "node",
-    "importHelpers": true,
-    "isolatedModules": true,
-    "strictNullChecks": true,
-    "lib": [
-      "DOM",
-      "ES2022",
-      "DOM.Iterable"
-    ],
-    "skipLibCheck": true, // Skip type checking of declaration files
-    "esModuleInterop": true, // Enables compatibility with CommonJS modules
-    "allowSyntheticDefaultImports": true, // Allow default imports from modules with no default export
-    "forceConsistentCasingInFileNames": true, // Disallow inconsistently-cased references to the same file.
-    "strict": true // Enable all strict type-checking options
-  },
-  "include": [
-    "**/*.ts"
-  ]
+	"compilerOptions": {
+		"inlineSourceMap": true,
+		"inlineSources": true,
+		"module": "ESNext",
+		"target": "ES2022",
+		"allowJs": true,
+		"noImplicitAny": true,
+		"moduleResolution": "node",
+		"importHelpers": true,
+		"isolatedModules": true,
+		"strictNullChecks": true,
+		"lib": ["DOM", "ES2022", "DOM.Iterable"],
+		"skipLibCheck": true, // Skip type checking of declaration files
+		"esModuleInterop": true, // Enables compatibility with CommonJS modules
+		"allowSyntheticDefaultImports": true, // Allow default imports from modules with no default export
+		"forceConsistentCasingInFileNames": true, // Disallow inconsistently-cased references to the same file.
+		"strict": true // Enable all strict type-checking options
+	},
+	"include": ["**/*.ts"]
 }
