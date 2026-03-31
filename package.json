@@ -37,8 +37,8 @@
 		"vitest": "4.1.2"
 	},
 	"engines": {
-		"node": ">=22 <26",
-		"pnpm": "10.32.1"
+		"node": ">=22",
+		"pnpm": ">=10.32.1"
 	},
 	"pnpm": {
 		"overrides": {
