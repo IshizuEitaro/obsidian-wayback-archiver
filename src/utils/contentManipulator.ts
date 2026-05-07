@@ -1,6 +1,42 @@
 import { LINK_REGEX, getUrlFromMatch, createArchiveLink } from "./LinkUtils";
 import { WaybackArchiverSettings } from "../core/settings";
 
+export interface ContainedLinkMatch {
+	match: RegExpMatchArray;
+	url: string;
+	startIndex: number;
+	endIndex: number;
+}
+
+export function selectFullyContainedLinkMatches(
+	content: string,
+	selectionStart: number,
+	selectionEnd: number,
+): ContainedLinkMatch[] {
+	if (selectionEnd <= selectionStart) {
+		return [];
+	}
+
+	return Array.from(content.matchAll(LINK_REGEX))
+		.filter((match) => {
+			const startIndex = match.index;
+			if (startIndex === undefined) {
+				return false;
+			}
+			const endIndex = startIndex + match[0].length;
+			return startIndex >= selectionStart && endIndex <= selectionEnd;
+		})
+		.map((match) => {
+			const startIndex = match.index ?? 0;
+			return {
+				match,
+				url: getUrlFromMatch(match),
+				startIndex,
+				endIndex: startIndex + match[0].length,
+			};
+		});
+}
+
 /**
  * Resolves the correct insertion index by re-scanning the latest content
  * for the original link that matches the provided URL.

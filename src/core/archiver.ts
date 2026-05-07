@@ -18,7 +18,7 @@ import {
 	WaybackArchiverSettings,
 } from "./settings";
 import WaybackArchiverPlugin from "../main";
-import { findLatestLinkIndex } from "../utils/contentManipulator";
+import { findLatestLinkIndex, selectFullyContainedLinkMatches } from "../utils/contentManipulator";
 
 export type ArchiveMode = "selection" | "file" | "vault";
 
@@ -260,6 +260,14 @@ export class ArchiverService {
 				);
 				continue;
 			}
+			if (
+				isForce &&
+				(archiveOutcome.status === "archived_limited" ||
+					archiveOutcome.status === "cache_hit_limited")
+			) {
+				counters.skippedCount++;
+				continue;
+			}
 
 			// Now apply the edit atomically using vault.process
 			try {
@@ -290,6 +298,13 @@ export class ArchiverService {
 						insertionPosIndex + 300,
 					);
 					const isAdjacent = isFollowedByArchiveLink(textAfterLink);
+					const isLimitedOutcome =
+						archiveOutcome.status === "archived_limited" ||
+						archiveOutcome.status === "cache_hit_limited";
+
+					if (isAdjacent && isLimitedOutcome && !isForce) {
+						return latestContent;
+					}
 
 					// Check freshness for existing adjacent links
 					if (isAdjacent && !isForce) {
@@ -331,7 +346,10 @@ export class ArchiverService {
 					// Insert new archive link
 					const nextChar = latestContent.charAt(insertionPosIndex);
 					const needsSpace = !(nextChar === "" || nextChar === "\n" || nextChar === " ");
-					const insertionText = needsSpace ? " " + newArchiveLink : newArchiveLink;
+					const insertionText =
+						needsSpace && !/^\s/.test(newArchiveLink)
+							? " " + newArchiveLink
+							: newArchiveLink;
 					return (
 						latestContent.slice(0, insertionPosIndex) +
 						insertionText +
@@ -560,12 +578,17 @@ export class ArchiverService {
 
 		if (isSelection) {
 			const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
+			const selectionEndOffset = editor.posToOffset(editor.getCursor("to"));
 			const fullDocContent = editor.getValue();
-			const allMatches = Array.from(selectedText.matchAll(LINK_REGEX));
-
-			const filterResult = this.filterLinksForArchiving(allMatches, selectedText, false, {
-				isSelection: true,
+			const selectedLinks = selectFullyContainedLinkMatches(
+				fullDocContent,
 				selectionStartOffset,
+				selectionEndOffset,
+			);
+			const allMatches = selectedLinks.map((link) => link.match);
+
+			const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, false, {
+				isSelection: true,
 				fullDocContent,
 			});
 
@@ -579,10 +602,8 @@ export class ArchiverService {
 			// For Selection mode, we process each link and apply it to the editor immediately.
 			for (const match of filterResult.linksToProcess) {
 				const originalUrl = getUrlFromMatch(match);
-				const originalMatchIndexInSelection = match.index;
-				if (originalMatchIndexInSelection === undefined) continue;
-
-				const absoluteOriginalIndex = selectionStartOffset + originalMatchIndexInSelection;
+				const absoluteOriginalIndex = match.index;
+				if (absoluteOriginalIndex === undefined) continue;
 
 				// API call
 				const archiveOutcome = await this.processSingleUrlArchival(originalUrl, false);
@@ -596,7 +617,6 @@ export class ArchiverService {
 					);
 					continue;
 				}
-
 				// Apply edit surgically to editor
 				const applied = this.applyLinkEditToEditor(
 					editor,
@@ -653,12 +673,17 @@ export class ArchiverService {
 
 		if (isSelection) {
 			const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
+			const selectionEndOffset = editor.posToOffset(editor.getCursor("to"));
 			const fullDocContent = editor.getValue();
-			const allMatches = Array.from(selectedText.matchAll(LINK_REGEX));
-
-			const filterResult = this.filterLinksForArchiving(allMatches, selectedText, true, {
-				isSelection: true,
+			const selectedLinks = selectFullyContainedLinkMatches(
+				fullDocContent,
 				selectionStartOffset,
+				selectionEndOffset,
+			);
+			const allMatches = selectedLinks.map((link) => link.match);
+
+			const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, true, {
+				isSelection: true,
 				fullDocContent,
 			});
 
@@ -673,10 +698,8 @@ export class ArchiverService {
 
 			for (const match of filterResult.linksToProcess) {
 				const originalUrl = getUrlFromMatch(match);
-				const originalMatchIndexInSelection = match.index;
-				if (originalMatchIndexInSelection === undefined) continue;
-
-				const absoluteOriginalIndex = selectionStartOffset + originalMatchIndexInSelection;
+				const absoluteOriginalIndex = match.index;
+				if (absoluteOriginalIndex === undefined) continue;
 
 				// API call
 				const archiveOutcome = await this.processSingleUrlArchival(originalUrl, true);
@@ -688,6 +711,13 @@ export class ArchiverService {
 						`Archiving failed (${archiveOutcome.error || "Unknown error"})`,
 						0,
 					);
+					continue;
+				}
+				if (
+					archiveOutcome.status === "archived_limited" ||
+					archiveOutcome.status === "cache_hit_limited"
+				) {
+					counters.skippedCount++;
 					continue;
 				}
 
@@ -767,7 +797,8 @@ export class ArchiverService {
 		// Standard insertion
 		const nextChar = latestContent.charAt(insertionPosIndex);
 		const needsSpace = !(nextChar === "" || nextChar === "\n" || nextChar === " ");
-		const insertionText = needsSpace ? " " + newArchiveLink : newArchiveLink;
+		const insertionText =
+			needsSpace && !/^\s/.test(newArchiveLink) ? " " + newArchiveLink : newArchiveLink;
 		const pos = editor.offsetToPos(insertionPosIndex);
 		editor.replaceRange(insertionText, pos);
 		return true;
