@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { findLatestLinkIndex } from "./contentManipulator";
+import { describe, it, expect, vi } from "vitest";
+import { DEFAULT_SETTINGS } from "../core/settings";
+import {
+	applyLinkModification,
+	findLatestLinkIndex,
+	selectFullyContainedLinkMatches,
+} from "./contentManipulator";
 
 describe("Content Manipulator - Match-at-Insertion", () => {
 	it("should find the link index accurately in original content", () => {
@@ -46,7 +51,74 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 	});
 
 	it("should correctly insert an archive link after original", () => {
-		// Implementation logic will handle spaces and link format locally to be robust
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const result = applyLinkModification(
+			"Read [Link](https://example.com) now.",
+			"https://example.com",
+			"https://web.archive.org/web/20260417000000/https://example.com",
+			5,
+			DEFAULT_SETTINGS,
+			{ isReplacement: false },
+		);
+
+		expect(result).toEqual({
+			content:
+				"Read [Link](https://example.com) [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com) now.",
+			modified: true,
+			insertedLength:
+				" [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com)"
+					.length,
+			newIndex: 5,
+		});
+
+		vi.useRealTimers();
+	});
+
+	it("should replace an adjacent archive link after the original", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const content =
+			"Read [Link](https://example.com) [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com) now.";
+		const oldArchiveStart = content.indexOf(" [(Archived on 2026-04-10)]");
+		const oldArchiveEnd = content.indexOf(" now.");
+
+		const result = applyLinkModification(
+			content,
+			"https://example.com",
+			"https://web.archive.org/web/20260417000000/https://example.com",
+			5,
+			DEFAULT_SETTINGS,
+			{ isReplacement: true, oldLinkEndIndex: oldArchiveEnd },
+		);
+
+		expect(oldArchiveStart).toBe(32);
+		expect(result.content).toBe(
+			"Read [Link](https://example.com) [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com) now.",
+		);
+		expect(result.modified).toBe(true);
+
+		vi.useRealTimers();
+	});
+
+	it("should leave content unchanged when the original link disappeared", () => {
+		const result = applyLinkModification(
+			"Read this note instead.",
+			"https://example.com",
+			"https://web.archive.org/web/20260417000000/https://example.com",
+			5,
+			DEFAULT_SETTINGS,
+			{ isReplacement: false },
+		);
+
+		expect(result).toEqual({
+			content: "Read this note instead.",
+			modified: false,
+			insertedLength: 0,
+			newIndex: 5,
+		});
 	});
 
 	describe("Index Shift Resilience (User-Edit Simulation)", () => {
@@ -84,6 +156,46 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 
 			const index = findLatestLinkIndex(editedContent, url, 6);
 			expect(index).toBe(13);
+		});
+	});
+
+	describe("Partial Selection", () => {
+		it("only returns links fully contained within the selection", () => {
+			const content =
+				"Before [first](https://first.example) middle https://second.example/path and [third](https://third.example) after";
+			const fullySelectedStart = content.indexOf("[first]");
+			const fullySelectedEnd = fullySelectedStart + "[first](https://first.example)".length;
+			const partialUrlStart = content.indexOf("https://second.example/path") + 8;
+			const partialUrlEnd = content.indexOf("https://second.example/path") + 22;
+			const spanningStart = content.indexOf("[first]");
+			const spanningEnd =
+				content.indexOf("[third]") + "[third](https://third.example)".length;
+
+			const fullySelected = selectFullyContainedLinkMatches(
+				content,
+				fullySelectedStart,
+				fullySelectedEnd,
+			);
+			const partialSelection = selectFullyContainedLinkMatches(
+				content,
+				partialUrlStart,
+				partialUrlEnd,
+			);
+			const emptySelection = selectFullyContainedLinkMatches(content, 10, 10);
+			const spanningSelection = selectFullyContainedLinkMatches(
+				content,
+				spanningStart,
+				spanningEnd,
+			);
+
+			expect(fullySelected.map((match) => match.url)).toEqual(["https://first.example"]);
+			expect(partialSelection).toEqual([]);
+			expect(emptySelection).toEqual([]);
+			expect(spanningSelection.map((match) => match.url)).toEqual([
+				"https://first.example",
+				"https://second.example/path",
+				"https://third.example",
+			]);
 		});
 	});
 });
