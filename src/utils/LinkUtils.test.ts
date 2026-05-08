@@ -1,13 +1,20 @@
 import { describe, it, expect, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../core/settings";
 import {
+	ADJACENT_ARCHIVE_LINK_REGEX,
 	applySubstitutionRules,
 	checkAdjacentLinkFreshness,
 	createArchiveLink,
+	extractArchiveTimestamp,
 	LINK_REGEX,
 	getUrlFromMatch,
 	isFollowedByArchiveLink,
 	matchesAnyPattern,
+	normalizeArchiveUrl,
+	decodeHtmlEntities,
+	normalizeUrlForComparison,
+	isSnapshotForTargetUrl,
+	extractProviderSnapshotFromText,
 } from "./LinkUtils";
 
 describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
@@ -90,6 +97,19 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 				' <a href="https://web.archive.org/web/20260125095621/https://www.rhs.org.uk/plants/68664/i-viola-i-belmont-blue-(c)/details">Archive</a>';
 			expect(isFollowedByArchiveLink(nextText)).toBe(true);
 		});
+
+		it("detects archive.today and Megalodon adjacent archive links and exposes timestamps", () => {
+			const archiveToday =
+				" [(Archived)](https://archive.md/20260505164448/https://test-target.com/)";
+			const megalodon =
+				" [(Archived)](https://megalodon.jp/2026-0507-0001-35/https://test-target.com:443/)";
+
+			expect(isFollowedByArchiveLink(archiveToday)).toBe(true);
+			expect(archiveToday.match(ADJACENT_ARCHIVE_LINK_REGEX)?.[1]).toContain("archive.md");
+			expect(extractArchiveTimestamp(archiveToday)).toBe("20260505164448");
+			expect(isFollowedByArchiveLink(megalodon)).toBe(true);
+			expect(extractArchiveTimestamp(megalodon)).toBe("20260507000135");
+		});
 	});
 
 	describe("Non-HTTP links", () => {
@@ -102,12 +122,12 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 
 	describe("Pattern Matching", () => {
 		it("matches regex patterns and treats empty pattern lists as no match", () => {
-			expect(matchesAnyPattern("https://docs.example.com/page", ["docs\\.example\\.com"])).toBe(
-				true,
-			);
-			expect(matchesAnyPattern("https://api.example.com/page", ["docs\\.example\\.com"])).toBe(
-				false,
-			);
+			expect(
+				matchesAnyPattern("https://docs.example.com/page", ["docs\\.example\\.com"]),
+			).toBe(true);
+			expect(
+				matchesAnyPattern("https://api.example.com/page", ["docs\\.example\\.com"]),
+			).toBe(false);
 			expect(matchesAnyPattern("https://api.example.com/page", [])).toBe(false);
 			expect(matchesAnyPattern("https://api.example.com/page", undefined)).toBe(false);
 		});
@@ -164,14 +184,64 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 				archiveLinkText: "Archived {date}",
 			};
 
-			expect(createArchiveLink(markdownMatch, "https://web.archive.org/web/1/x", settings)).toBe(
-				" [Archived 2026/04/17](https://web.archive.org/web/1/x)",
+			expect(
+				createArchiveLink(markdownMatch, "https://web.archive.org/web/1/x", settings),
+			).toBe(" [Archived 2026/04/17](https://web.archive.org/web/1/x)");
+			expect(
+				createArchiveLink(htmlMatch, 'https://web.archive.org/web/1/a"b', settings),
+			).toBe(' <a href="https://web.archive.org/web/1/a&quot;b">Archived 2026/04/17</a>');
+
+			const settingsWithProvider = {
+				...DEFAULT_SETTINGS,
+				dateFormat: "yyyy/MM/dd",
+				archiveLinkText: "Archived on {date} via {provider}",
+			};
+			expect(
+				createArchiveLink(
+					markdownMatch,
+					"https://web.archive.org/web/1/x",
+					settingsWithProvider,
+				),
+			).toBe(
+				" [Archived on 2026/04/17 via Wayback Machine](https://web.archive.org/web/1/x)",
 			);
-			expect(createArchiveLink(htmlMatch, 'https://web.archive.org/web/1/a"b', settings)).toBe(
-				' <a href="https://web.archive.org/web/1/a&quot;b">Archived 2026/04/17</a>',
+			expect(
+				createArchiveLink(
+					markdownMatch,
+					"https://archive.is/20260505164448/https://test-target.com/",
+					settingsWithProvider,
+				),
+			).toBe(
+				" [Archived on 2026/04/17 via archive.today](https://archive.md/20260505164448/https://test-target.com/)",
+			);
+			expect(
+				createArchiveLink(
+					markdownMatch,
+					"https://megalodon.jp/2026-0507-0001-35/https://test-target.com/",
+					settingsWithProvider,
+				),
+			).toBe(
+				" [Archived on 2026/04/17 via Megalodon](https://megalodon.jp/2026-0507-0001-35/https://test-target.com/)",
 			);
 
 			vi.useRealTimers();
+		});
+	});
+
+	describe("normalizeArchiveUrl", () => {
+		it("normalizes any archive.today mirror domain to archive.md", () => {
+			expect(normalizeArchiveUrl("https://archive.is/12345/https://example.com")).toBe(
+				"https://archive.md/12345/https://example.com",
+			);
+			expect(normalizeArchiveUrl("https://archive.today/12345/https://example.com")).toBe(
+				"https://archive.md/12345/https://example.com",
+			);
+			expect(normalizeArchiveUrl("https://archive.ph/12345/https://example.com")).toBe(
+				"https://archive.md/12345/https://example.com",
+			);
+			expect(
+				normalizeArchiveUrl("https://web.archive.org/web/12345/https://example.com"),
+			).toBe("https://web.archive.org/web/12345/https://example.com");
 		});
 	});
 
@@ -200,6 +270,75 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 			).toEqual({ shouldProcess: true, replaceExisting: true });
 
 			vi.useRealTimers();
+		});
+	});
+
+	describe("Snapshot Parsing & Verification Pure Helpers", () => {
+		describe("decodeHtmlEntities", () => {
+			it("decodes standard entities correctly", () => {
+				expect(decodeHtmlEntities("a&amp;b&lt;c&gt;d&quot;e&#x27;f&#x2F;g")).toBe(
+					"a&b<c>d\"e'f/g",
+				);
+			});
+		});
+
+		describe("normalizeUrlForComparison", () => {
+			it("normalizes scheme, subdomains, trailing slashes and port numbers", () => {
+				expect(normalizeUrlForComparison("HTTP://www.EXAMPLE.com/path/?a=1")).toBe(
+					"example.com/path/?a=1",
+				);
+				expect(normalizeUrlForComparison("https://example.com:443")).toBe("example.com");
+			});
+		});
+
+		describe("isSnapshotForTargetUrl", () => {
+			it("validates archive.today snapshots against the correct target URL", () => {
+				expect(
+					isSnapshotForTargetUrl(
+						"archiveToday",
+						"https://archive.md/20260509000000/https://example.com/foo",
+						"https://example.com/foo",
+					),
+				).toBe(true);
+				expect(
+					isSnapshotForTargetUrl(
+						"archiveToday",
+						"https://archive.md/20260509000000/https://unrelated.com",
+						"https://example.com/foo",
+					),
+				).toBe(false);
+			});
+
+			it("validates megalodon snapshots against the correct target URL", () => {
+				expect(
+					isSnapshotForTargetUrl(
+						"megalodon",
+						"https://megalodon.jp/2026-0508-1212-34/https://foo.com",
+						"https://foo.com",
+					),
+				).toBe(true);
+				expect(
+					isSnapshotForTargetUrl(
+						"megalodon",
+						"https://megalodon.jp/2026-0508-1212-34/https://unrelated.com",
+						"https://foo.com",
+					),
+				).toBe(false);
+			});
+		});
+
+		describe("extractProviderSnapshotFromText", () => {
+			it("extracts exact and valid archive.today and megalodon snapshots", () => {
+				const text =
+					'Here is <a href="https://archive.md/20260509000000/https://example.com">snapshot</a>';
+				expect(
+					extractProviderSnapshotFromText("archiveToday", text, "https://example.com"),
+				).toBe("https://archive.md/20260509000000/https://example.com");
+
+				expect(
+					extractProviderSnapshotFromText("archiveToday", text, "https://unrelated.com"),
+				).toBeNull();
+			});
 		});
 	});
 });
