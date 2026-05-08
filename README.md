@@ -181,7 +181,10 @@ These settings apply only to the **currently active profile**.
 #### General
 
 - **Date Format:** Define the format for the `{date}` placeholder in the archive link text. Uses `date-fns` format tokens (e.g., `yyyy-MM-dd`, `dd MMM yyyy`). Default: `yyyy-MM-dd`.
-- **Archive Link Text:** The template for the inserted archive link. Use `{date}` where you want the formatted date to appear. Default: `(Archived on {date})`.
+- **Archive Link Text:** The template for the inserted archive link. Placeholders available:
+    - `{date}`: replaced with the formatted archive date.
+    - `{provider}`: replaced with the name of the archive provider (e.g., `Wayback Machine`, `archive.today`, `Megalodon`).
+    - **Default:** `(Archived on {date})`.
 
 #### Filtering Rules
 
