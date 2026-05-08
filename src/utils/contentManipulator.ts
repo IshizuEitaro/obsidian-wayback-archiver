@@ -1,4 +1,9 @@
-import { LINK_REGEX, getUrlFromMatch, createArchiveLink } from "./LinkUtils";
+import {
+	ADJACENT_ARCHIVE_LINK_REGEX,
+	LINK_REGEX,
+	getUrlFromMatch,
+	createArchiveLink,
+} from "./LinkUtils";
 import { WaybackArchiverSettings } from "../core/settings";
 
 export interface ContainedLinkMatch {
@@ -59,7 +64,7 @@ export function findLatestLinkIndex(
 
 	// Find the match closest to the original approximate index
 	let bestMatch = eligibleMatches[0];
-	let minDistance = Math.abs((bestMatch.index || 0) - approximateIndex);
+	let minDistance = Math.abs((bestMatch.index ?? 0) - approximateIndex);
 
 	for (let i = 1; i < eligibleMatches.length; i++) {
 		const currentMatch = eligibleMatches[i];
@@ -79,7 +84,7 @@ export function findLatestLinkIndex(
 export interface ContentModification {
 	content: string;
 	modified: boolean;
-	insertedLength: number;
+	deltaLength: number;
 	newIndex: number;
 }
 
@@ -101,7 +106,7 @@ export function applyLinkModification(
 		return {
 			content,
 			modified: false,
-			insertedLength: 0,
+			deltaLength: 0,
 			newIndex: approximateIndex,
 		};
 	}
@@ -114,35 +119,41 @@ export function applyLinkModification(
 		return {
 			content,
 			modified: false,
-			insertedLength: 0,
+			deltaLength: 0,
 			newIndex: latestIndex,
 		};
 	}
 
 	const archiveLinkText = createArchiveLink(currentMatch, archiveUrl, settings);
+	const insertionPoint = latestIndex + currentMatch[0].length;
 
 	let newContent: string;
-	let insertedLength: number;
+	let deltaLength: number;
 	const newIndex = latestIndex;
 
-	if (options.isReplacement && options.oldLinkEndIndex !== undefined) {
-		// Find existing archive link if possible
-		// Note: Replacing is tricky because the user might have deleted the adjacent link.
-		const before = content.slice(0, latestIndex + currentMatch[0].length);
-
-		newContent = before + archiveLinkText + content.slice(options.oldLinkEndIndex);
-		insertedLength = archiveLinkText.length;
+	if (options.isReplacement) {
+		const textAfterLink = content.slice(insertionPoint, insertionPoint + 300);
+		const adjacentArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+		if (adjacentArchiveMatch) {
+			const replaceEnd = insertionPoint + adjacentArchiveMatch[0].length;
+			newContent =
+				content.slice(0, insertionPoint) + archiveLinkText + content.slice(replaceEnd);
+			deltaLength = archiveLinkText.length - adjacentArchiveMatch[0].length;
+		} else {
+			newContent =
+				content.slice(0, insertionPoint) + archiveLinkText + content.slice(insertionPoint);
+			deltaLength = archiveLinkText.length;
+		}
 	} else {
-		const insertionPoint = latestIndex + currentMatch[0].length;
 		newContent =
 			content.slice(0, insertionPoint) + archiveLinkText + content.slice(insertionPoint);
-		insertedLength = archiveLinkText.length;
+		deltaLength = archiveLinkText.length;
 	}
 
 	return {
 		content: newContent,
 		modified: true,
-		insertedLength,
+		deltaLength,
 		newIndex,
 	};
 }

@@ -67,7 +67,7 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 			content:
 				"Read [Link](https://example.com) [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com) now.",
 			modified: true,
-			insertedLength:
+			deltaLength:
 				" [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com)"
 					.length,
 			newIndex: 5,
@@ -99,6 +99,41 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 			"Read [Link](https://example.com) [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com) now.",
 		);
 		expect(result.modified).toBe(true);
+		expect(result.deltaLength).toBe(
+			" [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com)"
+				.length -
+				" [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com)"
+					.length,
+		);
+
+		vi.useRealTimers();
+	});
+
+	it("should replace the adjacent archive link found in latest content instead of using stale oldLinkEndIndex", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const originalContent =
+			"Read [Link](https://example.com) [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com) now.";
+		const staleOldArchiveEnd = originalContent.indexOf(" now.");
+		const latestContent =
+			"Intro added. Read [Link](https://example.com) [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com) now.";
+
+		const result = applyLinkModification(
+			latestContent,
+			"https://example.com",
+			"https://web.archive.org/web/20260417000000/https://example.com",
+			5,
+			DEFAULT_SETTINGS,
+			{ isReplacement: true, oldLinkEndIndex: staleOldArchiveEnd },
+		);
+
+		expect(result.content).toBe(
+			"Intro added. Read [Link](https://example.com) [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com) now.",
+		);
+		expect(result.content).toContain("Intro added.");
+		expect(result.content).toContain(" now.");
+		expect(result.modified).toBe(true);
 
 		vi.useRealTimers();
 	});
@@ -116,7 +151,7 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		expect(result).toEqual({
 			content: "Read this note instead.",
 			modified: false,
-			insertedLength: 0,
+			deltaLength: 0,
 			newIndex: 5,
 		});
 	});
