@@ -1,7 +1,7 @@
 import { App, ButtonComponent, PluginSettingTab, Notice, Setting } from "obsidian";
 import { ConfirmationModal, ProfileNameModal } from "./modals";
 import { WaybackArchiverPlugin } from "../main";
-import { DEFAULT_SETTINGS } from "../core/settings";
+import { ArchivePolicyRule, ArchiveServiceId, DEFAULT_SETTINGS } from "../core/settings";
 
 class WaybackArchiverSettingTab extends PluginSettingTab {
 	plugin: WaybackArchiverPlugin;
@@ -114,7 +114,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Archive link text")
-			.setDesc("Text used for the inserted archive link. Use {date} as a placeholder.")
+			.setDesc(
+				"Text used for the inserted archive link. Use {date} and/or {provider} as placeholders.",
+			)
 			.addText((text) =>
 				text
 					.setPlaceholder("(Archived on {date})")
@@ -286,6 +288,164 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					});
 			});
 
+		new Setting(containerEl).setName("Fallback archive providers").setHeading();
+
+		new Setting(containerEl)
+			.setName("Use archive.today fallback")
+			.setDesc("Resolve existing archive.today snapshots when Wayback cannot save a URL.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(activeSettings.defaultArchiveProviders.includes("archiveToday"))
+					.onChange(async (value) => {
+						activeSettings.defaultArchiveProviders = value
+							? Array.from(
+									new Set([
+										...activeSettings.defaultArchiveProviders,
+										"archiveToday" as const,
+									]),
+								)
+							: activeSettings.defaultArchiveProviders.filter(
+									(p) => p !== "archiveToday",
+								);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Use Web Gyotaku fallback")
+			.setDesc(
+				"Resolve existing Megalodon/Web Gyotaku snapshots when earlier providers fail.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(activeSettings.defaultArchiveProviders.includes("megalodon"))
+					.onChange(async (value) => {
+						activeSettings.defaultArchiveProviders = value
+							? Array.from(
+									new Set([
+										...activeSettings.defaultArchiveProviders,
+										"megalodon" as const,
+									]),
+								)
+							: activeSettings.defaultArchiveProviders.filter(
+									(p) => p !== "megalodon",
+								);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Background archive.today save")
+			.setDesc(
+				"Experimental. When Wayback fails, submit archive.today by HTTP before resolving fallback snapshots. Disabled by default.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(activeSettings.archiveTodayExperimentalSubmit)
+					.onChange(async (value) => {
+						activeSettings.archiveTodayExperimentalSubmit = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		containerEl.createEl("p", {
+			text: "The pending queue is capped internally to avoid accidental excessive submissions.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("archive.today submit delay between requests (ms)")
+			.setDesc(
+				"Delay between consecutive submit requests to be gentle on archive.today. Range: 1,000ms-10,000ms.",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(1000, 10000, 500)
+					.setValue(activeSettings.archiveTodaySubmitDelayMs)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						activeSettings.archiveTodaySubmitDelayMs = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("archive.today pending poll interval (ms)")
+			.setDesc(
+				"How often the plugin checks pending archive.today snapshots. Range: 15,000ms-300,000ms.",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(15000, 300000, 5000)
+					.setValue(activeSettings.archiveTodayPendingPollIntervalMs)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						activeSettings.archiveTodayPendingPollIntervalMs = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("archive.today pending poll batch size")
+			.setDesc("How many pending snapshots to check per poll cycle. Range: 1-10.")
+			.addSlider((slider) =>
+				slider
+					.setLimits(1, 10, 1)
+					.setValue(activeSettings.archiveTodayPendingPollBatchSize)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						activeSettings.archiveTodayPendingPollBatchSize = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("archive.today pending max wait (ms)")
+			.setDesc(
+				"Max time a pending snapshot is kept before moving to failed queue. Range: 60,000ms-1,200,000ms.",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(60000, 1200000, 60000)
+					.setValue(activeSettings.archiveTodayPendingMaxWaitMs)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						activeSettings.archiveTodayPendingMaxWaitMs = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Manual save batch size")
+			.setDesc("How many failed URLs to open per manual fallback command. Clamped to 1-5.")
+			.addSlider((slider) =>
+				slider
+					.setLimits(1, 5, 1)
+					.setValue(activeSettings.manualSaveBatchSize)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						activeSettings.manualSaveBatchSize = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Per-URL archive policies")
+			.setDesc(
+				"One rule per line: pattern => providers. Providers: wayback, archiveToday, archiveToday:auto, megalodon. Example: ^https://x\\.com/ => archiveToday:auto",
+			)
+			.addTextArea((text) =>
+				text
+					.setPlaceholder(
+						"^https://x\\.com/ => archiveToday:auto\nexample\\.com => wayback, archiveToday",
+					)
+					.setValue(this.serializeArchivePolicies(activeSettings.archivePolicies))
+					.onChange(async (value) => {
+						activeSettings.archivePolicies = this.parseArchivePolicies(value);
+						await this.plugin.saveSettings();
+					}),
+			);
+
 		new Setting(containerEl).setName("SPN API v2 options").setHeading();
 
 		const spnDesc = containerEl.createEl("p", { cls: "wa-spnDesc" });
@@ -416,6 +576,55 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				this.renderSubstitutionRules(containerEl);
 			});
 		});
+	}
+
+	private serializeArchivePolicies(rules: ArchivePolicyRule[]): string {
+		return (rules ?? [])
+			.map((rule) => {
+				const providers = rule.providers.map((provider) =>
+					provider === "archiveToday" && rule.archiveTodayExperimentalSubmit
+						? "archiveToday:auto"
+						: provider,
+				);
+				return `${rule.pattern} => ${providers.join(", ")}`;
+			})
+			.join("\n");
+	}
+
+	private parseArchivePolicies(value: string): ArchivePolicyRule[] {
+		const validProviders = new Set<ArchiveServiceId>(["wayback", "archiveToday", "megalodon"]);
+
+		return value
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0)
+			.map((line) => {
+				const [patternPart, providerPart = ""] = line.split("=>");
+				const rawProviders = providerPart
+					.split(",")
+					.map((provider) => provider.trim())
+					.filter((provider) => provider.length > 0);
+
+				const archiveTodayExperimentalSubmit = rawProviders.includes("archiveToday:auto");
+
+				const providers = rawProviders
+					.map((provider) =>
+						provider === "archiveToday:auto" ? "archiveToday" : provider,
+					)
+					.filter((provider): provider is ArchiveServiceId =>
+						validProviders.has(provider as ArchiveServiceId),
+					);
+
+				const normalizedProviders: ArchiveServiceId[] =
+					providers.length > 0 ? providers : ["wayback"];
+
+				return {
+					pattern: patternPart.trim(),
+					providers: normalizedProviders,
+					archiveTodayExperimentalSubmit,
+				};
+			})
+			.filter((rule) => rule.pattern.length > 0);
 	}
 
 	private async handleCreateProfileClick(): Promise<void> {
