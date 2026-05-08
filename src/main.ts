@@ -17,13 +17,26 @@ export default class WaybackArchiverPlugin extends Plugin {
 	) => Promise<void>;
 	forceReArchiveAllLinksAction!: () => Promise<void>;
 	retryFailedArchives!: (forceReplace: boolean) => Promise<void>;
+	openManualSavePagesForFailedArchives!: ArchiverService["openManualSavePagesForFailedArchives"];
+	archiveLinksInCurrentNoteToArchiveTodayAction!: (
+		editor: Editor,
+		ctx: MarkdownView | MarkdownFileInfo,
+	) => Promise<void>;
+	insertLatestFallbackSnapshotAction!: (
+		editor: Editor,
+		ctx: MarkdownView | MarkdownFileInfo,
+		providerId: "archiveToday" | "megalodon",
+	) => Promise<void>;
+	runPendingQueueCycle!: () => Promise<void>;
 
+	statusBarItem: HTMLElement | null = null;
 	private archiverService!: ArchiverService;
 
 	data: WaybackArchiverData = {
 		activeProfileId: "default",
 		profiles: { default: { ...DEFAULT_SETTINGS } },
 		failedArchives: [],
+		pendingArchives: [],
 		spnAccessKey: "",
 		spnSecretKey: "",
 	};
@@ -39,7 +52,11 @@ export default class WaybackArchiverPlugin extends Plugin {
 		await this.loadSettings();
 		// console.log("Settings loaded successfully.");
 
+		this.statusBarItem = this.addStatusBarItem();
+		this.setStatusBarText("");
+
 		this.archiverService = new ArchiverService(this);
+		this.archiverService.startPendingQueueScheduler();
 
 		// Assign action handlers from the service
 		// These assignments ensure the methods are called with the correct 'this' context (the archiverService instance)
@@ -48,12 +65,25 @@ export default class WaybackArchiverPlugin extends Plugin {
 		this.forceReArchiveLinksAction = this.archiverService.forceReArchiveLinksAction;
 		this.forceReArchiveAllLinksAction = this.archiverService.forceReArchiveAllLinksAction;
 		this.retryFailedArchives = this.archiverService.retryFailedArchives;
+		this.openManualSavePagesForFailedArchives =
+			this.archiverService.openManualSavePagesForFailedArchives;
+		this.archiveLinksInCurrentNoteToArchiveTodayAction =
+			this.archiverService.archiveLinksInCurrentNoteToArchiveTodayAction;
+		this.insertLatestFallbackSnapshotAction =
+			this.archiverService.insertLatestFallbackSnapshotAction;
+		this.runPendingQueueCycle = () => this.archiverService.runPendingQueueCycle();
 
 		registerCommands(this);
 
 		// console.log('Loading Wayback Archiver Plugin');
 
 		this.addSettingTab(new WaybackArchiverSettingTab(this.app, this));
+	}
+
+	setStatusBarText(text: string) {
+		if (this.statusBarItem) {
+			this.statusBarItem.setText(text);
+		}
 	}
 
 	onunload() {
@@ -72,12 +102,22 @@ export default class WaybackArchiverPlugin extends Plugin {
 					this.data.profiles.default = { ...DEFAULT_SETTINGS };
 				}
 			}
+			for (const profileId of Object.keys(this.data.profiles)) {
+				const mergedProfile = {
+					...DEFAULT_SETTINGS,
+					...this.data.profiles[profileId],
+				};
+
+				this.data.profiles[profileId] = mergedProfile;
+			}
 			if (!this.data.failedArchives) this.data.failedArchives = [];
+			if (!this.data.pendingArchives) this.data.pendingArchives = [];
 		} else {
 			this.data = {
 				activeProfileId: "default",
 				profiles: { default: { ...DEFAULT_SETTINGS } },
 				failedArchives: [],
+				pendingArchives: [],
 				spnAccessKey: "",
 				spnSecretKey: "",
 			};

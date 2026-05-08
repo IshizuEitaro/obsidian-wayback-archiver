@@ -4,21 +4,39 @@ import {
 	ADJACENT_ARCHIVE_LINK_REGEX,
 	applySubstitutionRules,
 	checkAdjacentLinkFreshness,
-	createArchiveLink,
+	extractArchiveTimestamp,
 	getUrlFromMatch,
 	isFollowedByArchiveLink,
 	LINK_REGEX,
 	matchesAnyPattern,
+	normalizeArchiveUrl,
+	ARCHIVE_TODAY_HOST_PATTERN,
+	decodeHtmlEntities,
+	normalizeUrlForComparison,
+	isSnapshotForTargetUrl,
+	extractProviderSnapshotFromText,
 } from "../utils/LinkUtils";
 import { ConfirmationModal, FileSelectModal } from "../ui/modals";
 import {
 	FailedArchiveEntry,
+	FailedArchiveStage,
+	ArchiveProviderId,
+	ArchiveServiceId,
 	getFreshnessThresholdMs,
+	PendingArchiveEntry,
 	WaybackArchiverData,
 	WaybackArchiverSettings,
 } from "./settings";
+import {
+	serializeFailedArchiveEntriesToCsv,
+	parseFailedArchiveEntriesFromCsv,
+} from "./failedArchiveLog";
 import WaybackArchiverPlugin from "../main";
-import { findLatestLinkIndex, selectFullyContainedLinkMatches } from "../utils/contentManipulator";
+import {
+	applyLinkModification,
+	findLatestLinkIndex,
+	selectFullyContainedLinkMatches,
+} from "../utils/contentManipulator";
 
 export type ArchiveMode = "selection" | "file" | "vault";
 
@@ -35,11 +53,75 @@ type SingleArchiveOutcome =
 	| { status: "cache_hit_limited"; url: string }
 	| { status: "archived_success"; url: string }
 	| { status: "archived_limited"; url: string }
-	| { status: "archived_failed"; error?: string };
+	| {
+			status: "archived_failed";
+			error?: string;
+			stage?: FailedArchiveStage;
+			manualProviderIds?: ArchiveProviderId[];
+			targetUrl?: string;
+	  };
+
+type ArchiveUrlResult =
+	| { status: "success"; url: string }
+	| { status: "too_many_captures"; url: string }
+	| { status: "submitted"; targetUrl: string; provider: "archiveToday" }
+	| {
+			status: "failed";
+			status_ext?: string;
+			stage?: FailedArchiveStage;
+			manualProviderIds?: ArchiveProviderId[];
+			targetUrl?: string;
+	  };
+
+export type ArchiveTodaySubmitQueueResult =
+	| { status: "queued"; id: string }
+	| { status: "duplicate" }
+	| { status: "queue_full" }
+	| { status: "failed" };
+
+interface EffectiveArchivePolicy {
+	providers: ArchiveServiceId[];
+	archiveTodayExperimentalSubmit: boolean;
+}
+
+const ARCHIVE_TODAY_CANONICAL_HOST = "archive.md";
+
+const ARCHIVE_TODAY_FIXED_SNAPSHOT_REGEX = new RegExp(
+	String.raw`^https?:\/\/${ARCHIVE_TODAY_HOST_PATTERN}\/\d{14}\/`,
+);
+
+const FAILED_ARCHIVE_DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
+
+const ARCHIVE_PROVIDER_RESOLVERS: Record<
+	ArchiveProviderId,
+	{
+		name: string;
+		latestUrl: (url: string) => string;
+		saveUrl: (url: string) => string;
+		isSnapshotUrl: (url: string) => boolean;
+	}
+> = {
+	archiveToday: {
+		name: "archive.today",
+		latestUrl: (url) =>
+			`https://${ARCHIVE_TODAY_CANONICAL_HOST}/latest/${encodeURIComponent(url)}`,
+		saveUrl: (url) =>
+			`https://${ARCHIVE_TODAY_CANONICAL_HOST}/submit/?url=${encodeURIComponent(url)}`,
+		isSnapshotUrl: (url) => ARCHIVE_TODAY_FIXED_SNAPSHOT_REGEX.test(url),
+	},
+	megalodon: {
+		name: "Megalodon",
+		latestUrl: (url) => `https://megalodon.jp/${url}`,
+		saveUrl: (url) => `https://gyo.tc/${encodeURIComponent(url)}`,
+		isSnapshotUrl: (url) => /^https?:\/\/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\//.test(url),
+	},
+};
 
 export class ArchiverService {
 	private plugin: WaybackArchiverPlugin;
 	private app: App;
+	private _schedulerStarted = false;
+	private _pendingQueueCycleRunning = false;
 	// In-memory cache for recent archive results (not persisted)
 	private recentArchiveCache: Map<string, { status: string; url: string; timestamp: number }> =
 		new Map();
@@ -108,11 +190,7 @@ export class ArchiverService {
 				return false;
 			}
 
-			if (url.includes("web.archive.org/")) {
-				return false;
-			}
-
-			if (matchesAnyPattern(url, this.activeSettings.ignorePatterns)) {
+			if (this.isUrlIgnored(url)) {
 				localSkippedCount++;
 				return false;
 			}
@@ -133,6 +211,20 @@ export class ArchiverService {
 			return true;
 		});
 		return { linksToProcess: filteredMatches, skippedCount: localSkippedCount };
+	}
+
+	private isUrlIgnored(url: string): boolean {
+		if (url.includes("web.archive.org/") || url.includes("megalodon.jp/")) {
+			return true;
+		}
+		const archiveTodayHostRegex = new RegExp(
+			String.raw`archive\.(?:today|is|md|ph|vn|li|fo)\/`,
+			"i",
+		);
+		if (archiveTodayHostRegex.test(url)) {
+			return true;
+		}
+		return matchesAnyPattern(url, this.activeSettings.ignorePatterns);
 	}
 
 	private async processSingleUrlArchival(
@@ -170,9 +262,23 @@ export class ArchiverService {
 					timestamp: Date.now(),
 				});
 				return { status: "archived_limited", url: archiveResult.url };
+			} else if (archiveResult.status === "submitted") {
+				return {
+					status: "archived_failed",
+					error: "archive.today submit-only request queued externally; no archive URL available for immediate insertion",
+					stage: "archive-today-autosave-failed",
+					manualProviderIds: ["archiveToday"],
+					targetUrl: archiveResult.targetUrl,
+				};
 			} else {
 				// status === 'failed'
-				return { status: "archived_failed", error: archiveResult.status_ext };
+				return {
+					status: "archived_failed",
+					error: archiveResult.status_ext,
+					stage: archiveResult.stage,
+					manualProviderIds: archiveResult.manualProviderIds,
+					targetUrl: archiveResult.targetUrl,
+				};
 			}
 		}
 	}
@@ -182,16 +288,35 @@ export class ArchiverService {
 		filePath: string,
 		error: string,
 		retryCount: number = 0,
+		metadata: Pick<FailedArchiveEntry, "stage" | "manualProviderIds" | "targetUrl"> = {},
 	): Promise<void> {
 		if (!this.data.failedArchives) {
 			this.data.failedArchives = [];
 		}
+		const now = Date.now();
+		const duplicate = this.data.failedArchives.find(
+			(entry) =>
+				entry.url === originalUrl &&
+				entry.filePath === filePath &&
+				entry.stage === metadata.stage &&
+				now - entry.timestamp <= FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
+		);
+		if (duplicate) {
+			duplicate.targetUrl = metadata.targetUrl ?? duplicate.targetUrl;
+			duplicate.timestamp = now;
+			duplicate.error = error;
+			duplicate.retryCount = retryCount;
+			duplicate.manualProviderIds = metadata.manualProviderIds ?? duplicate.manualProviderIds;
+			await this.saveSettings();
+			return;
+		}
 		this.data.failedArchives.push({
 			url: originalUrl,
 			filePath,
-			timestamp: Date.now(),
+			timestamp: now,
 			error,
 			retryCount,
+			...metadata,
 		});
 		await this.saveSettings();
 	}
@@ -238,7 +363,13 @@ export class ArchiverService {
 		}
 
 		// Process each link individually with atomic vault.process calls
+		const total = linksToProcess.length;
+		let current = 0;
 		for (const match of linksToProcess) {
+			current++;
+			this.plugin.setStatusBarText?.(
+				`⌛ Archiving link ${current}/${total} in ${file.basename}...`,
+			);
 			const originalUrl = getUrlFromMatch(match);
 			const originalMatchIndex = match.index;
 
@@ -257,6 +388,11 @@ export class ArchiverService {
 					file.path,
 					`Archiving failed (${archiveOutcome.error || "Unknown error"})`,
 					0,
+					{
+						stage: archiveOutcome.stage,
+						manualProviderIds: archiveOutcome.manualProviderIds,
+						targetUrl: archiveOutcome.targetUrl,
+					},
 				);
 				continue;
 			}
@@ -310,7 +446,7 @@ export class ArchiverService {
 					if (isAdjacent && !isForce) {
 						const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 						if (adjMatch) {
-							const timestamp = adjMatch[2] || adjMatch[4];
+							const timestamp = extractArchiveTimestamp(adjMatch[0]);
 							const freshness = checkAdjacentLinkFreshness(
 								timestamp,
 								this.activeSettings,
@@ -321,40 +457,14 @@ export class ArchiverService {
 						}
 					}
 
-					const newArchiveLink = createArchiveLink(
-						currentMatch,
+					return applyLinkModification(
+						latestContent,
+						originalUrl,
 						archiveOutcome.url,
+						originalMatchIndex,
 						this.activeSettings,
-					);
-
-					if (isAdjacent) {
-						// Replace existing archive link
-						const existingArchiveMatch = textAfterLink.match(
-							ADJACENT_ARCHIVE_LINK_REGEX,
-						);
-						if (existingArchiveMatch) {
-							const oldLinkEndIndex =
-								insertionPosIndex + existingArchiveMatch[0].length;
-							return (
-								latestContent.slice(0, insertionPosIndex) +
-								newArchiveLink +
-								latestContent.slice(oldLinkEndIndex)
-							);
-						}
-					}
-
-					// Insert new archive link
-					const nextChar = latestContent.charAt(insertionPosIndex);
-					const needsSpace = !(nextChar === "" || nextChar === "\n" || nextChar === " ");
-					const insertionText =
-						needsSpace && !/^\s/.test(newArchiveLink)
-							? " " + newArchiveLink
-							: newArchiveLink;
-					return (
-						latestContent.slice(0, insertionPosIndex) +
-						insertionText +
-						latestContent.slice(insertionPosIndex)
-					);
+						{ isReplacement: isAdjacent },
+					).content;
 				});
 				counters.archivedCount++;
 			} catch {
@@ -364,20 +474,37 @@ export class ArchiverService {
 		}
 	}
 
-	async archiveUrl(
-		url: string,
-	): Promise<
-		| { status: "success"; url: string }
-		| { status: "too_many_captures"; url: string }
-		| { status: "failed"; status_ext?: string }
-	> {
-		if (!this.data.spnAccessKey || !this.data.spnSecretKey) {
-			// console.error("SPN API keys are not configured in the plugin settings.");
-			new Notice("Error: Archive.org SPN API keys not configured in settings.");
-			return { status: "failed", status_ext: "Configuration Error" };
+	async archiveUrl(url: string): Promise<ArchiveUrlResult> {
+		const substitutedUrl = applySubstitutionRules(url, this.activeSettings.substitutionRules);
+		const policy = this.getArchivePolicy(substitutedUrl);
+
+		if (!policy.providers.includes("wayback")) {
+			return await this.archiveWithProviderPolicy(
+				substitutedUrl,
+				policy,
+				"Wayback skipped by policy",
+			);
 		}
 
-		const substitutedUrl = applySubstitutionRules(url, this.activeSettings.substitutionRules);
+		if (!this.data.spnAccessKey || !this.data.spnSecretKey) {
+			if (policy.providers.some((p) => p !== "wayback")) {
+				return await this.resolveFallbackArchive(
+					substitutedUrl,
+					"Archive.org SPN API keys are not configured",
+					policy,
+					"wayback-initiation-failed",
+				);
+			}
+
+			new Notice("Error: Archive.org SPN API keys not configured in settings.");
+			return {
+				status: "failed",
+				status_ext: "Configuration Error",
+				stage: "wayback-initiation-failed",
+				targetUrl: substitutedUrl,
+			};
+		}
+
 		// console.log(`Attempting to archive (after substitution): ${substitutedUrl}`);
 
 		// Enforce fixed delay before initial archive request to avoid 429 rate limits
@@ -450,10 +577,12 @@ export class ArchiverService {
 					}
 				}
 				// console.error(`Failed to initiate capture for ${substitutedUrl}. Status: ${initResponse.status}`, initResponse.text);
-				return {
-					status: "failed",
-					status_ext: `Initiation failed (${initResponse.status})`,
-				};
+				return await this.resolveFallbackArchive(
+					substitutedUrl,
+					`Initiation failed (${initResponse.status})`,
+					policy,
+					"wayback-initiation-failed",
+				);
 			}
 
 			const jobId = initResponse.json.job_id;
@@ -492,10 +621,12 @@ export class ArchiverService {
 						return { status: "success", url: finalUrl };
 					} else if (statusData.status === "error") {
 						// console.error(`Archiving failed for ${substitutedUrl}. Job ID: ${jobId}. Reason: ${statusData.status_ext || 'Unknown error'}`, statusData);
-						return {
-							status: "failed",
-							status_ext: statusData.status_ext || "Unknown error",
-						};
+						return await this.resolveFallbackArchive(
+							substitutedUrl,
+							`Wayback job error: ${statusData.status_ext || "Unknown error"}`,
+							policy,
+							"wayback-job-error",
+						);
 					} else {
 						// console.log(`Job ${jobId} is still pending...`);
 						retries++;
@@ -514,16 +645,576 @@ export class ArchiverService {
 				}
 			}
 
-			// If loop finishes without success or explicit error, it timed out
-			// console.warn(`${timeoutMessage} (Job ID: ${jobId})`);
-			return { status: "failed", status_ext: "Timeout" };
+			return await this.resolveFallbackArchive(
+				substitutedUrl,
+				"Wayback job check timeout",
+				policy,
+				"wayback-timeout",
+			);
 		} catch (error: unknown) {
 			// console.error(`Unexpected error during archiving process for ${substitutedUrl}:`, error);
+			return await this.resolveFallbackArchive(
+				substitutedUrl,
+				`Unexpected Error: ${error instanceof Error ? error.message : String(error)}`,
+				policy,
+				"wayback-initiation-failed",
+			);
+		}
+	}
+
+	private getArchivePolicy(targetUrl: string): EffectiveArchivePolicy {
+		const defaultProviders =
+			this.activeSettings.defaultArchiveProviders?.length > 0
+				? this.activeSettings.defaultArchiveProviders
+				: (["wayback"] as ArchiveServiceId[]);
+
+		for (const rule of this.activeSettings.archivePolicies ?? []) {
+			if (!rule.pattern || !rule.providers?.length) {
+				continue;
+			}
+			try {
+				if (!new RegExp(rule.pattern, "iu").test(targetUrl)) {
+					continue;
+				}
+			} catch {
+				if (!targetUrl.includes(rule.pattern)) {
+					continue;
+				}
+			}
 			return {
-				status: "failed",
-				status_ext: `Unexpected Error: ${error instanceof Error ? error.message : String(error)}`,
+				providers: this.normalizeProviderOrder(rule.providers),
+				archiveTodayExperimentalSubmit:
+					rule.archiveTodayExperimentalSubmit ??
+					this.activeSettings.archiveTodayExperimentalSubmit,
 			};
 		}
+
+		return {
+			providers: this.normalizeProviderOrder(defaultProviders),
+			archiveTodayExperimentalSubmit: this.activeSettings.archiveTodayExperimentalSubmit,
+		};
+	}
+
+	private normalizeProviderOrder(providers: ArchiveServiceId[]): ArchiveServiceId[] {
+		const allowed = new Set<ArchiveServiceId>(["wayback", "archiveToday", "megalodon"]);
+		return providers.filter(
+			(provider, index) => allowed.has(provider) && providers.indexOf(provider) === index,
+		);
+	}
+
+	private async archiveWithProviderPolicy(
+		targetUrl: string,
+		policy: EffectiveArchivePolicy,
+		failureReason: string,
+		waybackStage?: FailedArchiveStage,
+	): Promise<ArchiveUrlResult> {
+		let providerHadRetryableError = false;
+
+		const fallbackProviders = policy.providers.filter(
+			(provider): provider is ArchiveProviderId => provider !== "wayback",
+		);
+
+		for (const providerId of policy.providers) {
+			if (providerId === "wayback") {
+				continue;
+			}
+			if (providerId === "archiveToday" && policy.archiveTodayExperimentalSubmit) {
+				try {
+					const response = await requestUrl({
+						method: "GET",
+						url: ARCHIVE_PROVIDER_RESOLVERS.archiveToday.saveUrl(targetUrl),
+					});
+					if (!this.isSuccessfulArchiveTodaySubmitResponse(response.status)) {
+						return {
+							status: "failed",
+							status_ext: `archive.today submit failed with HTTP ${response.status}`,
+							stage: "archive-today-autosave-failed",
+							manualProviderIds: ["archiveToday"],
+							targetUrl,
+						};
+					}
+					return { status: "submitted", targetUrl, provider: "archiveToday" };
+				} catch (e) {
+					return {
+						status: "failed",
+						status_ext: `archive.today submit failed: ${(e as Error).message}`,
+						stage: "archive-today-autosave-failed",
+						manualProviderIds: ["archiveToday"],
+						targetUrl,
+					};
+				}
+			}
+
+			const resolution = await this.resolveProviderSnapshot(providerId, targetUrl);
+			if (resolution.retryableError) {
+				providerHadRetryableError = true;
+			}
+			if (resolution.url) {
+				return { status: "success", url: resolution.url };
+			}
+		}
+
+		const manualMessage = this.determineFailureMessage(
+			fallbackProviders,
+			providerHadRetryableError,
+			false,
+			false,
+			failureReason,
+		);
+
+		const stage = this.determineFailureStage(
+			fallbackProviders,
+			providerHadRetryableError,
+			false,
+			false,
+			waybackStage,
+		);
+
+		return {
+			status: "failed",
+			status_ext: manualMessage,
+			stage,
+			manualProviderIds: fallbackProviders.length > 0 ? fallbackProviders : undefined,
+			targetUrl,
+		};
+	}
+
+	private determineFailureStage(
+		fallbackProviders: ArchiveProviderId[],
+		providerHadRetryableError: boolean,
+		archiveTodayAutosaveTimeout: boolean,
+		archiveTodayAutosaveFailed: boolean,
+		waybackStage?: FailedArchiveStage,
+	): FailedArchiveStage {
+		if (fallbackProviders.length === 0) {
+			return waybackStage ?? "wayback-initiation-failed";
+		}
+		if (archiveTodayAutosaveTimeout) return "archive-today-autosave-timeout";
+		if (archiveTodayAutosaveFailed) return "archive-today-autosave-failed";
+		if (providerHadRetryableError) return "fallback-provider-error";
+		return "fallback-not-found";
+	}
+
+	private determineFailureMessage(
+		fallbackProviders: ArchiveProviderId[],
+		providerHadRetryableError: boolean,
+		archiveTodayAutosaveTimeout: boolean,
+		archiveTodayAutosaveFailed: boolean,
+		failureReason: string,
+	): string {
+		if (fallbackProviders.length === 0) {
+			return failureReason;
+		}
+		if (archiveTodayAutosaveTimeout) {
+			return `archive.today autosave was submitted but not resolved yet; retry later or open manually (after Wayback: ${failureReason})`;
+		}
+		if (archiveTodayAutosaveFailed) {
+			return `archive.today autosave failed; fallback not found; manual save may help (after Wayback: ${failureReason})`;
+		}
+		if (providerHadRetryableError) {
+			return `Fallback provider error/rate limit; retry later (after Wayback: ${failureReason})`;
+		}
+		return `Fallback not found; manual save may help (after Wayback: ${failureReason})`;
+	}
+
+	private async resolveFallbackArchive(
+		targetUrl: string,
+		failureReason: string,
+		policy: EffectiveArchivePolicy,
+		waybackStage?: FailedArchiveStage,
+	): Promise<ArchiveUrlResult> {
+		return await this.archiveWithProviderPolicy(targetUrl, policy, failureReason, waybackStage);
+	}
+
+	private async resolveProviderSnapshot(
+		providerId: ArchiveProviderId,
+		targetUrl: string,
+	): Promise<{ url: string | null; retryableError: boolean }> {
+		const provider = ARCHIVE_PROVIDER_RESOLVERS[providerId];
+		if (!provider) {
+			return { url: null, retryableError: false };
+		}
+
+		const resolverUrl = provider.latestUrl(targetUrl);
+		try {
+			const response = await requestUrl({ method: "GET", url: resolverUrl });
+			if (response.status === 429 || response.status >= 500) {
+				return { url: null, retryableError: true };
+			}
+			const responseUrl = (response as { url?: string }).url;
+			const location =
+				response.headers?.location ??
+				response.headers?.Location ??
+				response.headers?.LOCATION;
+			const resolvedUrl =
+				typeof responseUrl === "string" && responseUrl
+					? responseUrl
+					: location || resolverUrl;
+			if (
+				provider.isSnapshotUrl(resolvedUrl) &&
+				this.isSnapshotForUrl(providerId, resolvedUrl, targetUrl)
+			) {
+				return {
+					url: this.normalizeProviderSnapshotUrl(providerId, resolvedUrl),
+					retryableError: false,
+				};
+			}
+			const textSnapshot = this.extractProviderSnapshotFromText(
+				providerId,
+				response.text,
+				targetUrl,
+			);
+			if (textSnapshot) {
+				return {
+					url: this.normalizeProviderSnapshotUrl(providerId, textSnapshot),
+					retryableError: false,
+				};
+			}
+		} catch {
+			return { url: null, retryableError: true };
+		}
+
+		return { url: null, retryableError: false };
+	}
+
+	private isSuccessfulArchiveTodaySubmitResponse(status: number | undefined): boolean {
+		return status === undefined || (status >= 200 && status < 400);
+	}
+
+	private async submitArchiveTodayUrl(
+		url: string,
+		targetUrl: string,
+		filePath: string,
+		approximateIndex?: number,
+	): Promise<ArchiveTodaySubmitQueueResult> {
+		if (!this.data.pendingArchives) this.data.pendingArchives = [];
+
+		const isDuplicate = this.data.pendingArchives.some(
+			(entry) =>
+				entry.filePath === filePath &&
+				entry.url === url &&
+				entry.targetUrl === targetUrl &&
+				entry.approximateIndex === approximateIndex,
+		);
+		if (isDuplicate) return { status: "duplicate" };
+
+		const maxPending = this.activeSettings.archiveTodayMaxPendingCount ?? 30;
+		if (this.data.pendingArchives.length >= maxPending) {
+			new Notice(
+				`archive.today pending queue is full (${maxPending} entries). Wait for pending snapshots to resolve, run "Check pending archive.today snapshots now", or reduce the number of links.`,
+			);
+			return { status: "queue_full" };
+		}
+
+		const isTargetAlreadySubmitted = this.data.pendingArchives.some(
+			(entry) => entry.targetUrl === targetUrl,
+		);
+		if (!isTargetAlreadySubmitted) {
+			try {
+				const response = await requestUrl({
+					method: "GET",
+					url: ARCHIVE_PROVIDER_RESOLVERS.archiveToday.saveUrl(targetUrl),
+				});
+				if (!this.isSuccessfulArchiveTodaySubmitResponse(response.status)) {
+					await this.logFailedArchive(
+						url,
+						filePath,
+						`archive.today submit failed with HTTP ${response.status}`,
+						0,
+						{
+							stage: "archive-today-autosave-failed",
+							manualProviderIds: ["archiveToday"],
+							targetUrl,
+						},
+					);
+					return { status: "failed" };
+				}
+			} catch (e) {
+				await this.logFailedArchive(
+					url,
+					filePath,
+					`archive.today submit failed: ${(e as Error).message}`,
+					0,
+					{
+						stage: "archive-today-autosave-failed",
+						manualProviderIds: ["archiveToday"],
+						targetUrl,
+					},
+				);
+				return { status: "failed" };
+			}
+		}
+
+		const id =
+			typeof crypto !== "undefined" && crypto.randomUUID
+				? crypto.randomUUID()
+				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const entry: PendingArchiveEntry = {
+			id,
+			providerId: "archiveToday",
+			url,
+			targetUrl,
+			filePath,
+			approximateIndex,
+			createdAt: Date.now(),
+			checkCount: 0,
+			maxWaitMs: this.activeSettings.archiveTodayPendingMaxWaitMs ?? 600000,
+			status: "submitted",
+		};
+		this.data.pendingArchives.push(entry);
+		await this.saveSettings();
+
+		return { status: "queued", id };
+	}
+
+	async runPendingQueueCycle(): Promise<void> {
+		if (this._pendingQueueCycleRunning) return;
+		this._pendingQueueCycleRunning = true;
+		try {
+			await this.runPendingQueueCycleImpl();
+		} finally {
+			this._pendingQueueCycleRunning = false;
+		}
+	}
+
+	private async runPendingQueueCycleImpl(): Promise<void> {
+		if (!this.data.pendingArchives?.length) return;
+
+		const now = Date.now();
+		const pollIntervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
+		const batchSize = this.activeSettings.archiveTodayPendingPollBatchSize ?? 3;
+		const expired: PendingArchiveEntry[] = [];
+		const alive: PendingArchiveEntry[] = [];
+
+		for (const entry of this.data.pendingArchives) {
+			entry.status = "submitted";
+			if (now - entry.createdAt >= entry.maxWaitMs) {
+				expired.push(entry);
+			} else {
+				alive.push(entry);
+			}
+		}
+
+		if (expired.length && !this.data.failedArchives) this.data.failedArchives = [];
+		for (const entry of expired) {
+			this.data.failedArchives!.push({
+				url: entry.url,
+				targetUrl: entry.targetUrl,
+				filePath: entry.filePath,
+				timestamp: now,
+				error: "archive.today pending snapshot was not resolved before max wait",
+				retryCount: 0,
+				stage: "archive-today-pending-timeout",
+				manualProviderIds: ["archiveToday"],
+			});
+		}
+
+		const candidates = alive
+			.filter(
+				(entry) =>
+					entry.lastCheckedAt === undefined ||
+					now - entry.lastCheckedAt >= pollIntervalMs,
+			)
+			.slice(0, batchSize);
+
+		this.data.pendingArchives = alive;
+		await this.saveSettings();
+
+		for (const entry of candidates) {
+			try {
+				const resolution = await this.resolveProviderSnapshot(
+					"archiveToday",
+					entry.targetUrl,
+				);
+				entry.lastCheckedAt = Date.now();
+				entry.checkCount++;
+
+				if (!resolution.url) {
+					entry.status = "submitted";
+					if (!this.data.pendingArchives.find((pending) => pending.id === entry.id)) {
+						this.data.pendingArchives.push(entry);
+					}
+					continue;
+				}
+				const resolvedSnapshotUrl = resolution.url;
+
+				const file = this.app.vault.getAbstractFileByPath(entry.filePath);
+				if (!file || !(file instanceof TFile)) {
+					this.data.pendingArchives = this.data.pendingArchives.filter(
+						(pending) => pending.id !== entry.id,
+					);
+					continue;
+				}
+
+				let inserted = false;
+				let skippedBecauseAlreadyArchived = false;
+				await this.app.vault.process(file, (latestContent: string) => {
+					const latestIndex = findLatestLinkIndex(
+						latestContent,
+						entry.url,
+						entry.approximateIndex ?? 0,
+					);
+					if (latestIndex === null) return latestContent;
+
+					const latestMatches = Array.from(latestContent.matchAll(LINK_REGEX));
+					const currentMatch = latestMatches.find((match) => match.index === latestIndex);
+					if (!currentMatch) return latestContent;
+
+					const insertionPos = latestIndex + currentMatch[0].length;
+					const textAfterLink = latestContent.slice(insertionPos, insertionPos + 300);
+					if (isFollowedByArchiveLink(textAfterLink)) {
+						skippedBecauseAlreadyArchived = true;
+						return latestContent;
+					}
+
+					const archiveUrl = normalizeArchiveUrl(resolvedSnapshotUrl);
+					const modification = applyLinkModification(
+						latestContent,
+						entry.url,
+						archiveUrl,
+						entry.approximateIndex ?? 0,
+						this.activeSettings,
+						{ isReplacement: false },
+					);
+					if (!modification.modified) return latestContent;
+					inserted = true;
+					return modification.content;
+				});
+
+				this.data.pendingArchives = this.data.pendingArchives.filter(
+					(pending) => pending.id !== entry.id,
+				);
+				if (inserted) {
+					new Notice(`Inserted archive.today snapshot in ${entry.filePath}.`);
+					this.plugin.setStatusBarText?.("✅ archive.today snapshot inserted!");
+					setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+				} else if (skippedBecauseAlreadyArchived) {
+					new Notice(
+						`archive.today snapshot resolved but link was already archived in ${entry.filePath}.`,
+					);
+				} else {
+					new Notice(
+						`archive.today snapshot resolved but URL no longer found in ${entry.filePath}.`,
+					);
+				}
+			} catch {
+				entry.lastCheckedAt = Date.now();
+				entry.checkCount++;
+				entry.status = "submitted";
+				if (!this.data.pendingArchives.find((pending) => pending.id === entry.id)) {
+					this.data.pendingArchives.push(entry);
+				}
+			}
+		}
+
+		await this.saveSettings();
+	}
+
+	startPendingQueueScheduler(): void {
+		if (this._schedulerStarted) return;
+		this._schedulerStarted = true;
+
+		const intervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
+		void this.runPendingQueueCycle();
+		this.plugin.registerInterval(
+			window.setInterval(() => {
+				void this.runPendingQueueCycle();
+			}, intervalMs),
+		);
+	}
+
+	private extractProviderSnapshotFromText(
+		providerId: ArchiveProviderId,
+		text: string | undefined,
+		targetUrl: string,
+	): string | null {
+		if (providerId === "archiveToday" || providerId === "megalodon") {
+			return extractProviderSnapshotFromText(providerId, text, targetUrl);
+		}
+		return null;
+	}
+
+	private isSnapshotForUrl(
+		providerId: ArchiveProviderId,
+		snapshotUrl: string,
+		targetUrl: string,
+	): boolean {
+		if (providerId === "archiveToday" || providerId === "megalodon") {
+			return isSnapshotForTargetUrl(providerId, snapshotUrl, targetUrl);
+		}
+		return false;
+	}
+
+	private normalizeUrlForComparison(url: string): string {
+		return normalizeUrlForComparison(url);
+	}
+
+	private normalizeProviderSnapshotUrl(providerId: ArchiveProviderId, url: string): string {
+		return providerId === "archiveToday"
+			? normalizeArchiveUrl(this.decodeHtmlEntities(url))
+			: url;
+	}
+
+	private decodeHtmlEntities(value: string): string {
+		return decodeHtmlEntities(value);
+	}
+
+	openManualSavePagesForFailedArchives = async (providerId: ArchiveProviderId): Promise<void> => {
+		const provider = ARCHIVE_PROVIDER_RESOLVERS[providerId];
+		if (!provider) {
+			new Notice("Unknown archive provider.");
+			return;
+		}
+
+		const failedArchives = this.data.failedArchives ?? [];
+		if (failedArchives.length === 0) {
+			new Notice("No failed archives to open.");
+			return;
+		}
+
+		const eligibleEntries = failedArchives
+			.map((entry, index) => ({ entry, index }))
+			.filter(({ entry }) => this.canManuallyOpenWithProvider(entry, providerId))
+			.sort((a, b) => {
+				const aOpened = a.entry.manualOpenedAt ?? 0;
+				const bOpened = b.entry.manualOpenedAt ?? 0;
+				return aOpened - bOpened;
+			});
+
+		if (eligibleEntries.length === 0) {
+			new Notice(`No failed archives are eligible for ${provider.name} manual save.`);
+			return;
+		}
+
+		const batchSize = Math.min(
+			Math.max(this.activeSettings.manualSaveBatchSize || 5, 1),
+			5,
+			eligibleEntries.length,
+		);
+		for (const { entry } of eligibleEntries.slice(0, batchSize)) {
+			const targetUrl =
+				entry.targetUrl ??
+				applySubstitutionRules(entry.url, this.activeSettings.substitutionRules);
+
+			globalThis.open?.(provider.saveUrl(targetUrl), "_blank", "noopener");
+			entry.manualOpenedAt = Date.now();
+			entry.manualOpenCount = (entry.manualOpenCount ?? 0) + 1;
+		}
+		await this.saveSettings();
+		new Notice(`Opened ${batchSize} ${provider.name} save page${batchSize === 1 ? "" : "s"}.`);
+	};
+
+	private canManuallyOpenWithProvider(
+		entry: FailedArchiveEntry,
+		providerId: ArchiveProviderId,
+	): boolean {
+		if (entry.manualProviderIds?.length) {
+			return entry.manualProviderIds.includes(providerId);
+		}
+		const targetUrl =
+			entry.targetUrl ??
+			applySubstitutionRules(entry.url, this.activeSettings.substitutionRules);
+		return this.getArchivePolicy(targetUrl).providers.includes(providerId);
 	}
 
 	// Query Wayback Machine CDX API for the latest snapshot timestamp. See https://archive.org/developers/wayback-cdx-server.html
@@ -600,7 +1291,11 @@ export class ArchiverService {
 			new Notice(`Processing ${filterResult.linksToProcess.length} links in selection...`);
 
 			// For Selection mode, we process each link and apply it to the editor immediately.
+			const total = filterResult.linksToProcess.length;
+			let current = 0;
 			for (const match of filterResult.linksToProcess) {
+				current++;
+				this.plugin.setStatusBarText?.(`⌛ Archiving link ${current}/${total}...`);
 				const originalUrl = getUrlFromMatch(match);
 				const absoluteOriginalIndex = match.index;
 				if (absoluteOriginalIndex === undefined) continue;
@@ -614,6 +1309,11 @@ export class ArchiverService {
 						file.path,
 						`Archiving failed (${archiveOutcome.error || "Unknown error"})`,
 						0,
+						{
+							stage: archiveOutcome.stage,
+							manualProviderIds: archiveOutcome.manualProviderIds,
+							targetUrl: archiveOutcome.targetUrl,
+						},
 					);
 					continue;
 				}
@@ -640,6 +1340,10 @@ export class ArchiverService {
 		let summary = `Archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
 		if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
 		new Notice(summary);
+		this.plugin.setStatusBarText?.(
+			`✅ Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
+		);
+		setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 	};
 
 	archiveAllLinksVaultAction = async (): Promise<void> => {
@@ -647,7 +1351,11 @@ export class ArchiverService {
 		const markdownFiles = this.app.vault.getMarkdownFiles();
 		const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0 };
 
+		const totalFiles = markdownFiles.length;
+		let fileIndex = 0;
 		for (const file of markdownFiles) {
+			fileIndex++;
+			this.plugin.setStatusBarText?.(`⌛ Vault archive: file ${fileIndex}/${totalFiles}...`);
 			await this.processFileWithContext(file, false, counters);
 		}
 
@@ -655,6 +1363,10 @@ export class ArchiverService {
 		new Notice(
 			`Vault archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}, Skipped: ${counters.skippedCount}.`,
 		);
+		this.plugin.setStatusBarText?.(
+			`✅ Vault archived! Success: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
+		);
+		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
 	};
 
 	forceReArchiveLinksAction = async (
@@ -696,7 +1408,11 @@ export class ArchiverService {
 				`Force re-archiving ${filterResult.linksToProcess.length} links in selection...`,
 			);
 
+			const total = filterResult.linksToProcess.length;
+			let current = 0;
 			for (const match of filterResult.linksToProcess) {
+				current++;
+				this.plugin.setStatusBarText?.(`⌛ Force re-archiving link ${current}/${total}...`);
 				const originalUrl = getUrlFromMatch(match);
 				const absoluteOriginalIndex = match.index;
 				if (absoluteOriginalIndex === undefined) continue;
@@ -710,6 +1426,11 @@ export class ArchiverService {
 						file.path,
 						`Archiving failed (${archiveOutcome.error || "Unknown error"})`,
 						0,
+						{
+							stage: archiveOutcome.stage,
+							manualProviderIds: archiveOutcome.manualProviderIds,
+							targetUrl: archiveOutcome.targetUrl,
+						},
 					);
 					continue;
 				}
@@ -744,6 +1465,10 @@ export class ArchiverService {
 		let summary = `Force re-archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
 		if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
 		new Notice(summary);
+		this.plugin.setStatusBarText?.(
+			`✅ Force re-archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
+		);
+		setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 	};
 
 	/**
@@ -776,40 +1501,317 @@ export class ArchiverService {
 		if (isAdjacent && !isForce) {
 			const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
 			if (adjMatch) {
-				const timestamp = adjMatch[2] || adjMatch[4];
+				const timestamp = extractArchiveTimestamp(adjMatch[0]);
 				const freshness = checkAdjacentLinkFreshness(timestamp, this.activeSettings);
 				if (!freshness.shouldProcess) return false;
 			}
 		}
 
-		const newArchiveLink = createArchiveLink(currentMatch, archiveUrl, this.activeSettings);
+		const modification = applyLinkModification(
+			latestContent,
+			originalUrl,
+			archiveUrl,
+			originalAbsoluteIndex,
+			this.activeSettings,
+			{ isReplacement: isAdjacent },
+		);
+		if (!modification.modified) return false;
 
-		if (isAdjacent) {
-			const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
-			if (adjMatch) {
-				const startPos = editor.offsetToPos(insertionPosIndex);
-				const endPos = editor.offsetToPos(insertionPosIndex + adjMatch[0].length);
-				editor.replaceRange(newArchiveLink, startPos, endPos);
-				return true;
+		const change = this.findContentReplacement(latestContent, modification.content);
+		const from = editor.offsetToPos(change.start);
+		if (change.start === change.end) {
+			editor.replaceRange(change.replacement, from);
+		} else {
+			const to = editor.offsetToPos(change.end);
+			editor.replaceRange(change.replacement, from, to);
+		}
+		return true;
+	}
+
+	private findContentReplacement(
+		before: string,
+		after: string,
+	): { start: number; end: number; replacement: string } {
+		let start = 0;
+		while (start < before.length && start < after.length && before[start] === after[start]) {
+			start++;
+		}
+
+		let beforeEnd = before.length;
+		let afterEnd = after.length;
+		while (
+			beforeEnd > start &&
+			afterEnd > start &&
+			before[beforeEnd - 1] === after[afterEnd - 1]
+		) {
+			beforeEnd--;
+			afterEnd--;
+		}
+
+		return {
+			start,
+			end: beforeEnd,
+			replacement: after.slice(start, afterEnd),
+		};
+	}
+
+	archiveLinksInCurrentNoteToArchiveTodayAction = async (
+		editor: Editor,
+		ctx: MarkdownView | MarkdownFileInfo,
+	): Promise<void> => {
+		const file = ctx.file;
+		if (!file) {
+			new Notice("Error: Could not get the current file.");
+			return;
+		}
+
+		const selectedText = editor.getSelection();
+		const isSelection = selectedText.length > 0;
+
+		const selectionStartOffset = isSelection ? editor.posToOffset(editor.getCursor("from")) : 0;
+		const selectionEndOffset = isSelection
+			? editor.posToOffset(editor.getCursor("to"))
+			: editor.getValue().length;
+		const fullDocContent = editor.getValue();
+		const selectedLinks = selectFullyContainedLinkMatches(
+			fullDocContent,
+			selectionStartOffset,
+			selectionEndOffset,
+		);
+		const allMatches = selectedLinks.map((link) => link.match);
+
+		const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, true, {
+			isSelection: isSelection,
+			fullDocContent,
+		});
+
+		if (!filterResult.linksToProcess.length) {
+			new Notice(
+				isSelection
+					? "No suitable links found in selection."
+					: "No suitable links found in current note.",
+			);
+			return;
+		}
+
+		new Notice(
+			isSelection
+				? `Submitting ${filterResult.linksToProcess.length} selected links to archive.today...`
+				: `Submitting ${filterResult.linksToProcess.length} links in ${file.basename} to archive.today...`,
+		);
+
+		let archivedCount = 0;
+		let pendingCount = 0;
+		let failedCount = 0;
+		let duplicateCount = 0;
+		let queueFullCount = 0;
+
+		const total = filterResult.linksToProcess.length;
+		let current = 0;
+		for (const match of filterResult.linksToProcess) {
+			current++;
+			this.plugin.setStatusBarText?.(
+				`⌛ Submitting link ${current}/${total} to archive.today...`,
+			);
+			const originalUrl = getUrlFromMatch(match);
+			const absoluteOriginalIndex = match.index;
+			if (absoluteOriginalIndex === undefined) continue;
+
+			const substitutedUrl = applySubstitutionRules(
+				originalUrl,
+				this.activeSettings.substitutionRules,
+			);
+
+			if (this.activeSettings.archiveTodayExperimentalSubmit) {
+				const result = await this.submitArchiveTodayUrl(
+					originalUrl,
+					substitutedUrl,
+					file.path,
+					absoluteOriginalIndex,
+				);
+				if (result.status === "queued") pendingCount++;
+				if (result.status === "failed") failedCount++;
+				if (result.status === "duplicate") duplicateCount++;
+				if (result.status === "queue_full") queueFullCount++;
+
+				const submitDelayMs = this.activeSettings.archiveTodaySubmitDelayMs ?? 5000;
+				if (current < total && submitDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, submitDelayMs));
+				}
+			} else {
+				const policy: EffectiveArchivePolicy = {
+					providers: ["archiveToday"],
+					archiveTodayExperimentalSubmit: false,
+				};
+				const outcome = await this.archiveWithProviderPolicy(
+					substitutedUrl,
+					policy,
+					"Manual command to archive.today",
+				);
+
+				if (outcome.status === "success") {
+					const applied = this.applyLinkEditToEditor(
+						editor,
+						originalUrl,
+						absoluteOriginalIndex,
+						outcome.url,
+						true,
+					);
+					if (applied) archivedCount++;
+				} else {
+					failedCount++;
+					await this.logFailedArchive(
+						originalUrl,
+						file.path,
+						`archive.today command failed (${(outcome as { status_ext?: string }).status_ext || "Unknown error"})`,
+						0,
+						{
+							stage: (outcome as { stage?: FailedArchiveStage }).stage,
+							manualProviderIds: ["archiveToday"],
+							targetUrl: substitutedUrl,
+						},
+					);
+				}
 			}
 		}
 
-		// Standard insertion
-		const nextChar = latestContent.charAt(insertionPosIndex);
-		const needsSpace = !(nextChar === "" || nextChar === "\n" || nextChar === " ");
-		const insertionText =
-			needsSpace && !/^\s/.test(newArchiveLink) ? " " + newArchiveLink : newArchiveLink;
-		const pos = editor.offsetToPos(insertionPosIndex);
-		editor.replaceRange(insertionText, pos);
-		return true;
-	}
+		if (pendingCount > 0) {
+			const msg =
+				`Queued ${pendingCount} link(s) for archive.today.` +
+				(duplicateCount ? ` Skipped ${duplicateCount} duplicate(s).` : "") +
+				(queueFullCount ? ` Queue full for ${queueFullCount} link(s).` : "") +
+				" Snapshots will be inserted when resolved.";
+			new Notice(msg);
+			this.plugin.setStatusBarText?.(
+				`⏳ ${pendingCount} archive.today snapshot(s) pending...`,
+			);
+			setTimeout(() => this.plugin.setStatusBarText?.(""), 6000);
+		} else if (archivedCount > 0) {
+			const msg =
+				"archive.today archival complete." +
+				` Archived: ${archivedCount}, Failed: ${failedCount}` +
+				(duplicateCount ? `, Skipped duplicate: ${duplicateCount}` : "") +
+				(queueFullCount ? `, Queue full: ${queueFullCount}` : "");
+			new Notice(msg);
+			this.plugin.setStatusBarText?.(
+				`✅ archive.today done! Archived: ${archivedCount}, Failed: ${failedCount}`,
+			);
+			setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+		} else if (failedCount > 0 || queueFullCount > 0 || duplicateCount > 0) {
+			const msg =
+				"No new archive.today snapshots queued or inserted." +
+				(failedCount ? ` Failed: ${failedCount}` : "") +
+				(duplicateCount ? ` Skipped duplicate: ${duplicateCount}` : "") +
+				(queueFullCount ? ` Queue full: ${queueFullCount}` : "");
+			new Notice(msg);
+			this.plugin.setStatusBarText?.("No new archive.today snapshots queued or inserted.");
+			setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+		} else {
+			new Notice("No new archive.today snapshots queued or inserted.");
+			this.plugin.setStatusBarText?.("");
+		}
+	};
+
+	insertLatestFallbackSnapshotAction = async (
+		editor: Editor,
+		ctx: MarkdownView | MarkdownFileInfo,
+		providerId: ArchiveProviderId,
+	): Promise<void> => {
+		const file = ctx.file;
+		if (!file) {
+			new Notice("Error: Could not get the current file.");
+			return;
+		}
+
+		const selectedText = editor.getSelection();
+		if (selectedText.length === 0) {
+			new Notice("Please select text containing external links first.");
+			return;
+		}
+
+		const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
+		const selectionEndOffset = editor.posToOffset(editor.getCursor("to"));
+		const fullDocContent = editor.getValue();
+		const selectedLinks = selectFullyContainedLinkMatches(
+			fullDocContent,
+			selectionStartOffset,
+			selectionEndOffset,
+		);
+		const allMatches = selectedLinks.map((link) => link.match);
+
+		const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, true, {
+			isSelection: true,
+			fullDocContent,
+		});
+
+		if (!filterResult.linksToProcess.length) {
+			new Notice("No suitable links found in selection.");
+			return;
+		}
+
+		const providerName = providerId === "archiveToday" ? "archive.today" : "Web Gyotaku";
+		new Notice(
+			`Retrieving latest ${providerName} snapshots for ${filterResult.linksToProcess.length} selected links...`,
+		);
+
+		let insertedCount = 0;
+		let failedCount = 0;
+
+		const total = filterResult.linksToProcess.length;
+		let current = 0;
+		for (const match of filterResult.linksToProcess) {
+			current++;
+			this.plugin.setStatusBarText?.(
+				`⌛ Retrieving snapshot ${current}/${total} from ${providerName}...`,
+			);
+			const originalUrl = getUrlFromMatch(match);
+			const absoluteOriginalIndex = match.index;
+			if (absoluteOriginalIndex === undefined) continue;
+
+			const substitutedUrl = applySubstitutionRules(
+				originalUrl,
+				this.activeSettings.substitutionRules,
+			);
+			const resolution = await this.resolveProviderSnapshot(providerId, substitutedUrl);
+
+			if (resolution.url) {
+				const applied = this.applyLinkEditToEditor(
+					editor,
+					originalUrl,
+					absoluteOriginalIndex,
+					resolution.url,
+					true,
+				);
+				if (applied) {
+					insertedCount++;
+				}
+			} else {
+				failedCount++;
+				new Notice(`No snapshot found on ${providerName} for ${originalUrl}`);
+			}
+		}
+
+		new Notice(
+			`${providerName} snapshot retrieval complete. Inserted: ${insertedCount}, Not Found: ${failedCount}`,
+		);
+		this.plugin.setStatusBarText?.(
+			`✅ ${providerName} done! Inserted: ${insertedCount}, Not Found: ${failedCount}`,
+		);
+		setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+	};
 
 	forceReArchiveAllLinksAction = async (): Promise<void> => {
 		new Notice("Starting vault-wide force re-archiving... This may take time.");
 		const markdownFiles = this.app.vault.getMarkdownFiles();
 		const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0 };
 
+		const totalFiles = markdownFiles.length;
+		let fileIndex = 0;
 		for (const file of markdownFiles) {
+			fileIndex++;
+			this.plugin.setStatusBarText?.(
+				`⌛ Vault force re-archive: file ${fileIndex}/${totalFiles}...`,
+			);
 			await this.processFileWithContext(file, true, counters);
 		}
 
@@ -817,6 +1819,10 @@ export class ArchiverService {
 		new Notice(
 			`Vault force re-Archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}, Skipped: ${counters.skippedCount}.`,
 		);
+		this.plugin.setStatusBarText?.(
+			`✅ Vault force re-archived! Success: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
+		);
+		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
 	};
 
 	retryFailedArchives = async (forceReplace: boolean): Promise<void> => {
@@ -859,6 +1865,7 @@ export class ArchiverService {
 
 				if (selectedFileName.endsWith(".json")) {
 					parsedEntries = JSON.parse(content).map((entry: FailedArchiveEntry) => ({
+						...entry,
 						url: entry.url,
 						filePath: entry.filePath,
 						timestamp: entry.timestamp,
@@ -866,37 +1873,7 @@ export class ArchiverService {
 						retryCount: entry.retryCount ?? 0,
 					}));
 				} else if (selectedFileName.endsWith(".csv")) {
-					const lines = content.split(/\r?\n/).filter((line) => line.trim() !== "");
-					lines.shift();
-					parsedEntries = lines.map((line) => {
-						const parts = [];
-						let current = "";
-						let inQuotes = false;
-						for (let i = 0; i < line.length; i++) {
-							const char = line[i];
-							if (char === '"') {
-								if (inQuotes && line[i + 1] === '"') {
-									current += '"';
-									i++;
-								} else {
-									inQuotes = !inQuotes;
-								}
-							} else if (char === "," && !inQuotes) {
-								parts.push(current);
-								current = "";
-							} else {
-								current += char;
-							}
-						}
-						parts.push(current);
-						return {
-							url: parts[0],
-							filePath: parts[1],
-							timestamp: Number(parts[2]),
-							error: parts[3],
-							retryCount: Number(parts[4] ?? 0),
-						};
-					});
+					parsedEntries = parseFailedArchiveEntriesFromCsv(content);
 				} else {
 					new Notice("Unsupported file format.");
 					return;
@@ -915,225 +1892,11 @@ export class ArchiverService {
 				if (failedCount > 5) listPreview += `\n...and ${failedCount - 5} more`;
 
 				if (this.activeSettings.autoClearFailedLogs) {
-					let successCount = 0;
-					const originalFailedList = [...parsedEntries];
-					const stillFailed: FailedArchiveEntry[] = [];
-
-					new Notice(`Retrying ${failedCount} failed archives...`);
-
-					for (const entry of originalFailedList) {
-						// console.log(`Retrying: ${entry.url} (from ${entry.filePath})`);
-
-						let shouldSkip = false;
-						if (!forceReplace) {
-							try {
-								const file = this.app.vault.getAbstractFileByPath(entry.filePath);
-								if (file && file instanceof TFile) {
-									const content = await this.app.vault.read(file);
-									const matches = Array.from(content.matchAll(LINK_REGEX));
-									for (const match of matches) {
-										const originalUrl = getUrlFromMatch(match);
-										if (originalUrl !== entry.url) continue;
-
-										const matchIndex = match.index;
-										if (matchIndex === undefined) continue;
-
-										const insertionPosIndex = matchIndex + match[0].length;
-										const textAfterLink = content.substring(
-											insertionPosIndex,
-											insertionPosIndex + 300,
-										);
-										const existingArchiveMatch = textAfterLink.match(
-											ADJACENT_ARCHIVE_LINK_REGEX,
-										);
-
-										if (existingArchiveMatch) {
-											// console.log(`Skipping retry API call, adjacent archive link already exists for ${entry.url}`);
-											shouldSkip = true;
-											if (this.data.failedArchives) {
-												const idx = this.data.failedArchives.findIndex(
-													(e) =>
-														e.url === entry.url &&
-														e.filePath === entry.filePath,
-												);
-												if (idx !== -1) {
-													this.data.failedArchives.splice(idx, 1);
-													await this.saveSettings();
-												}
-											}
-											const indexToRemove = parsedEntries.findIndex(
-												(e) =>
-													e.url === entry.url &&
-													e.filePath === entry.filePath,
-											);
-											if (indexToRemove !== -1) {
-												parsedEntries.splice(indexToRemove, 1);
-											}
-											break;
-										}
-									}
-								}
-							} catch {
-								// console.warn(`Error during pre-check for ${entry.url} in ${entry.filePath}:`, e);
-							}
-						}
-
-						if (shouldSkip) {
-							continue;
-						}
-
-						await new Promise((res) => setTimeout(res, this.activeSettings.apiDelay));
-						const result = await this.archiveUrl(entry.url);
-						if (result.status === "success" || result.status === "too_many_captures") {
-							successCount++;
-							// console.log(`Retry successful: ${entry.url}`);
-
-							if (this.data.failedArchives) {
-								const idx = this.data.failedArchives.findIndex(
-									(e) => e.url === entry.url && e.filePath === entry.filePath,
-								);
-								if (idx !== -1) {
-									this.data.failedArchives.splice(idx, 1);
-									await this.saveSettings();
-								}
-							}
-
-							try {
-								const file = this.app.vault.getAbstractFileByPath(entry.filePath);
-								if (file && file instanceof TFile) {
-									let fileModifiedInProcess = false;
-									await this.app.vault.process(file, (currentContent) => {
-										let newContent = currentContent;
-										const matches = Array.from(newContent.matchAll(LINK_REGEX));
-										for (const match of matches.reverse()) {
-											const originalUrlInFile = getUrlFromMatch(match);
-											if (originalUrlInFile !== entry.url) continue;
-
-											const matchIndex = match.index;
-											if (matchIndex === undefined) continue;
-
-											const insertionPosIndex = matchIndex + match[0].length;
-											const textAfterLink = newContent.substring(
-												insertionPosIndex,
-												insertionPosIndex + 300,
-											);
-											const isHtmlLink =
-												match[2] || match[3] || match[4] || match[5];
-											const existingArchiveMatch = textAfterLink.match(
-												ADJACENT_ARCHIVE_LINK_REGEX,
-											);
-
-											const archiveDate = format(
-												new Date(),
-												this.activeSettings.dateFormat,
-											);
-											const archiveLinkText =
-												this.activeSettings.archiveLinkText.replace(
-													"{date}",
-													archiveDate,
-												);
-											const archiveLink = isHtmlLink
-												? ` <a href="${result.url}">${archiveLinkText}</a>`
-												: ` [${archiveLinkText}](${result.url})`;
-
-											const startIndexToReplace = insertionPosIndex;
-											let endIndexToReplace = insertionPosIndex;
-
-											if (existingArchiveMatch && forceReplace) {
-												endIndexToReplace =
-													insertionPosIndex +
-													existingArchiveMatch[0].length;
-											} else if (existingArchiveMatch && !forceReplace) {
-												// console.log(`Skipping insertion for ${entry.url}, adjacent link found (final check with vault.process).`);
-												break;
-											}
-
-											newContent =
-												newContent.slice(0, startIndexToReplace) +
-												archiveLink +
-												newContent.slice(endIndexToReplace);
-											fileModifiedInProcess = true;
-											// console.log(`Updated note ${entry.filePath} for URL ${entry.url} via vault.process`);
-											break;
-										}
-										return newContent;
-									});
-
-									if (fileModifiedInProcess) {
-										// console.log(`File ${entry.filePath} was processed for URL ${entry.url}. Check content if update occurred.`);
-									} else {
-										// console.warn(`Link for ${entry.url} not found or not updated in ${entry.filePath} during retry (vault.process). This could be due to !forceReplace and existing link, or link not present.`);
-									}
-								} else {
-									// console.warn(`File not found or not TFile: ${entry.filePath}`);
-								}
-							} catch {
-								// console.warn(`Failed to update note ${entry.filePath} for URL ${entry.url}:`, e);
-							}
-
-							const indexToRemove = parsedEntries.findIndex(
-								(e) => e.url === entry.url && e.filePath === entry.filePath,
-							);
-							if (indexToRemove !== -1) {
-								parsedEntries.splice(indexToRemove, 1);
-							}
-						} else {
-							// console.log(`Retry failed again: ${entry.url}`);
-							stillFailed.push({
-								...entry,
-								error: `Retry failed (status: ${result.status})`,
-								retryCount: (entry.retryCount ?? 0) + 1,
-							});
-						}
-					}
-
-					try {
-						if (parsedEntries.length > 0) {
-							let newContent = "";
-							if (selectedFileName.endsWith(".json")) {
-								newContent = JSON.stringify(parsedEntries, null, 2);
-							} else if (selectedFileName.endsWith(".csv")) {
-								const header = "url,filePath,timestamp,error,retryCount";
-								const rows = parsedEntries.map((e) => {
-									const escape = (field: string | number | undefined) => {
-										if (field === undefined) return "";
-										const s = String(field);
-										if (
-											s.includes('"') ||
-											s.includes(",") ||
-											s.includes("\n")
-										) {
-											return `"${s.replace(/"/g, '""')}"`;
-										}
-										return s;
-									};
-									return [
-										escape(e.url),
-										escape(e.filePath),
-										escape(e.timestamp),
-										escape(e.error),
-										escape(e.retryCount),
-									].join(",");
-								});
-								newContent = [header, ...rows].join("\n");
-							}
-							await this.app.vault.adapter.write(selectedFileName, newContent);
-							// console.log(`Updated failed log file: ${selectedFileName}`);
-						} else {
-							await this.app.vault.adapter.remove(selectedFileName);
-							new Notice(
-								"All failed entries retried successfully. Log file deleted.",
-							);
-							// console.log(`Deleted empty failed log file: ${selectedFileName}`);
-						}
-					} catch (error) {
-						// console.error('Error updating or deleting failed log file:', error);
-						const errorMsg = error instanceof Error ? error.message : "Unknown error";
-						new Notice(`Error updating or deleting failed log file: ${errorMsg}`);
-					}
-
-					new Notice(
-						`Retry complete. Retried ${failedCount} links. Success: ${successCount}, still failed: ${stillFailed.length}.`,
+					await this.executeRetryOfFailedArchives(
+						selectedFileName,
+						parsedEntries,
+						failedCount,
+						forceReplace,
 					);
 				} else {
 					new ConfirmationModal(
@@ -1147,256 +1910,11 @@ export class ArchiverService {
 								return;
 							}
 
-							let successCount = 0;
-							const originalFailedList = [...parsedEntries];
-							const stillFailed: FailedArchiveEntry[] = [];
-
-							new Notice(`Retrying ${failedCount} failed archives...`);
-
-							for (const entry of originalFailedList) {
-								// console.log(`Retrying: ${entry.url} (from ${entry.filePath})`);
-
-								let shouldSkip = false;
-								if (!forceReplace) {
-									try {
-										const file = this.app.vault.getAbstractFileByPath(
-											entry.filePath,
-										);
-										if (file && file instanceof TFile) {
-											const content = await this.app.vault.read(file);
-											const matches = Array.from(
-												content.matchAll(LINK_REGEX),
-											);
-											for (const match of matches) {
-												const originalUrl = getUrlFromMatch(match);
-												if (originalUrl !== entry.url) continue;
-
-												const matchIndex = match.index;
-												if (matchIndex === undefined) continue;
-
-												const insertionPosIndex =
-													matchIndex + match[0].length;
-												const textAfterLink = content.substring(
-													insertionPosIndex,
-													insertionPosIndex + 300,
-												);
-												const existingArchiveMatch = textAfterLink.match(
-													ADJACENT_ARCHIVE_LINK_REGEX,
-												);
-
-												if (existingArchiveMatch) {
-													// console.log(`Skipping retry API call, adjacent archive link already exists for ${entry.url}`);
-													shouldSkip = true;
-													if (this.data.failedArchives) {
-														const idx =
-															this.data.failedArchives.findIndex(
-																(e) =>
-																	e.url === entry.url &&
-																	e.filePath === entry.filePath,
-															);
-														if (idx !== -1) {
-															this.data.failedArchives.splice(idx, 1);
-															await this.saveSettings();
-														}
-													}
-													const indexToRemove = parsedEntries.findIndex(
-														(e) =>
-															e.url === entry.url &&
-															e.filePath === entry.filePath,
-													);
-													if (indexToRemove !== -1) {
-														parsedEntries.splice(indexToRemove, 1);
-													}
-													break;
-												}
-											}
-										}
-									} catch {
-										// console.warn(`Error during pre-check for ${entry.url} in ${entry.filePath}:`, e);
-									}
-								}
-
-								if (shouldSkip) {
-									continue;
-								}
-
-								await new Promise((res) =>
-									setTimeout(res, this.activeSettings.apiDelay),
-								);
-								const result = await this.archiveUrl(entry.url);
-								if (
-									result.status === "success" ||
-									result.status === "too_many_captures"
-								) {
-									successCount++;
-									// console.log(`Retry successful: ${entry.url}`);
-
-									if (this.data.failedArchives) {
-										const idx = this.data.failedArchives.findIndex(
-											(e) =>
-												e.url === entry.url &&
-												e.filePath === entry.filePath,
-										);
-										if (idx !== -1) {
-											this.data.failedArchives.splice(idx, 1);
-											await this.saveSettings();
-										}
-									}
-
-									try {
-										const file = this.app.vault.getAbstractFileByPath(
-											entry.filePath,
-										);
-										if (file && file instanceof TFile) {
-											let fileModifiedInProcess = false;
-											await this.app.vault.process(file, (currentContent) => {
-												let newContent = currentContent;
-												const matches = Array.from(
-													newContent.matchAll(LINK_REGEX),
-												);
-												for (const match of matches.reverse()) {
-													const originalUrlInFile =
-														getUrlFromMatch(match);
-													if (originalUrlInFile !== entry.url) continue;
-
-													const matchIndex = match.index;
-													if (matchIndex === undefined) continue;
-
-													const insertionPosIndex =
-														matchIndex + match[0].length;
-													const textAfterLink = newContent.substring(
-														insertionPosIndex,
-														insertionPosIndex + 300,
-													);
-													const isHtmlLink =
-														match[2] ||
-														match[3] ||
-														match[4] ||
-														match[5];
-													const existingArchiveMatch =
-														textAfterLink.match(
-															ADJACENT_ARCHIVE_LINK_REGEX,
-														);
-
-													const archiveDate = format(
-														new Date(),
-														this.activeSettings.dateFormat,
-													);
-													const archiveLinkText =
-														this.activeSettings.archiveLinkText.replace(
-															"{date}",
-															archiveDate,
-														);
-													const archiveLink = isHtmlLink
-														? ` <a href="${result.url}">${archiveLinkText}</a>`
-														: ` [${archiveLinkText}](${result.url})`;
-
-													const startIndexToReplace = insertionPosIndex;
-													let endIndexToReplace = insertionPosIndex;
-
-													if (existingArchiveMatch && forceReplace) {
-														endIndexToReplace =
-															insertionPosIndex +
-															existingArchiveMatch[0].length;
-													} else if (
-														existingArchiveMatch &&
-														!forceReplace
-													) {
-														// console.log(`Skipping insertion for ${entry.url}, adjacent link found (final check with vault.process).`);
-														break;
-													}
-
-													newContent =
-														newContent.slice(0, startIndexToReplace) +
-														archiveLink +
-														newContent.slice(endIndexToReplace);
-													fileModifiedInProcess = true;
-													// console.log(`Updated note ${entry.filePath} for URL ${entry.url} via vault.process (modal flow)`);
-													break;
-												}
-												return newContent;
-											});
-											if (fileModifiedInProcess) {
-												// console.log(`File ${entry.filePath} was processed for URL ${entry.url} (modal flow). Check content if update occurred.`);
-											} else {
-												// console.warn(`Link for ${entry.url} not found or not updated in ${entry.filePath} during retry (modal flow with vault.process).`);
-											}
-										} else {
-											// console.warn(`File not found or not TFile: ${entry.filePath} (modal flow)`);
-										}
-									} catch {
-										// console.warn(`Failed to update note ${entry.filePath} for URL ${entry.url} (modal flow):`, e);
-									}
-
-									const indexToRemove = parsedEntries.findIndex(
-										(e) => e.url === entry.url && e.filePath === entry.filePath,
-									);
-									if (indexToRemove !== -1) {
-										parsedEntries.splice(indexToRemove, 1);
-									}
-								} else {
-									// console.log(`Retry failed again: ${entry.url}`);
-									stillFailed.push({
-										...entry,
-										error: `Retry failed (status: ${result.status})`,
-										retryCount: (entry.retryCount ?? 0) + 1,
-									});
-								}
-							}
-
-							try {
-								if (parsedEntries.length > 0) {
-									let newContent = "";
-									if (selectedFileName.endsWith(".json")) {
-										newContent = JSON.stringify(parsedEntries, null, 2);
-									} else if (selectedFileName.endsWith(".csv")) {
-										const header = "url,filePath,timestamp,error,retryCount";
-										const rows = parsedEntries.map((e) => {
-											const escape = (field: string | number | undefined) => {
-												if (field === undefined) return "";
-												const s = String(field);
-												if (
-													s.includes('"') ||
-													s.includes(",") ||
-													s.includes("\n")
-												) {
-													return `"${s.replace(/"/g, '""')}"`;
-												}
-												return s;
-											};
-											return [
-												escape(e.url),
-												escape(e.filePath),
-												escape(e.timestamp),
-												escape(e.error),
-												escape(e.retryCount),
-											].join(",");
-										});
-										newContent = [header, ...rows].join("\n");
-									}
-									await this.app.vault.adapter.write(
-										selectedFileName,
-										newContent,
-									);
-									// console.log(`Updated failed log file: ${selectedFileName}`);
-								} else {
-									await this.app.vault.adapter.remove(selectedFileName);
-									new Notice(
-										"All failed entries retried successfully. Log file deleted.",
-									);
-									// console.log(`Deleted empty failed log file: ${selectedFileName}`);
-								}
-							} catch (error) {
-								// console.error('Error updating or deleting failed log file:', error);
-								const errorMsg =
-									error instanceof Error ? error.message : "Unknown error";
-								new Notice(
-									`Error updating or deleting failed log file: ${errorMsg}`,
-								);
-							}
-
-							new Notice(
-								`Retry complete. Retried ${failedCount} links. Success: ${successCount}, Still Failed: ${stillFailed.length}.`,
+							await this.executeRetryOfFailedArchives(
+								selectedFileName,
+								parsedEntries,
+								failedCount,
+								forceReplace,
 							);
 						},
 					).open();
@@ -1406,4 +1924,190 @@ export class ArchiverService {
 			}
 		}).open();
 	};
+
+	private async executeRetryOfFailedArchives(
+		selectedFileName: string,
+		parsedEntries: FailedArchiveEntry[],
+		failedCount: number,
+		forceReplace: boolean,
+	): Promise<void> {
+		let successCount = 0;
+		const originalFailedList = [...parsedEntries];
+		const stillFailed: FailedArchiveEntry[] = [];
+
+		new Notice(`Retrying ${failedCount} failed archives...`);
+
+		for (const entry of originalFailedList) {
+			let shouldSkip = false;
+			if (!forceReplace) {
+				try {
+					const file = this.app.vault.getAbstractFileByPath(entry.filePath);
+					if (file && file instanceof TFile) {
+						const content = await this.app.vault.read(file);
+						const matches = Array.from(content.matchAll(LINK_REGEX));
+						for (const match of matches) {
+							const originalUrl = getUrlFromMatch(match);
+							if (originalUrl !== entry.url) continue;
+
+							const matchIndex = match.index;
+							if (matchIndex === undefined) continue;
+
+							const insertionPosIndex = matchIndex + match[0].length;
+							const textAfterLink = content.substring(
+								insertionPosIndex,
+								insertionPosIndex + 300,
+							);
+							const existingArchiveMatch = textAfterLink.match(
+								ADJACENT_ARCHIVE_LINK_REGEX,
+							);
+
+							if (existingArchiveMatch) {
+								shouldSkip = true;
+								if (this.data.failedArchives) {
+									const idx = this.data.failedArchives.findIndex(
+										(e) => e.url === entry.url && e.filePath === entry.filePath,
+									);
+									if (idx !== -1) {
+										this.data.failedArchives.splice(idx, 1);
+										await this.saveSettings();
+									}
+								}
+								const indexToRemove = parsedEntries.findIndex(
+									(e) => e.url === entry.url && e.filePath === entry.filePath,
+								);
+								if (indexToRemove !== -1) {
+									parsedEntries.splice(indexToRemove, 1);
+								}
+								break;
+							}
+						}
+					}
+				} catch {
+					// Ignored
+				}
+			}
+
+			if (shouldSkip) {
+				continue;
+			}
+
+			await new Promise((res) => setTimeout(res, this.activeSettings.apiDelay));
+			const result = await this.archiveUrl(entry.url);
+			if (result.status === "success" || result.status === "too_many_captures") {
+				successCount++;
+
+				if (this.data.failedArchives) {
+					const idx = this.data.failedArchives.findIndex(
+						(e) => e.url === entry.url && e.filePath === entry.filePath,
+					);
+					if (idx !== -1) {
+						this.data.failedArchives.splice(idx, 1);
+						await this.saveSettings();
+					}
+				}
+
+				try {
+					const file = this.app.vault.getAbstractFileByPath(entry.filePath);
+					if (file && file instanceof TFile) {
+						await this.app.vault.process(file, (currentContent) => {
+							let newContent = currentContent;
+							const matches = Array.from(newContent.matchAll(LINK_REGEX));
+							for (const match of matches.reverse()) {
+								const originalUrlInFile = getUrlFromMatch(match);
+								if (originalUrlInFile !== entry.url) continue;
+
+								const matchIndex = match.index;
+								if (matchIndex === undefined) continue;
+
+								const insertionPosIndex = matchIndex + match[0].length;
+								const textAfterLink = newContent.substring(
+									insertionPosIndex,
+									insertionPosIndex + 300,
+								);
+								const isHtmlLink = match[2] || match[3] || match[4] || match[5];
+								const existingArchiveMatch = textAfterLink.match(
+									ADJACENT_ARCHIVE_LINK_REGEX,
+								);
+
+								const archiveDate = format(
+									new Date(),
+									this.activeSettings.dateFormat,
+								);
+								const archiveLinkText = this.activeSettings.archiveLinkText.replace(
+									"{date}",
+									archiveDate,
+								);
+								const archiveLink = isHtmlLink
+									? ` <a href="${result.url}">${archiveLinkText}</a>`
+									: ` [${archiveLinkText}](${result.url})`;
+
+								const startIndexToReplace = insertionPosIndex;
+								let endIndexToReplace = insertionPosIndex;
+
+								if (existingArchiveMatch && forceReplace) {
+									endIndexToReplace =
+										insertionPosIndex + existingArchiveMatch[0].length;
+								} else if (existingArchiveMatch && !forceReplace) {
+									break;
+								}
+
+								newContent =
+									newContent.slice(0, startIndexToReplace) +
+									archiveLink +
+									newContent.slice(endIndexToReplace);
+								break;
+							}
+							return newContent;
+						});
+					}
+				} catch {
+					// Ignored
+				}
+
+				const indexToRemove = parsedEntries.findIndex(
+					(e) => e.url === entry.url && e.filePath === entry.filePath,
+				);
+				if (indexToRemove !== -1) {
+					parsedEntries.splice(indexToRemove, 1);
+				}
+			} else {
+				stillFailed.push({
+					...entry,
+					error: `Retry failed (status: ${result.status})`,
+					retryCount: (entry.retryCount ?? 0) + 1,
+					stage: result.status === "failed" ? result.stage : entry.stage,
+					manualProviderIds:
+						result.status === "failed"
+							? result.manualProviderIds
+							: entry.manualProviderIds,
+				});
+			}
+		}
+
+		try {
+			if (parsedEntries.length > 0) {
+				let newContent = "";
+				if (selectedFileName.endsWith(".json")) {
+					newContent = JSON.stringify(parsedEntries, null, 2);
+				} else if (selectedFileName.endsWith(".csv")) {
+					newContent = serializeFailedArchiveEntriesToCsv(parsedEntries);
+				}
+				await this.app.vault.adapter.write(selectedFileName, newContent);
+			} else {
+				await this.app.vault.adapter.remove(selectedFileName);
+				new Notice("All failed entries retried successfully. Log file deleted.");
+			}
+		} catch (error) {
+			const errorMsg = error instanceof Error ? error.message : "Unknown error";
+			new Notice(`Error updating or deleting failed log file: ${errorMsg}`);
+		}
+
+		new Notice(
+			`Retry complete. Retried ${failedCount} links. Success: ${successCount}, still failed: ${stillFailed.length}.`,
+		);
+	}
+
+	public parseCsvEntries(csvContent: string): FailedArchiveEntry[] {
+		return parseFailedArchiveEntriesFromCsv(csvContent);
+	}
 }
