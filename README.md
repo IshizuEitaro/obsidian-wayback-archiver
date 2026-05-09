@@ -35,14 +35,14 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
         - [General](#general)
         - [Filtering Rules](#filtering-rules)
         - [URL Substitution Rules](#url-substitution-rules)
-        - [Archive Providers and Fallbacks](`#archive-providers-and-fallbacks`)
-        - [archive.today Pending Queue and Manual Fallback Options](`#archivetoday-pending-queue-and-manual-fallback-options`)
+        - [Archive Providers and Fallbacks](#archive-providers-and-fallbacks)
+        - [archive.today Pending Queue and Manual Fallback Options](#archivetoday-pending-queue-and-manual-fallback-options)
         - [Per-URL Archive Policies](#per-url-archive-policies)
         - [Advanced Settings](#advanced-settings)
         - [SPN API v2 Options](#spn-api-v2-options)
 - [Troubleshooting FAQ](#troubleshooting-faq)
 - [Limitations](#limitations)
-    - [Experimental: archive.today auto-submit](`#experimental-archivetoday-auto-submit`)
+    - [Experimental: archive.today auto-submit](#experimental-archivetoday-auto-submit)
 - [LICENSE](#license)
 
 ## Installation
@@ -271,7 +271,7 @@ Specify custom archiving providers based on regular expression patterns matched 
 - **Supported Providers:**
     - `wayback`: Archive.org Wayback Machine (saves and resolves)
     - `archiveToday`: resolve existing archive.today snapshots only; does not submit a new save.
-    - `archiveToday:auto`: attempts experimental background submission, then resolves the resulting snapshot later if available. See [Experimental: archive.today auto-submit](`#experimental-archivetoday-auto-submit`) before enabling this.
+    - `archiveToday:auto`: attempts experimental background submission, then resolves the resulting snapshot later if available. See [Experimental: archive.today auto-submit](#experimental-archivetoday-auto-submit) before enabling this.
     - `megalodon`: Web Gyotaku (Megalodon.jp) (resolves existing snapshots only, no auto-submit)
 
 - **Example:**

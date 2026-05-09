@@ -36,13 +36,13 @@
         - [フィルタリングルール (Filtering Rules)](#フィルタリングルール-filtering-rules)
         - [URL 置換ルール (URL Substitution Rules)](#url-置換ルール-url-substitution-rules)
         - [アーカイブプロバイダーとフォールバック (Archive Providers and Fallbacks)](#アーカイブプロバイダーとフォールバック-archive-providers-and-fallbacks)
-        - [archive.today 保留キューおよび手動フォールバックオプション (archive.today Pending Queue and Manual Fallback Options)](`#archivetoday-保留キューおよび手動フォールバックオプション-archivetoday-pending-queue-and-manual-fallback-options`)
+        - [archive.today 保留キューおよび手動フォールバックオプション (archive.today Pending Queue and Manual Fallback Options)](#archivetoday-保留キューおよび手動フォールバックオプション-archivetoday-pending-queue-and-manual-fallback-options)
         - [URLごとのアーカイブポリシー (Per-URL Archive Policies)](#urlごとのアーカイブポリシー-per-url-archive-policies)
         - [詳細設定 (Advanced Settings)](#詳細設定-advanced-settings)
         - [SPN API v2 オプション](#spn-api-v2-オプション)
 - [トラブルシューティング FAQ](#トラブルシューティング-faq)
 - [制限事項](#制限事項)
-    - [【実験的機能】archive.today 自動送信 (auto-submit)](`#実験的機能archivetoday-自動送信-auto-submit`)
+    - [【実験的機能】archive.today 自動送信 (auto-submit)](#実験的機能archivetoday-自動送信-auto-submit)
 - [ライセンス](#ライセンス)
 
 ## インストール
@@ -276,7 +276,7 @@ archive.today への実験的なバックグラウンド送信・検証キュー
 - **サポートされているプロバイダー:**
     - `wayback`: Archive.org Wayback Machine（保存および解決）
     - `archiveToday`: archive.today（既存スナップショットの解決のみ、新規保存は行いません）
-    - `archiveToday:auto`: archive.today（実験的なバックグラウンド自動送信を含み、後で利用可能な場合に解決を試みます。有効にする前に [【実験的機能】archive.today 自動送信 (auto-submit)](`#実験的機能archivetoday-自動送信-auto-submit`) をご確認ください。）
+    - `archiveToday:auto`: archive.today（実験的なバックグラウンド自動送信を含み、後で利用可能な場合に解決を試みます。有効にする前に [【実験的機能】archive.today 自動送信 (auto-submit)](#実験的機能archivetoday-自動送信-auto-submit) をご確認ください。）
     - `megalodon`: ウェブ魚拓 (Megalodon.jp)（既存スナップショットの解決のみ、自動送信は非対応）
 - **設定例:**
     ```text
