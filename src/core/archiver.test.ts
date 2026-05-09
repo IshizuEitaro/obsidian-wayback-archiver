@@ -1,5 +1,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { DEFAULT_SETTINGS, PendingArchiveEntry, WaybackArchiverData } from "./settings";
+import {
+	DEFAULT_SETTINGS,
+	PendingArchiveEntry,
+	WaybackArchiverData,
+	FailedArchiveEntry,
+} from "./settings";
 import { App, PluginManifest, Editor, MarkdownView, TFile } from "obsidian";
 import WaybackArchiverPlugin from "../main";
 
@@ -24,15 +29,15 @@ vi.mock("obsidian", () => ({
 			empty: vi.fn(),
 		};
 
-		constructor(_app: unknown) { }
+		constructor(_app: unknown) {}
 
-		open() { }
+		open() {}
 
-		close() { }
+		close() {}
 	},
 	Notice: noticeMock,
 	requestUrl: requestUrlMock,
-	TFile: class TFile { },
+	TFile: class TFile {},
 	Plugin: class Plugin {
 		app: unknown;
 		manifest: unknown;
@@ -50,10 +55,10 @@ vi.mock("obsidian", () => ({
 	},
 	PluginSettingTab: class PluginSettingTab {
 		containerEl = { empty: vi.fn(), createEl: vi.fn() };
-		constructor(_app: unknown, _plugin: unknown) { }
+		constructor(_app: unknown, _plugin: unknown) {}
 	},
 	Setting: class Setting {
-		constructor(_containerEl: unknown) { }
+		constructor(_containerEl: unknown) {}
 		setName() {
 			return this;
 		}
@@ -76,9 +81,9 @@ vi.mock("obsidian", () => ({
 			return this;
 		}
 	},
-	ButtonComponent: class ButtonComponent { },
+	ButtonComponent: class ButtonComponent {},
 	addIcon: vi.fn(),
-	App: class App { },
+	App: class App {},
 }));
 
 const { ArchiverService } = await import("./archiver");
@@ -104,6 +109,10 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 				process: vi.fn(async (_file: unknown, updater: (latest: string) => string) => {
 					currentContent = updater(currentContent);
 				}),
+				adapter: undefined as undefined | {
+					write: ReturnType<typeof vi.fn>;
+					remove: ReturnType<typeof vi.fn>;
+				},
 			},
 		},
 		data,
@@ -2640,5 +2649,173 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		});
 
 		expect(requestUrlMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("retry success inserts using central formatter", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const customSettings = {
+			...DEFAULT_SETTINGS,
+			archiveLinkText: "Retry snap: {date}",
+			dateFormat: "yyyy-MM-dd",
+		};
+		const setup = createFileService("Check out https://example.com/.", customSettings);
+		setup.plugin.app.vault.adapter = {
+			write: vi.fn(),
+			remove: vi.fn(),
+		};
+
+		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
+			status: "success",
+			url: "https://web.archive.org/web/20260417000000/https://example.com/",
+		});
+
+		const entries: FailedArchiveEntry[] = [
+			{
+				url: "https://example.com/",
+				filePath: "notes/example.md",
+				timestamp: 12345,
+				error: "timeout",
+				retryCount: 0,
+			},
+		];
+
+		await (
+			setup.service as unknown as {
+				executeRetryOfFailedArchives: (
+					logFilePath: string,
+					entries: FailedArchiveEntry[],
+					totalRetries: number,
+					forceReplace: boolean,
+				) => Promise<void>;
+			}
+		).executeRetryOfFailedArchives("failed_log.json", entries, entries.length, false);
+
+		expect(setup.getContent()).toBe(
+			"Check out https://example.com/ [Retry snap: 2026-04-17](https://web.archive.org/web/20260417000000/https://example.com/).",
+		);
+	});
+
+	it("standard retry does not replace adjacent archive link", async () => {
+		const setup = createFileService(
+			"Check out https://example.com/ [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com/).",
+		);
+		setup.plugin.app.vault.adapter = {
+			write: vi.fn(),
+			remove: vi.fn(),
+		};
+
+		const archiveUrlSpy = vi.spyOn(setup.service, "archiveUrl");
+
+		const entries: FailedArchiveEntry[] = [
+			{
+				url: "https://example.com/",
+				filePath: "notes/example.md",
+				timestamp: 12345,
+				error: "timeout",
+				retryCount: 0,
+			},
+		];
+
+		await (
+			setup.service as unknown as {
+				executeRetryOfFailedArchives: (
+					logFilePath: string,
+					entries: FailedArchiveEntry[],
+					totalRetries: number,
+					forceReplace: boolean,
+				) => Promise<void>;
+			}
+		).executeRetryOfFailedArchives("failed_log.json", entries, entries.length, false);
+
+		expect(archiveUrlSpy).not.toHaveBeenCalled();
+		expect(setup.getContent()).toBe(
+			"Check out https://example.com/ [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com/).",
+		);
+	});
+
+	it("force retry replaces adjacent archive link", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const setup = createFileService(
+			"Check out https://example.com/ [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com/).",
+		);
+		setup.plugin.app.vault.adapter = {
+			write: vi.fn(),
+			remove: vi.fn(),
+		};
+
+		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
+			status: "success",
+			url: "https://web.archive.org/web/20260417000000/https://example.com/",
+		});
+
+		const entries: FailedArchiveEntry[] = [
+			{
+				url: "https://example.com/",
+				filePath: "notes/example.md",
+				timestamp: 12345,
+				error: "timeout",
+				retryCount: 0,
+			},
+		];
+
+		await (
+			setup.service as unknown as {
+				executeRetryOfFailedArchives: (
+					logFilePath: string,
+					entries: FailedArchiveEntry[],
+					totalRetries: number,
+					forceReplace: boolean,
+				) => Promise<void>;
+			}
+		).executeRetryOfFailedArchives("failed_log.json", entries, entries.length, true);
+
+		expect(setup.getContent()).toBe(
+			"Check out https://example.com/ [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com/).",
+		);
+	});
+
+	it("retry preserves HTML link formatting", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const setup = createFileService('Check out <a href="https://example.com/">My Site</a>.');
+		setup.plugin.app.vault.adapter = {
+			write: vi.fn(),
+			remove: vi.fn(),
+		};
+
+		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
+			status: "success",
+			url: "https://web.archive.org/web/20260417000000/https://example.com/",
+		});
+
+		const entries: FailedArchiveEntry[] = [
+			{
+				url: "https://example.com/",
+				filePath: "notes/example.md",
+				timestamp: 12345,
+				error: "timeout",
+				retryCount: 0,
+			},
+		];
+
+		await (
+			setup.service as unknown as {
+				executeRetryOfFailedArchives: (
+					logFilePath: string,
+					entries: FailedArchiveEntry[],
+					totalRetries: number,
+					forceReplace: boolean,
+				) => Promise<void>;
+			}
+		).executeRetryOfFailedArchives("failed_log.json", entries, entries.length, false);
+
+		expect(setup.getContent()).toBe(
+			'Check out <a href="https://example.com/">My Site</a> <a href="https://web.archive.org/web/20260417000000/https://example.com/">(Archived on 2026-04-17)</a>.',
+		);
 	});
 });
