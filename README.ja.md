@@ -298,6 +298,20 @@ Archive.org SPN API v2 のキャプチャプロセスに関する特定の設定
 
 ---
 
+## プロジェクトとプロバイダーへの支援
+
+このプラグインが役立っているのなら、プラグインの開発継続と、それを支える素晴らしいアーカイブサービスへの直接の支援（寄付・有料プラン等）をご検討ください。
+
+### 開発者の支援
+
+- **Ko-fi**: [Ko-fi](https://ko-fi.com/ishizue) から開発者へ直接支援（コーヒー代のサポート）を送ることができます。
+
+### アーカイブプロバイダーへの支援
+
+- **Wayback Machine (Archive.org)**: インターネット上の歴史保存に貢献するため、[Internet Archive への寄付](https://archive.org/donate/) をご検討ください。
+- **archive.today**: Moneroによる寄付を受け付けています。[archive.today / archive.md](https://archive.md/) のトップページ上部に記載されている Monero アドレスから寄付が可能です。
+- **ウェブ魚拓 (Megalodon.jp)**: 直接の寄付ではありませんが、サーバー維持やインフラ支援につながる有料のプレミアムサービスを提供しています。詳細は [ウェブ魚拓 利用規約・仕様紹介](https://megalodon.jp/pc/user/introduction) をご覧ください。
+
 ## 制限事項
 
 - [Megalodon (ウェブ魚拓)](https://megalodon.jp/) および [archive.today](https://archive.is/) は、APIが公式に提供されていないため、直接の新規保存リクエスト（S3 API形式）には一部制限があります。

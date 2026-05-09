@@ -288,6 +288,20 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 
 **A:** This is expected behavior. Path and Word patterns are designed to filter which _notes_ are processed during **vault-wide** operations ("Archive all links in vault", "Force Re-archive all links in vault"). They do not apply when using the "current note" commands. URL patterns, however, apply in all commands.
 
+## Supporting the Project & Providers
+
+If you find this plugin useful, please consider supporting both the development of this project and the incredible archiving services that make it possible:
+
+### Support the Developer
+
+- **Ko-fi**: You can support the plugin creator directly via [Ko-fi](https://ko-fi.com/ishizue).
+
+### Support Archive Providers
+
+- **Wayback Machine (Archive.org)**: Support their mission to digitize and preserve history by [donating to Internet Archive](https://archive.org/donate/).
+- **archive.today**: This free preservation service is funded privately and accepts donations. You can find their Monero donation link at the top of the [archive.today / archive.md homepage](https://archive.md/).
+- **Web Gyotaku (Megalodon.jp)**: While not directly a donation-based service, they offer premium paid introduce tiers to support their infrastructure. Learn more on their [introduction page](https://megalodon.jp/pc/user/introduction).
+
 ## Limitations
 
 - [Megalodon (Web Gyotaku)](https://megalodon.jp/) and [archive.today](https://archive.is/) do not offer official saving APIs.
