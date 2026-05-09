@@ -71,7 +71,9 @@ describe("FileUtils", () => {
 		};
 		const file = { path: "notes/test.md" };
 
-		await expect(safeWriteFile(vault as never, file as never, "content")).resolves.toBeUndefined();
+		await expect(
+			safeWriteFile(vault as never, file as never, "content"),
+		).resolves.toBeUndefined();
 
 		expect(noticeMock).toHaveBeenCalledWith("Error saving file: notes/test.md");
 	});

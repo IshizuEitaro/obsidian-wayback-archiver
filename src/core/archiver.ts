@@ -321,7 +321,12 @@ export class ArchiverService {
 	private async processFileWithContext(
 		file: TFile,
 		isForce: boolean,
-		counters: { archivedCount: number; failedCount: number; skippedCount: number; submittedCount?: number },
+		counters: {
+			archivedCount: number;
+			failedCount: number;
+			skippedCount: number;
+			submittedCount?: number;
+		},
 	): Promise<void> {
 		let fileContent: string;
 		try {

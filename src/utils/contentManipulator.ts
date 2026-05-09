@@ -181,7 +181,9 @@ function isAdjacentArchiveForTarget(adjacentArchiveText: string, originalUrl: st
 	}
 	const waybackMatch = archiveUrl.match(/web\.archive\.org\/web\/(?:\d{14}|\*)\/(.+)$/i);
 	if (waybackMatch?.[1]) {
-		return normalizeUrlForComparison(waybackMatch[1]) === normalizeUrlForComparison(originalUrl);
+		return (
+			normalizeUrlForComparison(waybackMatch[1]) === normalizeUrlForComparison(originalUrl)
+		);
 	}
 	return false;
 }

@@ -123,8 +123,8 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		expect(result.deltaLength).toBe(
 			" [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com)"
 				.length -
-			" [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com)"
-				.length,
+				" [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com)"
+					.length,
 		);
 	});
 
