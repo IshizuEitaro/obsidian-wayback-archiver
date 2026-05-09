@@ -146,24 +146,6 @@ describe("ArchiverService.archiveUrl", () => {
 			spnSecretKey: "secret",
 			...overrides,
 		};
-		const mappedSettingsOverrides = { ...settingsOverrides } as Record<string, unknown>;
-		if ("archiveTodayAutoSave" in mappedSettingsOverrides) {
-			mappedSettingsOverrides.archiveTodayExperimentalSubmit =
-				mappedSettingsOverrides.archiveTodayAutoSave;
-			delete mappedSettingsOverrides.archiveTodayAutoSave;
-		}
-		if (mappedSettingsOverrides.archivePolicies) {
-			mappedSettingsOverrides.archivePolicies = (
-				mappedSettingsOverrides.archivePolicies as Record<string, unknown>[]
-			).map((policy: Record<string, unknown>) => {
-				const mappedPolicy = { ...policy };
-				if ("archiveTodayAutoSave" in mappedPolicy) {
-					mappedPolicy.archiveTodayExperimentalSubmit = mappedPolicy.archiveTodayAutoSave;
-					delete mappedPolicy.archiveTodayAutoSave;
-				}
-				return mappedPolicy;
-			});
-		}
 		const plugin = {
 			app: {},
 			data,
@@ -184,7 +166,7 @@ describe("ArchiverService.archiveUrl", () => {
 				archiveTodayPendingPollBatchSize: 3,
 				archiveTodayPendingMaxWaitMs: 600000,
 				archiveTodayMaxPendingCount: 30,
-				...mappedSettingsOverrides,
+				...settingsOverrides,
 			},
 			saveSettings: vi.fn(),
 		};
@@ -382,7 +364,7 @@ describe("ArchiverService.archiveUrl", () => {
 		requestUrlMock
 			.mockResolvedValueOnce({ status: 500, json: {} })
 			.mockResolvedValueOnce({ status: 200, text: "" });
-		const service = createService({}, { archiveTodayAutoSave: true });
+		const service = createService({}, { archiveTodayExperimentalSubmit: true });
 
 		await expect(service.archiveUrl("https://test-target.com/")).resolves.toEqual({
 			status: "submitted",
@@ -421,7 +403,7 @@ describe("ArchiverService.archiveUrl", () => {
 					{
 						pattern: "^https://x\\.com/",
 						providers: ["archiveToday"],
-						archiveTodayAutoSave: true,
+						archiveTodayExperimentalSubmit: true,
 					},
 				],
 			},
@@ -470,7 +452,7 @@ describe("ArchiverService.archiveUrl", () => {
 		requestUrlMock
 			.mockResolvedValueOnce({ status: 500, json: {} })
 			.mockResolvedValueOnce({ status: 200, text: "" });
-		const service = createService({}, { archiveTodayAutoSave: true });
+		const service = createService({}, { archiveTodayExperimentalSubmit: true });
 		const result = await service.archiveUrl("https://test-target.com/");
 		expect(result).toEqual({
 			status: "submitted",
@@ -2454,5 +2436,43 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			` [(Archived on ${expectedDate})](https://megalodon.jp/2026-0508-1212-34/https://foo.com)`,
 			{ line: 0, ch: selection.length },
 		);
+	});
+
+	it("processSingleUrlArchival registers submitted response to pendingArchives queue instead of failedArchives", async () => {
+		const service = createTddService(
+			{ failedArchives: [], pendingArchives: [] },
+			{
+				defaultArchiveProviders: ["archiveToday"],
+				archiveTodayExperimentalSubmit: true,
+			},
+		);
+
+		// Mock the submit request to archive.today as successful
+		requestUrlMock.mockResolvedValueOnce({
+			status: 200,
+			text: "Submitted successfully",
+		});
+
+		const outcome = await (
+			service as unknown as {
+				processSingleUrlArchival: (
+					url: string,
+					isForce: boolean,
+					filePath: string,
+					index?: number,
+				) => Promise<{ status: string }>;
+			}
+		).processSingleUrlArchival("https://example-test.com", false, "notes/sample.md", 42);
+
+		expect(outcome.status).toBe("submitted");
+		expect(service["plugin"].data.failedArchives).toHaveLength(0);
+		expect(service["plugin"].data.pendingArchives).toHaveLength(1);
+		expect(service["plugin"].data.pendingArchives![0]).toMatchObject({
+			url: "https://example-test.com",
+			targetUrl: "https://example-test.com",
+			filePath: "notes/sample.md",
+			approximateIndex: 42,
+			status: "submitted",
+		});
 	});
 });

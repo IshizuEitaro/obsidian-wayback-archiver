@@ -1,7 +1,8 @@
 import { App, Editor, MarkdownView, MarkdownFileInfo, Notice, requestUrl, TFile } from "obsidian";
 import { format } from "date-fns";
 import {
-	ADJACENT_ARCHIVE_LINK_REGEX,
+	ADJACENT_LINK_SEARCH_LIMIT,
+	getAdjacentArchiveLinkMatch,
 	applySubstitutionRules,
 	checkAdjacentLinkFreshness,
 	extractArchiveTimestamp,
@@ -26,6 +27,7 @@ import {
 	PendingArchiveEntry,
 	WaybackArchiverData,
 	WaybackArchiverSettings,
+	appendFailedArchiveEntry,
 } from "./settings";
 import {
 	serializeFailedArchiveEntriesToCsv,
@@ -53,6 +55,7 @@ type SingleArchiveOutcome =
 	| { status: "cache_hit_limited"; url: string }
 	| { status: "archived_success"; url: string }
 	| { status: "archived_limited"; url: string }
+	| { status: "submitted" }
 	| {
 			status: "archived_failed";
 			error?: string;
@@ -90,8 +93,6 @@ const ARCHIVE_TODAY_FIXED_SNAPSHOT_REGEX = new RegExp(
 	String.raw`^https?:\/\/${ARCHIVE_TODAY_HOST_PATTERN}\/\d{14}\/`,
 );
 
-const FAILED_ARCHIVE_DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
-
 const ARCHIVE_PROVIDER_RESOLVERS: Record<
 	ArchiveProviderId,
 	{
@@ -110,7 +111,7 @@ const ARCHIVE_PROVIDER_RESOLVERS: Record<
 		isSnapshotUrl: (url) => ARCHIVE_TODAY_FIXED_SNAPSHOT_REGEX.test(url),
 	},
 	megalodon: {
-		name: "Megalodon",
+		name: "Web Gyotaku",
 		latestUrl: (url) => `https://megalodon.jp/${url}`,
 		saveUrl: (url) => `https://gyo.tc/${encodeURIComponent(url)}`,
 		isSnapshotUrl: (url) => /^https?:\/\/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\//.test(url),
@@ -178,7 +179,7 @@ export class ArchiverService {
 			const cached = this.recentArchiveCache.get(url);
 			const textAfter = contentToCheckAdjacent.substring(
 				checkStartIndex,
-				checkStartIndex + 300,
+				checkStartIndex + ADJACENT_LINK_SEARCH_LIMIT,
 			);
 			if (
 				!isForce &&
@@ -230,6 +231,8 @@ export class ArchiverService {
 	private async processSingleUrlArchival(
 		originalUrl: string,
 		isForce: boolean,
+		filePath: string,
+		approximateIndex?: number,
 	): Promise<SingleArchiveOutcome> {
 		const cached = this.recentArchiveCache.get(originalUrl);
 		if (
@@ -263,13 +266,13 @@ export class ArchiverService {
 				});
 				return { status: "archived_limited", url: archiveResult.url };
 			} else if (archiveResult.status === "submitted") {
-				return {
-					status: "archived_failed",
-					error: "archive.today submit-only request queued externally; no archive URL available for immediate insertion",
-					stage: "archive-today-autosave-failed",
-					manualProviderIds: ["archiveToday"],
-					targetUrl: archiveResult.targetUrl,
-				};
+				await this.registerPendingArchive(
+					originalUrl,
+					archiveResult.targetUrl,
+					filePath,
+					approximateIndex,
+				);
+				return { status: "submitted" };
 			} else {
 				// status === 'failed'
 				return {
@@ -304,24 +307,10 @@ export class ArchiverService {
 		entry: FailedArchiveEntry,
 		options: { save?: boolean } = {},
 	): Promise<void> {
-		if (!this.data.failedArchives) {
-			this.data.failedArchives = [];
+		this.data.failedArchives = appendFailedArchiveEntry(this.data.failedArchives ?? [], entry);
+		if (options.save !== false) {
+			await this.saveSettings();
 		}
-		const duplicate = this.data.failedArchives.find(
-			(existing) =>
-				existing.url === entry.url &&
-				existing.filePath === entry.filePath &&
-				existing.stage === entry.stage &&
-				(existing.targetUrl ?? "") === (entry.targetUrl ?? "") &&
-				entry.timestamp - existing.timestamp <= FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
-		);
-		if (duplicate) {
-			Object.assign(duplicate, entry);
-			if (options.save !== false) await this.saveSettings();
-			return;
-		}
-		this.data.failedArchives.push(entry);
-		if (options.save !== false) await this.saveSettings();
 	}
 
 	/**
@@ -332,7 +321,7 @@ export class ArchiverService {
 	private async processFileWithContext(
 		file: TFile,
 		isForce: boolean,
-		counters: { archivedCount: number; failedCount: number; skippedCount: number },
+		counters: { archivedCount: number; failedCount: number; skippedCount: number; submittedCount?: number },
 	): Promise<void> {
 		let fileContent: string;
 		try {
@@ -382,7 +371,19 @@ export class ArchiverService {
 			}
 
 			// Perform API call first (this is the slow part)
-			const archiveOutcome = await this.processSingleUrlArchival(originalUrl, isForce);
+			const archiveOutcome = await this.processSingleUrlArchival(
+				originalUrl,
+				isForce,
+				file.path,
+				originalMatchIndex,
+			);
+
+			if (archiveOutcome.status === "submitted") {
+				if (counters.submittedCount !== undefined) {
+					counters.submittedCount++;
+				}
+				continue;
+			}
 
 			if (archiveOutcome.status === "archived_failed") {
 				counters.failedCount++;
@@ -434,7 +435,7 @@ export class ArchiverService {
 					const insertionPosIndex = latestIndex + currentMatch[0].length;
 					const textAfterLink = latestContent.substring(
 						insertionPosIndex,
-						insertionPosIndex + 300,
+						insertionPosIndex + ADJACENT_LINK_SEARCH_LIMIT,
 					);
 					const isAdjacent = isFollowedByArchiveLink(textAfterLink);
 					const isLimitedOutcome =
@@ -447,7 +448,7 @@ export class ArchiverService {
 
 					// Check freshness for existing adjacent links
 					if (isAdjacent && !isForce) {
-						const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+						const adjMatch = getAdjacentArchiveLinkMatch(textAfterLink);
 						if (adjMatch) {
 							const timestamp = extractArchiveTimestamp(adjMatch[0]);
 							const freshness = checkAdjacentLinkFreshness(
@@ -466,7 +467,7 @@ export class ArchiverService {
 						archiveOutcome.url,
 						originalMatchIndex,
 						this.activeSettings,
-						{ isReplacement: isAdjacent },
+						{ isReplacement: isAdjacent, allowMismatchedReplacement: isForce },
 					).content;
 				});
 				counters.archivedCount++;
@@ -884,6 +885,53 @@ export class ArchiverService {
 		return status === undefined || (status >= 200 && status < 400);
 	}
 
+	private async registerPendingArchive(
+		url: string,
+		targetUrl: string,
+		filePath: string,
+		approximateIndex?: number,
+	): Promise<string> {
+		if (!this.data.pendingArchives) this.data.pendingArchives = [];
+
+		const isDuplicate = this.data.pendingArchives.some(
+			(entry) =>
+				entry.filePath === filePath &&
+				entry.url === url &&
+				entry.targetUrl === targetUrl &&
+				entry.approximateIndex === approximateIndex,
+		);
+		if (isDuplicate) {
+			const existing = this.data.pendingArchives.find(
+				(entry) =>
+					entry.filePath === filePath &&
+					entry.url === url &&
+					entry.targetUrl === targetUrl &&
+					entry.approximateIndex === approximateIndex,
+			);
+			return existing?.id ?? "";
+		}
+
+		const id =
+			typeof crypto !== "undefined" && crypto.randomUUID
+				? crypto.randomUUID()
+				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const entry: PendingArchiveEntry = {
+			id,
+			providerId: "archiveToday",
+			url,
+			targetUrl,
+			filePath,
+			approximateIndex,
+			createdAt: Date.now(),
+			checkCount: 0,
+			maxWaitMs: this.activeSettings.archiveTodayPendingMaxWaitMs ?? 600000,
+			status: "submitted",
+		};
+		this.data.pendingArchives.push(entry);
+		await this.saveSettings();
+		return id;
+	}
+
 	private async submitArchiveTodayUrl(
 		url: string,
 		targetUrl: string,
@@ -948,24 +996,7 @@ export class ArchiverService {
 			}
 		}
 
-		const id =
-			typeof crypto !== "undefined" && crypto.randomUUID
-				? crypto.randomUUID()
-				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-		const entry: PendingArchiveEntry = {
-			id,
-			providerId: "archiveToday",
-			url,
-			targetUrl,
-			filePath,
-			approximateIndex,
-			createdAt: Date.now(),
-			checkCount: 0,
-			maxWaitMs: this.activeSettings.archiveTodayPendingMaxWaitMs ?? 600000,
-			status: "submitted",
-		};
-		this.data.pendingArchives.push(entry);
-		await this.saveSettings();
+		const id = await this.registerPendingArchive(url, targetUrl, filePath, approximateIndex);
 
 		return { status: "queued", id };
 	}
@@ -1272,7 +1303,7 @@ export class ArchiverService {
 		const archivedCount = 0;
 		const failedCount = 0;
 		const skippedCount = 0;
-		const counters = { archivedCount, failedCount, skippedCount };
+		const counters = { archivedCount, failedCount, skippedCount, submittedCount: 0 };
 
 		if (isSelection) {
 			const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
@@ -1308,7 +1339,16 @@ export class ArchiverService {
 				if (absoluteOriginalIndex === undefined) continue;
 
 				// API call
-				const archiveOutcome = await this.processSingleUrlArchival(originalUrl, false);
+				const archiveOutcome = await this.processSingleUrlArchival(
+					originalUrl,
+					false,
+					file.path,
+					absoluteOriginalIndex,
+				);
+				if (archiveOutcome.status === "submitted") {
+					counters.submittedCount++;
+					continue;
+				}
 				if (archiveOutcome.status === "archived_failed") {
 					counters.failedCount++;
 					await this.logFailedArchive(
@@ -1346,6 +1386,7 @@ export class ArchiverService {
 
 		let summary = `Archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
 		if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
+		if (counters.submittedCount > 0) summary += `, Submitted: ${counters.submittedCount}`;
 		new Notice(summary);
 		this.plugin.setStatusBarText?.(
 			`✅ Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
@@ -1388,7 +1429,7 @@ export class ArchiverService {
 
 		const selectedText = editor.getSelection();
 		const isSelection = selectedText.length > 0;
-		const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0 };
+		const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0, submittedCount: 0 };
 
 		if (isSelection) {
 			const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
@@ -1425,7 +1466,16 @@ export class ArchiverService {
 				if (absoluteOriginalIndex === undefined) continue;
 
 				// API call
-				const archiveOutcome = await this.processSingleUrlArchival(originalUrl, true);
+				const archiveOutcome = await this.processSingleUrlArchival(
+					originalUrl,
+					true,
+					file.path,
+					absoluteOriginalIndex,
+				);
+				if (archiveOutcome.status === "submitted") {
+					counters.submittedCount++;
+					continue;
+				}
 				if (archiveOutcome.status === "archived_failed") {
 					counters.failedCount++;
 					await this.logFailedArchive(
@@ -1471,6 +1521,7 @@ export class ArchiverService {
 
 		let summary = `Force re-archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
 		if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
+		if (counters.submittedCount > 0) summary += `, Submitted: ${counters.submittedCount}`;
 		new Notice(summary);
 		this.plugin.setStatusBarText?.(
 			`✅ Force re-archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
@@ -1501,12 +1552,15 @@ export class ArchiverService {
 		if (!currentMatch) return false;
 
 		const insertionPosIndex = latestIndex + currentMatch[0].length;
-		const textAfterLink = latestContent.substring(insertionPosIndex, insertionPosIndex + 300);
+		const textAfterLink = latestContent.substring(
+			insertionPosIndex,
+			insertionPosIndex + ADJACENT_LINK_SEARCH_LIMIT,
+		);
 		const isAdjacent = isFollowedByArchiveLink(textAfterLink);
 
 		// Freshness check for standard mode
 		if (isAdjacent && !isForce) {
-			const adjMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
+			const adjMatch = getAdjacentArchiveLinkMatch(textAfterLink);
 			if (adjMatch) {
 				const timestamp = extractArchiveTimestamp(adjMatch[0]);
 				const freshness = checkAdjacentLinkFreshness(timestamp, this.activeSettings);
@@ -1520,7 +1574,7 @@ export class ArchiverService {
 			archiveUrl,
 			originalAbsoluteIndex,
 			this.activeSettings,
-			{ isReplacement: isAdjacent },
+			{ isReplacement: isAdjacent, allowMismatchedReplacement: isForce },
 		);
 		if (!modification.modified) return false;
 
@@ -1962,11 +2016,9 @@ export class ArchiverService {
 							const insertionPosIndex = matchIndex + match[0].length;
 							const textAfterLink = content.substring(
 								insertionPosIndex,
-								insertionPosIndex + 300,
+								insertionPosIndex + ADJACENT_LINK_SEARCH_LIMIT,
 							);
-							const existingArchiveMatch = textAfterLink.match(
-								ADJACENT_ARCHIVE_LINK_REGEX,
-							);
+							const existingArchiveMatch = getAdjacentArchiveLinkMatch(textAfterLink);
 
 							if (existingArchiveMatch) {
 								shouldSkip = true;
@@ -2029,12 +2081,11 @@ export class ArchiverService {
 								const insertionPosIndex = matchIndex + match[0].length;
 								const textAfterLink = newContent.substring(
 									insertionPosIndex,
-									insertionPosIndex + 300,
+									insertionPosIndex + ADJACENT_LINK_SEARCH_LIMIT,
 								);
 								const isHtmlLink = match[2] || match[3] || match[4] || match[5];
-								const existingArchiveMatch = textAfterLink.match(
-									ADJACENT_ARCHIVE_LINK_REGEX,
-								);
+								const existingArchiveMatch =
+									getAdjacentArchiveLinkMatch(textAfterLink);
 
 								const archiveDate = format(
 									new Date(),
