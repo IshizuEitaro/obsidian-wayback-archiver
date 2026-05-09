@@ -2475,4 +2475,123 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			status: "submitted",
 		});
 	});
+
+	it("archiveToday with experimentalSubmit returns success immediately if a fresh snapshot already exists", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const service = createTddService(
+			{},
+			{
+				defaultArchiveProviders: ["archiveToday"],
+				archiveTodayExperimentalSubmit: true,
+				archiveFreshnessDays: 2, // 2 days freshness window
+			},
+		);
+
+		// Mock the check for an existing snapshot to return a fresh one (dated April 16, 2026)
+		requestUrlMock.mockResolvedValueOnce({
+			status: 200,
+			url: "https://archive.md/20260416000000/https://example.com/",
+			text: "",
+		});
+
+		const result = await service.archiveUrl("https://example.com/");
+
+		expect(result).toEqual({
+			status: "success",
+			url: "https://archive.md/20260416000000/https://example.com/",
+		});
+
+		// Ensure no submission/save request was fired (only 1 call to check existing snapshot)
+		expect(requestUrlMock).toHaveBeenCalledTimes(1);
+		expect(requestUrlMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "https://archive.md/https://example.com/",
+			}),
+		);
+	});
+
+	it("archiveToday with experimentalSubmit triggers new submit if snapshot exists but is stale", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const service = createTddService(
+			{},
+			{
+				defaultArchiveProviders: ["archiveToday"],
+				archiveTodayExperimentalSubmit: true,
+				archiveFreshnessDays: 2, // 2 days freshness window
+			},
+		);
+
+		// 1st request: Returns a stale snapshot (dated April 10, 2026)
+		requestUrlMock.mockResolvedValueOnce({
+			status: 200,
+			url: "https://archive.md/20260410000000/https://example.com/",
+			text: "",
+		});
+
+		// 2nd request: Mock the save request (submit trigger) to succeed
+		requestUrlMock.mockResolvedValueOnce({
+			status: 200,
+			text: "Submitted successfully",
+		});
+
+		const result = await service.archiveUrl("https://example.com/");
+
+		expect(result).toEqual({
+			status: "submitted",
+			targetUrl: "https://example.com/",
+			provider: "archiveToday",
+		});
+
+		// Expect two calls: 1 to resolve existing, and 1 to submit
+		expect(requestUrlMock).toHaveBeenCalledTimes(2);
+		expect(requestUrlMock).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				url: "https://archive.md/https://example.com/",
+			}),
+		);
+		expect(requestUrlMock).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				url: "https://archive.md/submit/?url=https%3A%2F%2Fexample.com%2F",
+			}),
+		);
+	});
+
+	it("archiveToday with experimentalSubmit triggers new submit if snapshot does not exist", async () => {
+		const service = createTddService(
+			{},
+			{
+				defaultArchiveProviders: ["archiveToday"],
+				archiveTodayExperimentalSubmit: true,
+			},
+		);
+
+		// 1st request: No existing snapshot (resolves to standard/fallback URL that is not a snapshot)
+		requestUrlMock.mockResolvedValueOnce({
+			status: 200,
+			url: "https://archive.md/https://example.com/",
+			text: "",
+		});
+
+		// 2nd request: Mock the submit save request to succeed
+		requestUrlMock.mockResolvedValueOnce({
+			status: 200,
+			text: "Submitted successfully",
+		});
+
+		const result = await service.archiveUrl("https://example.com/");
+
+		expect(result).toEqual({
+			status: "submitted",
+			targetUrl: "https://example.com/",
+			provider: "archiveToday",
+		});
+
+		expect(requestUrlMock).toHaveBeenCalledTimes(2);
+	});
 });
