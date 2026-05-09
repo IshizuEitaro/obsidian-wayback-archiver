@@ -2178,22 +2178,31 @@ export class ArchiverService {
 				}
 
 				const indexToRemove = parsedEntries.findIndex(
-					(e) => e.url === entry.url && e.filePath === entry.filePath,
+					(e) => e.url === entry.url && e.filePath === entry.filePath && e.timestamp === entry.timestamp,
 				);
 				if (indexToRemove !== -1) {
 					parsedEntries.splice(indexToRemove, 1);
 				}
 			} else {
-				stillFailed.push({
+				const matchingIndex = parsedEntries.findIndex(
+					(e) => e.url === entry.url && e.filePath === entry.filePath && e.timestamp === entry.timestamp,
+				);
+				const updatedMetadata = {
 					...entry,
-					error: `Retry failed (status: ${result.status})`,
+					error: result.error
+						? `Retry failed (status: ${result.status}): ${result.error}`
+						: `Retry failed (status: ${result.status})`,
 					retryCount: (entry.retryCount ?? 0) + 1,
 					stage: result.status === "failed" ? result.stage : entry.stage,
 					manualProviderIds:
 						result.status === "failed"
 							? result.manualProviderIds
 							: entry.manualProviderIds,
-				});
+				};
+				if (matchingIndex !== -1) {
+					parsedEntries[matchingIndex] = updatedMetadata;
+				}
+				stillFailed.push(updatedMetadata);
 			}
 		}
 

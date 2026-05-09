@@ -3019,4 +3019,48 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		expect(setup.data.pendingArchives).toHaveLength(0);
 		expect(setup.getContent()).toBe("See [A](https://a.com) [(Archived on 2026-05-09)](https://archive.today/20260509121212/https://a.com)."); // unmodified
 	});
+
+	it("executeRetryOfFailedArchives persists updated retry metadata on failure", async () => {
+		const setup = createFileService("Check out https://example.com/");
+		setup.plugin.app.vault.adapter = {
+			...setup.plugin.app.vault.adapter,
+			write: vi.fn(),
+			remove: vi.fn(),
+		};
+
+		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
+			status: "failed",
+			stage: "wayback-timeout",
+			error: "Connection timeout retry failure",
+		});
+
+		const entries: FailedArchiveEntry[] = [
+			{
+				url: "https://example.com/",
+				filePath: "notes/example.md",
+				timestamp: 12345,
+				error: "original timeout",
+				retryCount: 0,
+			},
+		];
+
+		await (
+			setup.service as unknown as {
+				executeRetryOfFailedArchives: (
+					logFilePath: string,
+					entries: FailedArchiveEntry[],
+					totalRetries: number,
+					forceReplace: boolean,
+				) => Promise<void>;
+			}
+		).executeRetryOfFailedArchives("failed_log.json", entries, entries.length, false);
+
+		expect(setup.plugin.app.vault.adapter.write).toHaveBeenCalledTimes(1);
+		const writtenContent = (setup.plugin.app.vault.adapter.write as vi.Mock).mock.calls[0][1];
+		const parsed = JSON.parse(writtenContent);
+		expect(parsed).toHaveLength(1);
+		expect(parsed[0].retryCount).toBe(1);
+		expect(parsed[0].error).toContain("Connection timeout retry failure");
+		expect(parsed[0].stage).toBe("wayback-timeout");
+	});
 });
