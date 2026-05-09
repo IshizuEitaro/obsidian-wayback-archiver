@@ -98,7 +98,7 @@ export function applyLinkModification(
 	archiveUrl: string,
 	approximateIndex: number,
 	settings: WaybackArchiverSettings,
-	options: { isReplacement: boolean; oldLinkEndIndex?: number },
+	options: { isReplacement: boolean },
 ): ContentModification {
 	const latestIndex = findLatestLinkIndex(content, originalUrl, approximateIndex);
 

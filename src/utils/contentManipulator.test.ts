@@ -138,6 +138,32 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		vi.useRealTimers();
 	});
 
+	it("should not treat a later non-adjacent archive link as the original link's adjacent archive", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const content =
+			"[main](https://example.com) some text [other archive](https://archive.md/20260410000000/https://other.example)";
+
+		const result = applyLinkModification(
+			content,
+			"https://example.com",
+			"https://archive.md/20260417000000/https://example.com",
+			0,
+			DEFAULT_SETTINGS,
+			{ isReplacement: true },
+		);
+
+		expect(result.content).toBe(
+			"[main](https://example.com) [(Archived on 2026-04-17)](https://archive.md/20260417000000/https://example.com) some text [other archive](https://archive.md/20260410000000/https://other.example)",
+		);
+		expect(result.content).toContain(
+			"some text [other archive](https://archive.md/20260410000000/https://other.example)",
+		);
+
+		vi.useRealTimers();
+	});
+
 	it("should leave content unchanged when the original link disappeared", () => {
 		const result = applyLinkModification(
 			"Read this note instead.",

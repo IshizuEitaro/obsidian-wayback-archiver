@@ -1751,6 +1751,66 @@ describe("Wayback Archiver Enhancements TDD", () => {
 		});
 	});
 
+	it("logFailedArchive keeps separate entries when targetUrl differs", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-05-09T00:00:00Z"));
+		const service = createEnhancementService();
+		const logFailedArchive = (
+			service as unknown as { logFailedArchive: (...args: unknown[]) => Promise<unknown> }
+		).logFailedArchive.bind(service);
+
+		await logFailedArchive("https://example.com", "notes/test.md", "first failure", 0, {
+			stage: "archive-today-autosave-failed",
+			manualProviderIds: ["archiveToday"],
+			targetUrl: "https://target-a.example",
+		});
+		await logFailedArchive("https://example.com", "notes/test.md", "second failure", 1, {
+			stage: "archive-today-autosave-failed",
+			manualProviderIds: ["archiveToday"],
+			targetUrl: "https://target-b.example",
+		});
+
+		expect(service["plugin"].data.failedArchives).toHaveLength(2);
+		expect(service["plugin"].data.failedArchives!.map((entry) => entry.targetUrl)).toEqual([
+			"https://target-a.example",
+			"https://target-b.example",
+		]);
+	});
+
+	it("appendFailedArchive coalesces pending timeout entries through the shared failed-log primitive", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-05-09T00:00:00Z"));
+		const entry: PendingArchiveEntry = {
+			id: "expired-1",
+			providerId: "archiveToday",
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			filePath: "notes/test.md",
+			createdAt: Date.now() - 700000,
+			checkCount: 5,
+			maxWaitMs: 600000,
+			status: "submitted",
+		};
+		const service = createEnhancementService({ pendingArchives: [entry] });
+		const data = service["plugin"].data;
+
+		await (
+			service as unknown as { runPendingQueueCycle: () => Promise<void> }
+		).runPendingQueueCycle();
+		data.pendingArchives = [{ ...entry, id: "expired-2" }];
+		vi.setSystemTime(new Date("2026-05-09T00:03:00Z"));
+		await (
+			service as unknown as { runPendingQueueCycle: () => Promise<void> }
+		).runPendingQueueCycle();
+
+		expect(data.failedArchives).toHaveLength(1);
+		expect(data.failedArchives![0]).toMatchObject({
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			stage: "archive-today-pending-timeout",
+		});
+	});
+
 	it("parses new and legacy failed log CSV files seamlessly mapping by header", async () => {
 		// 1. Legacy CSV with older column counts
 		const legacyCsvContent =

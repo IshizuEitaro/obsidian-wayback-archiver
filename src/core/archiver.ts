@@ -290,35 +290,38 @@ export class ArchiverService {
 		retryCount: number = 0,
 		metadata: Pick<FailedArchiveEntry, "stage" | "manualProviderIds" | "targetUrl"> = {},
 	): Promise<void> {
-		if (!this.data.failedArchives) {
-			this.data.failedArchives = [];
-		}
-		const now = Date.now();
-		const duplicate = this.data.failedArchives.find(
-			(entry) =>
-				entry.url === originalUrl &&
-				entry.filePath === filePath &&
-				entry.stage === metadata.stage &&
-				now - entry.timestamp <= FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
-		);
-		if (duplicate) {
-			duplicate.targetUrl = metadata.targetUrl ?? duplicate.targetUrl;
-			duplicate.timestamp = now;
-			duplicate.error = error;
-			duplicate.retryCount = retryCount;
-			duplicate.manualProviderIds = metadata.manualProviderIds ?? duplicate.manualProviderIds;
-			await this.saveSettings();
-			return;
-		}
-		this.data.failedArchives.push({
+		await this.appendFailedArchive({
 			url: originalUrl,
 			filePath,
-			timestamp: now,
+			timestamp: Date.now(),
 			error,
 			retryCount,
 			...metadata,
 		});
-		await this.saveSettings();
+	}
+
+	private async appendFailedArchive(
+		entry: FailedArchiveEntry,
+		options: { save?: boolean } = {},
+	): Promise<void> {
+		if (!this.data.failedArchives) {
+			this.data.failedArchives = [];
+		}
+		const duplicate = this.data.failedArchives.find(
+			(existing) =>
+				existing.url === entry.url &&
+				existing.filePath === entry.filePath &&
+				existing.stage === entry.stage &&
+				(existing.targetUrl ?? "") === (entry.targetUrl ?? "") &&
+				entry.timestamp - existing.timestamp <= FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
+		);
+		if (duplicate) {
+			Object.assign(duplicate, entry);
+			if (options.save !== false) await this.saveSettings();
+			return;
+		}
+		this.data.failedArchives.push(entry);
+		if (options.save !== false) await this.saveSettings();
 	}
 
 	/**
@@ -995,18 +998,22 @@ export class ArchiverService {
 			}
 		}
 
-		if (expired.length && !this.data.failedArchives) this.data.failedArchives = [];
 		for (const entry of expired) {
-			this.data.failedArchives!.push({
-				url: entry.url,
-				targetUrl: entry.targetUrl,
-				filePath: entry.filePath,
-				timestamp: now,
-				error: "archive.today pending snapshot was not resolved before max wait",
-				retryCount: 0,
-				stage: "archive-today-pending-timeout",
-				manualProviderIds: ["archiveToday"],
-			});
+			await this.appendFailedArchive(
+				{
+					url: entry.url,
+					targetUrl: entry.targetUrl,
+					filePath: entry.filePath,
+					timestamp: now,
+					error: "archive.today pending snapshot was not resolved before max wait",
+					retryCount: 0,
+					stage: "archive-today-pending-timeout",
+					manualProviderIds: ["archiveToday"],
+				},
+				{
+					save: false,
+				},
+			);
 		}
 
 		const candidates = alive
