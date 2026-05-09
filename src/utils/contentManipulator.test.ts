@@ -195,8 +195,6 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		expect(result.content).toBe(
 			"[main](https://example.com) [(Archived on 2026-04-17)](https://archive.md/20260417000000/https://example.com) [(Archived on 2026-04-10)](https://archive.md/20260410000000/https://other.example)",
 		);
-
-		vi.useRealTimers();
 	});
 
 	it("should replace an adjacent archive link for a different target in force mode", () => {
@@ -218,8 +216,6 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		expect(result.content).toBe(
 			"[main](https://example.com) [(Archived on 2026-04-17)](https://archive.md/20260417000000/https://example.com)",
 		);
-
-		vi.useRealTimers();
 	});
 
 	it("should leave content unchanged when the original link disappeared", () => {

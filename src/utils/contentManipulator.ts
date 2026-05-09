@@ -71,7 +71,7 @@ export function findLatestLinkIndex(
 
 	for (let i = 1; i < eligibleMatches.length; i++) {
 		const currentMatch = eligibleMatches[i];
-		const distance = Math.abs((currentMatch.index || 0) - approximateIndex);
+		const distance = Math.abs((currentMatch.index ?? 0) - approximateIndex);
 		if (distance < minDistance) {
 			minDistance = distance;
 			bestMatch = currentMatch;
