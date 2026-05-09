@@ -43,7 +43,8 @@
 	"pnpm": {
 		"overrides": {
 			"picomatch": "4.0.4",
-			"flatted": "3.4.2"
+			"flatted": "3.4.2",
+			"postcss": "8.5.10"
 		}
 	}
 }
