@@ -723,6 +723,15 @@ export class ArchiverService {
 				continue;
 			}
 			if (providerId === "archiveToday" && policy.archiveTodayExperimentalSubmit) {
+				const resolution = await this.resolveProviderSnapshot(providerId, targetUrl);
+				if (resolution.url) {
+					const timestamp = extractArchiveTimestamp(resolution.url);
+					const freshness = checkAdjacentLinkFreshness(timestamp, this.activeSettings);
+					if (!freshness.replaceExisting) {
+						return { status: "success", url: resolution.url };
+					}
+				}
+
 				try {
 					const response = await requestUrl({
 						method: "GET",

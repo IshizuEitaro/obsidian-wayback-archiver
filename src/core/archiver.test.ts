@@ -363,6 +363,7 @@ describe("ArchiverService.archiveUrl", () => {
 	it("can submit archive.today in the background when enabled before resolving fallbacks", async () => {
 		requestUrlMock
 			.mockResolvedValueOnce({ status: 500, json: {} })
+			.mockResolvedValueOnce({ status: 200, text: "No snapshot html" })
 			.mockResolvedValueOnce({ status: 200, text: "" });
 		const service = createService({}, { archiveTodayExperimentalSubmit: true });
 
@@ -372,7 +373,7 @@ describe("ArchiverService.archiveUrl", () => {
 			provider: "archiveToday",
 		});
 
-		expect(requestUrlMock.mock.calls[1][0]).toMatchObject({
+		expect(requestUrlMock.mock.calls[2][0]).toMatchObject({
 			method: "GET",
 			url: "https://archive.md/submit/?url=https%3A%2F%2Ftest-target.com%2F",
 		});
@@ -395,7 +396,9 @@ describe("ArchiverService.archiveUrl", () => {
 	});
 
 	it("archiveUrl returns submitted when archive.today experimental submit fires from archiveWithProviderPolicy", async () => {
-		requestUrlMock.mockResolvedValueOnce({ status: 200, text: "" });
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 200, text: "No snapshot html" })
+			.mockResolvedValueOnce({ status: 200, text: "" });
 		const service = createService(
 			{},
 			{
@@ -414,7 +417,7 @@ describe("ArchiverService.archiveUrl", () => {
 			targetUrl: "https://x.com/example/status/1",
 			provider: "archiveToday",
 		});
-		expect(requestUrlMock.mock.calls[0][0].url).toBe(
+		expect(requestUrlMock.mock.calls[1][0].url).toBe(
 			"https://archive.md/submit/?url=https%3A%2F%2Fx.com%2Fexample%2Fstatus%2F1",
 		);
 		expect(requestUrlMock.mock.calls.map((call) => call[0].url)).not.toContain(
@@ -424,7 +427,9 @@ describe("ArchiverService.archiveUrl", () => {
 	});
 
 	it("archiveUrl returns failed when archive.today experimental submit-only request returns 429", async () => {
-		requestUrlMock.mockResolvedValueOnce({ status: 429, text: "rate limited" });
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 200, text: "No snapshot html" })
+			.mockResolvedValueOnce({ status: 429, text: "rate limited" });
 		const service = createService(
 			{},
 			{
@@ -451,6 +456,7 @@ describe("ArchiverService.archiveUrl", () => {
 	it("archiveUrl returns submitted without pending entry for Wayback fallback experimental submit because no note context is available", async () => {
 		requestUrlMock
 			.mockResolvedValueOnce({ status: 500, json: {} })
+			.mockResolvedValueOnce({ status: 200, text: "No snapshot html" })
 			.mockResolvedValueOnce({ status: 200, text: "" });
 		const service = createService({}, { archiveTodayExperimentalSubmit: true });
 		const result = await service.archiveUrl("https://test-target.com/");
@@ -476,7 +482,9 @@ describe("ArchiverService.archiveUrl", () => {
 	});
 
 	it("archiveUrl returns failed when archive.today experimental submit-only request throws inside archiveWithProviderPolicy", async () => {
-		requestUrlMock.mockRejectedValueOnce(new Error("submit error"));
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 200, text: "No snapshot html" })
+			.mockRejectedValueOnce(new Error("submit error"));
 		const service = createService(
 			{},
 			{
@@ -2447,11 +2455,16 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			},
 		);
 
-		// Mock the submit request to archive.today as successful
-		requestUrlMock.mockResolvedValueOnce({
-			status: 200,
-			text: "Submitted successfully",
-		});
+		// Mock the snapshot check and submit requests to archive.today as successful
+		requestUrlMock
+			.mockResolvedValueOnce({
+				status: 200,
+				text: "No snapshot html",
+			})
+			.mockResolvedValueOnce({
+				status: 200,
+				text: "Submitted successfully",
+			});
 
 		const outcome = await (
 			service as unknown as {
@@ -2507,7 +2520,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		expect(requestUrlMock).toHaveBeenCalledTimes(1);
 		expect(requestUrlMock).toHaveBeenCalledWith(
 			expect.objectContaining({
-				url: "https://archive.md/https://example.com/",
+				url: "https://archive.md/latest/https%3A%2F%2Fexample.com%2F",
 			}),
 		);
 	});
@@ -2551,7 +2564,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		expect(requestUrlMock).toHaveBeenNthCalledWith(
 			1,
 			expect.objectContaining({
-				url: "https://archive.md/https://example.com/",
+				url: "https://archive.md/latest/https%3A%2F%2Fexample.com%2F",
 			}),
 		);
 		expect(requestUrlMock).toHaveBeenNthCalledWith(
