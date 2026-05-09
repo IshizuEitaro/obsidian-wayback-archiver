@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../core/settings";
 import {
 	applyLinkModification,
@@ -7,6 +7,10 @@ import {
 } from "./contentManipulator";
 
 describe("Content Manipulator - Match-at-Insertion", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("should find the link index accurately in original content", () => {
 		const content = "Check this [Link](https://example.com) out.";
 		const url = "https://example.com";
@@ -72,8 +76,26 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 					.length,
 			newIndex: 5,
 		});
+	});
 
-		vi.useRealTimers();
+	it("applyLinkModification inserts after the latest link location when content shifted forward", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const latestContent = "# Added\n\nRead [Link](https://example.com) now.";
+
+		const result = applyLinkModification(
+			latestContent,
+			"https://example.com",
+			"https://web.archive.org/web/20260417000000/https://example.com",
+			5, // old approximate index
+			DEFAULT_SETTINGS,
+			{ isReplacement: false },
+		);
+
+		expect(result.content).toBe(
+			"# Added\n\nRead [Link](https://example.com) [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com) now.",
+		);
 	});
 
 	it("should replace an adjacent archive link after the original", () => {
@@ -83,7 +105,6 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		const content =
 			"Read [Link](https://example.com) [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com) now.";
 		const oldArchiveStart = content.indexOf(" [(Archived on 2026-04-10)]");
-		const oldArchiveEnd = content.indexOf(" now.");
 
 		const result = applyLinkModification(
 			content,
@@ -91,7 +112,7 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 			"https://web.archive.org/web/20260417000000/https://example.com",
 			5,
 			DEFAULT_SETTINGS,
-			{ isReplacement: true, oldLinkEndIndex: oldArchiveEnd },
+			{ isReplacement: true },
 		);
 
 		expect(oldArchiveStart).toBe(32);
@@ -102,20 +123,15 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		expect(result.deltaLength).toBe(
 			" [(Archived on 2026-04-17)](https://web.archive.org/web/20260417000000/https://example.com)"
 				.length -
-				" [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com)"
-					.length,
+			" [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com)"
+				.length,
 		);
-
-		vi.useRealTimers();
 	});
 
 	it("should replace the adjacent archive link found in latest content instead of using stale oldLinkEndIndex", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
 
-		const originalContent =
-			"Read [Link](https://example.com) [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com) now.";
-		const staleOldArchiveEnd = originalContent.indexOf(" now.");
 		const latestContent =
 			"Intro added. Read [Link](https://example.com) [(Archived on 2026-04-10)](https://web.archive.org/web/20260410000000/https://example.com) now.";
 
@@ -125,7 +141,7 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 			"https://web.archive.org/web/20260417000000/https://example.com",
 			5,
 			DEFAULT_SETTINGS,
-			{ isReplacement: true, oldLinkEndIndex: staleOldArchiveEnd },
+			{ isReplacement: true },
 		);
 
 		expect(result.content).toBe(
@@ -134,8 +150,6 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		expect(result.content).toContain("Intro added.");
 		expect(result.content).toContain(" now.");
 		expect(result.modified).toBe(true);
-
-		vi.useRealTimers();
 	});
 
 	it("should not treat a later non-adjacent archive link as the original link's adjacent archive", () => {
@@ -159,6 +173,50 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		);
 		expect(result.content).toContain(
 			"some text [other archive](https://archive.md/20260410000000/https://other.example)",
+		);
+	});
+
+	it("should not replace an adjacent archive link for a different target in normal mode", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const content =
+			"[main](https://example.com) [(Archived on 2026-04-10)](https://archive.md/20260410000000/https://other.example)";
+
+		const result = applyLinkModification(
+			content,
+			"https://example.com",
+			"https://archive.md/20260417000000/https://example.com",
+			0,
+			DEFAULT_SETTINGS,
+			{ isReplacement: true },
+		);
+
+		expect(result.content).toBe(
+			"[main](https://example.com) [(Archived on 2026-04-17)](https://archive.md/20260417000000/https://example.com) [(Archived on 2026-04-10)](https://archive.md/20260410000000/https://other.example)",
+		);
+
+		vi.useRealTimers();
+	});
+
+	it("should replace an adjacent archive link for a different target in force mode", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
+
+		const content =
+			"[main](https://example.com) [(Archived on 2026-04-10)](https://archive.md/20260410000000/https://other.example)";
+
+		const result = applyLinkModification(
+			content,
+			"https://example.com",
+			"https://archive.md/20260417000000/https://example.com",
+			0,
+			DEFAULT_SETTINGS,
+			{ isReplacement: true, allowMismatchedReplacement: true },
+		);
+
+		expect(result.content).toBe(
+			"[main](https://example.com) [(Archived on 2026-04-17)](https://archive.md/20260417000000/https://example.com)",
 		);
 
 		vi.useRealTimers();

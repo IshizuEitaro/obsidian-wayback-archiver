@@ -1,8 +1,11 @@
 import {
-	ADJACENT_ARCHIVE_LINK_REGEX,
+	ADJACENT_LINK_SEARCH_LIMIT,
+	getAdjacentArchiveLinkMatch,
 	LINK_REGEX,
 	getUrlFromMatch,
 	createArchiveLink,
+	isSnapshotForTargetUrl,
+	normalizeUrlForComparison,
 } from "./LinkUtils";
 import { WaybackArchiverSettings } from "../core/settings";
 
@@ -98,7 +101,7 @@ export function applyLinkModification(
 	archiveUrl: string,
 	approximateIndex: number,
 	settings: WaybackArchiverSettings,
-	options: { isReplacement: boolean },
+	options: { isReplacement: boolean; allowMismatchedReplacement?: boolean },
 ): ContentModification {
 	const latestIndex = findLatestLinkIndex(content, originalUrl, approximateIndex);
 
@@ -132,9 +135,16 @@ export function applyLinkModification(
 	const newIndex = latestIndex;
 
 	if (options.isReplacement) {
-		const textAfterLink = content.slice(insertionPoint, insertionPoint + 300);
-		const adjacentArchiveMatch = textAfterLink.match(ADJACENT_ARCHIVE_LINK_REGEX);
-		if (adjacentArchiveMatch) {
+		const textAfterLink = content.slice(
+			insertionPoint,
+			insertionPoint + ADJACENT_LINK_SEARCH_LIMIT,
+		);
+		const adjacentArchiveMatch = getAdjacentArchiveLinkMatch(textAfterLink);
+		if (
+			adjacentArchiveMatch &&
+			(options.allowMismatchedReplacement ||
+				isAdjacentArchiveForTarget(adjacentArchiveMatch[0], originalUrl))
+		) {
 			const replaceEnd = insertionPoint + adjacentArchiveMatch[0].length;
 			newContent =
 				content.slice(0, insertionPoint) + archiveLinkText + content.slice(replaceEnd);
@@ -156,4 +166,22 @@ export function applyLinkModification(
 		deltaLength,
 		newIndex,
 	};
+}
+
+function isAdjacentArchiveForTarget(adjacentArchiveText: string, originalUrl: string): boolean {
+	const archiveMatch = Array.from(adjacentArchiveText.matchAll(LINK_REGEX))[0];
+	if (!archiveMatch) return false;
+
+	const archiveUrl = getUrlFromMatch(archiveMatch);
+	if (/archive\.(?:today|is|md|ph|vn|li|fo)\/\d{14}\//i.test(archiveUrl)) {
+		return isSnapshotForTargetUrl("archiveToday", archiveUrl, originalUrl);
+	}
+	if (/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\//i.test(archiveUrl)) {
+		return isSnapshotForTargetUrl("megalodon", archiveUrl, originalUrl);
+	}
+	const waybackMatch = archiveUrl.match(/web\.archive\.org\/web\/(?:\d{14}|\*)\/(.+)$/i);
+	if (waybackMatch?.[1]) {
+		return normalizeUrlForComparison(waybackMatch[1]) === normalizeUrlForComparison(originalUrl);
+	}
+	return false;
 }
