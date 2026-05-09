@@ -313,7 +313,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Use Web Gyotaku fallback")
-			.setDesc("Resolve existing Web Gyotaku snapshots when earlier providers fail.")
+			.setDesc(
+				"Resolve existing Web Gyotaku snapshots when earlier providers fail. (Resolve-only, automatic submission is NOT supported)",
+			)
 			.addToggle((toggle) =>
 				toggle
 					.setValue(activeSettings.defaultArchiveProviders.includes("megalodon"))
@@ -333,7 +335,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Background archive.today save")
+			.setName("Background archive.today auto-submit")
 			.setDesc(
 				"Experimental. When Wayback fails, submit archive.today by HTTP before resolving fallback snapshots. Disabled by default.",
 			)
@@ -398,6 +400,22 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("archive.today pending queue capacity")
+			.setDesc(
+				"Maximum number of pending items allowed in the background queue. Range: 1-100. Default: 30.",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(1, 100, 1)
+					.setValue(activeSettings.archiveTodayMaxPendingCount ?? 30)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						activeSettings.archiveTodayMaxPendingCount = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName("archive.today pending max wait (ms)")
 			.setDesc(
 				"Max time a pending snapshot is kept before moving to failed queue. Range: 60,000ms-1,200,000ms.",
@@ -430,7 +448,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Per-URL archive policies")
 			.setDesc(
-				"One rule per line: pattern => providers. Providers: wayback, archiveToday, archiveToday:auto, megalodon. Example: ^https://x\\.com/ => archiveToday:auto",
+				"One rule per line: pattern => providers. Providers: wayback (saves), archiveToday, archiveToday:auto (saves), megalodon (resolve-only, NO auto submit). Example: ^https://x\\.com/ => archiveToday:auto",
 			)
 			.addTextArea((text) =>
 				text

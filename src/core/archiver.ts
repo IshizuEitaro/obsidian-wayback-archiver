@@ -1799,14 +1799,14 @@ export class ArchiverService {
 		}
 
 		const selectedText = editor.getSelection();
-		if (selectedText.length === 0) {
-			new Notice("Please select text containing external links first.");
-			return;
-		}
-
-		const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
-		const selectionEndOffset = editor.posToOffset(editor.getCursor("to"));
+		const isSelection = selectedText.length > 0;
 		const fullDocContent = editor.getValue();
+
+		const selectionStartOffset = isSelection ? editor.posToOffset(editor.getCursor("from")) : 0;
+		const selectionEndOffset = isSelection
+			? editor.posToOffset(editor.getCursor("to"))
+			: fullDocContent.length;
+
 		const selectedLinks = selectFullyContainedLinkMatches(
 			fullDocContent,
 			selectionStartOffset,
@@ -1815,18 +1815,23 @@ export class ArchiverService {
 		const allMatches = selectedLinks.map((link) => link.match);
 
 		const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, true, {
-			isSelection: true,
+			isSelection,
 			fullDocContent,
 		});
 
 		if (!filterResult.linksToProcess.length) {
-			new Notice("No suitable links found in selection.");
+			new Notice(
+				isSelection
+					? "No suitable links found in selection."
+					: "No suitable links found in current note.",
+			);
 			return;
 		}
 
 		const providerName = providerId === "archiveToday" ? "archive.today" : "Web Gyotaku";
+		const scopeText = isSelection ? "selected" : "current note";
 		new Notice(
-			`Retrieving latest ${providerName} snapshots for ${filterResult.linksToProcess.length} selected links...`,
+			`Retrieving latest ${providerName} snapshots for ${filterResult.linksToProcess.length} ${scopeText} links...`,
 		);
 
 		let insertedCount = 0;

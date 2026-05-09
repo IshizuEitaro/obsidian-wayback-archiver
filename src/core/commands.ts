@@ -50,7 +50,7 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 
 	plugin.addCommand({
 		id: "insert-latest-archive-today-snapshot",
-		name: "Insert latest archive.today snapshot for selected links",
+		name: "Insert latest archive.today snapshot in current note",
 		editorCallback: (editor, ctx) =>
 			plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday"),
 	});
@@ -65,7 +65,7 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 
 	plugin.addCommand({
 		id: "insert-latest-megalodon-snapshot",
-		name: "Insert latest Web Gyotaku snapshot for selected links",
+		name: "Insert latest Web Gyotaku snapshot in current note",
 		editorCallback: (editor, ctx) =>
 			plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon"),
 	});

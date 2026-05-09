@@ -2446,6 +2446,39 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		);
 	});
 
+	it("insertLatestFallbackSnapshotAction processes entire note if selection is empty", async () => {
+		const service = createTddService();
+
+		requestUrlMock.mockResolvedValueOnce({
+			status: 200,
+			headers: { location: "https://megalodon.jp/2026-0508-1212-34/https://foo.com" },
+		});
+
+		const content = "[Foo](https://foo.com/)";
+		const editor = {
+			getSelection: () => "",
+			getValue: () => content,
+			getCursor: (fromTo?: string) => ({ line: 0, ch: 0 }),
+			posToOffset: (pos: { ch: number }) => pos.ch,
+			offsetToPos: (offset: number) => ({ line: 0, ch: offset }),
+			replaceRange: vi.fn(),
+		};
+		const file = { path: "notes/sample.md" };
+
+		await service.insertLatestFallbackSnapshotAction(
+			editor as unknown as Editor,
+			{ file } as unknown as MarkdownView,
+			"megalodon",
+		);
+
+		const now = new Date();
+		const expectedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+		expect(editor.replaceRange).toHaveBeenCalledWith(
+			` [(Archived on ${expectedDate})](https://megalodon.jp/2026-0508-1212-34/https://foo.com)`,
+			{ line: 0, ch: content.length },
+		);
+	});
+
 	it("processSingleUrlArchival registers submitted response to pendingArchives queue instead of failedArchives", async () => {
 		const service = createTddService(
 			{ failedArchives: [], pendingArchives: [] },
