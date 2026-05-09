@@ -62,6 +62,9 @@ If archiving is successful, the plugin inserts a new markdown (or html) archive 
 
 The plugin avoids adding archive links if one already exists immediately following the original link, unless using a "Force re-archive" command or "freshness" settings.
 
+> [!NOTE]
+> **Adjacency Specification:** An existing archive link is considered "adjacent" if it is found within the first **300 characters** (the adjacent search limit) following the original link. This optimizes regular expression performance and prevents matching archive links that belong to different original links further down the document.
+
 ### Profiles
 
 You can create multiple settings profiles to manage different configurations. Each profile stores its own set of rules (filtering, substitution, API options, etc.), but the Archive.org API keys are shared globally across all profiles. You can switch between profiles easily in the settings.

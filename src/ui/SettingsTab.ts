@@ -313,9 +313,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Use Web Gyotaku fallback")
-			.setDesc(
-				"Resolve existing Megalodon/Web Gyotaku snapshots when earlier providers fail.",
-			)
+			.setDesc("Resolve existing Web Gyotaku snapshots when earlier providers fail.")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(activeSettings.defaultArchiveProviders.includes("megalodon"))

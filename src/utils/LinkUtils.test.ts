@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../core/settings";
 import {
 	ADJACENT_ARCHIVE_LINK_REGEX,
+	ADJACENT_LINK_SEARCH_LIMIT,
+	getAdjacentArchiveLinkMatch,
 	applySubstitutionRules,
 	checkAdjacentLinkFreshness,
 	createArchiveLink,
@@ -109,6 +111,25 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 			expect(extractArchiveTimestamp(archiveToday)).toBe("20260505164448");
 			expect(isFollowedByArchiveLink(megalodon)).toBe(true);
 			expect(extractArchiveTimestamp(megalodon)).toBe("20260507000135");
+		});
+
+		it("respects the adjacent link search limit of 300 characters", () => {
+			expect(ADJACENT_LINK_SEARCH_LIMIT).toBe(300);
+
+			const archiveLink =
+				"[(Archived)](https://archive.md/20260505164448/https://test-target.com/)";
+
+			// Scenario 1: Archive link is exactly within the 300 limit
+			const shortWhitespacePrefix = " ".repeat(100);
+			const nextTextShort = shortWhitespacePrefix + archiveLink;
+			expect(isFollowedByArchiveLink(nextTextShort)).toBe(true);
+			expect(getAdjacentArchiveLinkMatch(nextTextShort)).not.toBeNull();
+
+			// Scenario 2: Archive link starts beyond the 300 limit
+			const longWhitespacePrefix = " ".repeat(301);
+			const textBeyondLimit = longWhitespacePrefix + archiveLink;
+			expect(isFollowedByArchiveLink(textBeyondLimit)).toBe(false);
+			expect(getAdjacentArchiveLinkMatch(textBeyondLimit)).toBeNull();
 		});
 	});
 
@@ -221,7 +242,7 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 					settingsWithProvider,
 				),
 			).toBe(
-				" [Archived on 2026/04/17 via Megalodon](https://megalodon.jp/2026-0507-0001-35/https://test-target.com/)",
+				" [Archived on 2026/04/17 via Web Gyotaku](https://megalodon.jp/2026-0507-0001-35/https://test-target.com/)",
 			);
 
 			vi.useRealTimers();

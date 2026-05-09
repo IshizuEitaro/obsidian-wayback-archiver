@@ -54,14 +54,32 @@ const URL_PATTERN = /(?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\)
 
 const ARCHIVE_URL_PATTERN = String.raw`(?:https?:\/\/web\.archive\.org\/web\/(?:\d+|\*)\/${URL_PATTERN}|https?:\/\/${ARCHIVE_TODAY_HOST_PATTERN}\/\d{14}\/${URL_PATTERN}|https?:\/\/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\/${URL_PATTERN})`;
 
+/**
+ * The maximum number of characters following an original link to scan for an adjacent archive link.
+ * This limit optimizes performance and prevents matching unrelated archive links further down the document.
+ */
+export const ADJACENT_LINK_SEARCH_LIMIT = 300;
+
 // Regex to match markdown and HTML adjacent archive links
 export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
 	String.raw`^\s*\n*\s*(\[.*?\]\(${ARCHIVE_URL_PATTERN}\)|<a [^>]*href=["']${ARCHIVE_URL_PATTERN}["'][^>]*>.*?<\/a>)`,
 	"s",
 );
 
+/**
+ * Searches for an adjacent archive link within the text following a link, up to the search limit of 300 characters.
+ * Slices the text to ensure adjacency and proper regex performance.
+ */
+export function getAdjacentArchiveLinkMatch(textFollowingLink: string): RegExpMatchArray | null {
+	const searchWindow = textFollowingLink.slice(0, ADJACENT_LINK_SEARCH_LIMIT);
+	return searchWindow.match(ADJACENT_ARCHIVE_LINK_REGEX);
+}
+
+/**
+ * Checks if the text following a link contains an adjacent archive link within the search limit.
+ */
 export function isFollowedByArchiveLink(textFollowingLink: string): boolean {
-	return ADJACENT_ARCHIVE_LINK_REGEX.test(textFollowingLink);
+	return getAdjacentArchiveLinkMatch(textFollowingLink) !== null;
 }
 
 /**
@@ -195,7 +213,7 @@ function getProviderDisplayName(archiveUrl: string): string {
 		return "Wayback Machine";
 	}
 	if (archiveUrl.includes("megalodon.jp")) {
-		return "Megalodon";
+		return "Web Gyotaku";
 	}
 	const isArchiveToday = /archive\.(?:today|is|md|ph|vn|li|fo)/i.test(archiveUrl);
 	if (isArchiveToday) {
