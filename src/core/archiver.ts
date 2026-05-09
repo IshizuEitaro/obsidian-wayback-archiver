@@ -1120,6 +1120,7 @@ export class ArchiverService {
 
 				let inserted = false;
 				let skippedBecauseAlreadyArchived = false;
+				let isReplacement = false;
 				await this.app.vault.process(file, (latestContent: string) => {
 					const latestIndex = findLatestLinkIndex(
 						latestContent,
@@ -1134,9 +1135,23 @@ export class ArchiverService {
 
 					const insertionPos = latestIndex + currentMatch[0].length;
 					const textAfterLink = latestContent.slice(insertionPos, insertionPos + 300);
-					if (isFollowedByArchiveLink(textAfterLink)) {
-						skippedBecauseAlreadyArchived = true;
-						return latestContent;
+					
+					const adjacentMatch = getAdjacentArchiveLinkMatch(textAfterLink);
+					if (adjacentMatch) {
+						const adjacentTimestamp = extractArchiveTimestamp(adjacentMatch[0]);
+						const resolvedTimestamp = extractArchiveTimestamp(resolvedSnapshotUrl);
+						
+						if (!adjacentTimestamp || !resolvedTimestamp) {
+							skippedBecauseAlreadyArchived = true;
+							return latestContent;
+						}
+						
+						if (resolvedTimestamp > adjacentTimestamp) {
+							isReplacement = true;
+						} else {
+							skippedBecauseAlreadyArchived = true;
+							return latestContent;
+						}
 					}
 
 					const archiveUrl = normalizeArchiveUrl(resolvedSnapshotUrl);
@@ -1146,7 +1161,7 @@ export class ArchiverService {
 						archiveUrl,
 						entry.approximateIndex ?? 0,
 						this.activeSettings,
-						{ isReplacement: false },
+						{ isReplacement, allowMismatchedReplacement: true },
 					);
 					if (!modification.modified) return latestContent;
 					inserted = true;

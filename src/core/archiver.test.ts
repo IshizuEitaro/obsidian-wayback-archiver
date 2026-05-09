@@ -2834,4 +2834,189 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			'Check out <a href="https://example.com/">My Site</a> <a href="https://web.archive.org/web/20260417000000/https://example.com/">(Archived on 2026-04-17)</a>.',
 		);
 	});
+
+	it("runPendingQueueCycle replaces adjacent link when resolved snapshot is newer", async () => {
+		const setup = createFileService(
+			"See [A](https://a.com) [(Archived on 2026-05-01)](https://archive.today/20260501121212/https://a.com).",
+		);
+
+		setup.data.pendingArchives = [
+			{
+				id: "pending_a",
+				providerId: "archiveToday" as const,
+				url: "https://a.com",
+				targetUrl: "https://a.com",
+				filePath: "notes/example.md",
+				createdAt: Date.now(),
+				checkCount: 0,
+				maxWaitMs: 600000,
+				status: "submitted" as const,
+			},
+		];
+
+		vi.spyOn(
+			setup.service as unknown as {
+				resolveProviderSnapshot: (
+					providerId: string,
+					targetUrl: string,
+				) => Promise<{ url: string | null; retryableError?: boolean }>;
+			},
+			"resolveProviderSnapshot",
+		).mockResolvedValueOnce({ url: "https://archive.today/20260509121212/https://a.com" });
+
+		await (
+			setup.service as unknown as { runPendingQueueCycle: () => Promise<void> }
+		).runPendingQueueCycle();
+
+		expect(setup.data.pendingArchives).toHaveLength(0);
+		expect(setup.getContent()).toContain("archive.md/20260509121212");
+	});
+
+	it("runPendingQueueCycle does NOT replace adjacent link when resolved snapshot is older", async () => {
+		const setup = createFileService(
+			"See [A](https://a.com) [(Archived on 2026-05-09)](https://archive.today/20260509121212/https://a.com).",
+		);
+
+		setup.data.pendingArchives = [
+			{
+				id: "pending_a",
+				providerId: "archiveToday" as const,
+				url: "https://a.com",
+				targetUrl: "https://a.com",
+				filePath: "notes/example.md",
+				createdAt: Date.now(),
+				checkCount: 0,
+				maxWaitMs: 600000,
+				status: "submitted" as const,
+			},
+		];
+
+		vi.spyOn(
+			setup.service as unknown as {
+				resolveProviderSnapshot: (
+					providerId: string,
+					targetUrl: string,
+				) => Promise<{ url: string | null; retryableError?: boolean }>;
+			},
+			"resolveProviderSnapshot",
+		).mockResolvedValueOnce({ url: "https://archive.today/20260501121212/https://a.com" });
+
+		await (
+			setup.service as unknown as { runPendingQueueCycle: () => Promise<void> }
+		).runPendingQueueCycle();
+
+		expect(setup.data.pendingArchives).toHaveLength(0);
+		expect(setup.getContent()).toContain("archive.today/20260509121212"); // untouched
+	});
+
+	it("runPendingQueueCycle does NOT replace adjacent link when resolved snapshot is same timestamp", async () => {
+		const setup = createFileService(
+			"See [A](https://a.com) [(Archived on 2026-05-09)](https://archive.today/20260509121212/https://a.com).",
+		);
+
+		setup.data.pendingArchives = [
+			{
+				id: "pending_a",
+				providerId: "archiveToday" as const,
+				url: "https://a.com",
+				targetUrl: "https://a.com",
+				filePath: "notes/example.md",
+				createdAt: Date.now(),
+				checkCount: 0,
+				maxWaitMs: 600000,
+				status: "submitted" as const,
+			},
+		];
+
+		vi.spyOn(
+			setup.service as unknown as {
+				resolveProviderSnapshot: (
+					providerId: string,
+					targetUrl: string,
+				) => Promise<{ url: string | null; retryableError?: boolean }>;
+			},
+			"resolveProviderSnapshot",
+		).mockResolvedValueOnce({ url: "https://archive.today/20260509121212/https://a.com" });
+
+		await (
+			setup.service as unknown as { runPendingQueueCycle: () => Promise<void> }
+		).runPendingQueueCycle();
+
+		expect(setup.data.pendingArchives).toHaveLength(0);
+		expect(setup.getContent()).toContain("archive.today/20260509121212"); // untouched
+	});
+
+	it("runPendingQueueCycle preserves existing link and removes from queue if adjacent link lacks timestamp", async () => {
+		const setup = createFileService(
+			"See [A](https://a.com) [(Archived)](https://web.archive.org/web/*/https://a.com).",
+		);
+
+		setup.data.pendingArchives = [
+			{
+				id: "pending_a",
+				providerId: "archiveToday" as const,
+				url: "https://a.com",
+				targetUrl: "https://a.com",
+				filePath: "notes/example.md",
+				createdAt: Date.now(),
+				checkCount: 0,
+				maxWaitMs: 600000,
+				status: "submitted" as const,
+			},
+		];
+
+		vi.spyOn(
+			setup.service as unknown as {
+				resolveProviderSnapshot: (
+					providerId: string,
+					targetUrl: string,
+				) => Promise<{ url: string | null; retryableError?: boolean }>;
+			},
+			"resolveProviderSnapshot",
+		).mockResolvedValueOnce({ url: "https://archive.today/20260509121212/https://a.com" });
+
+		await (
+			setup.service as unknown as { runPendingQueueCycle: () => Promise<void> }
+		).runPendingQueueCycle();
+
+		expect(setup.data.pendingArchives).toHaveLength(0);
+		expect(setup.getContent()).toBe("See [A](https://a.com) [(Archived)](https://web.archive.org/web/*/https://a.com)."); // unmodified
+	});
+
+	it("runPendingQueueCycle preserves existing link and removes from queue if resolved snapshot lacks timestamp", async () => {
+		const setup = createFileService(
+			"See [A](https://a.com) [(Archived on 2026-05-09)](https://archive.today/20260509121212/https://a.com).",
+		);
+
+		setup.data.pendingArchives = [
+			{
+				id: "pending_a",
+				providerId: "archiveToday" as const,
+				url: "https://a.com",
+				targetUrl: "https://a.com",
+				filePath: "notes/example.md",
+				createdAt: Date.now(),
+				checkCount: 0,
+				maxWaitMs: 600000,
+				status: "submitted" as const,
+			},
+		];
+
+		vi.spyOn(
+			setup.service as unknown as {
+				resolveProviderSnapshot: (
+					providerId: string,
+					targetUrl: string,
+				) => Promise<{ url: string | null; retryableError?: boolean }>;
+			},
+			"resolveProviderSnapshot",
+		).mockResolvedValueOnce({ url: "https://archive.today/latest/https://a.com" });
+
+		await (
+			setup.service as unknown as { runPendingQueueCycle: () => Promise<void> }
+		).runPendingQueueCycle();
+
+		expect(setup.data.pendingArchives).toHaveLength(0);
+		expect(setup.getContent()).toBe("See [A](https://a.com) [(Archived on 2026-05-09)](https://archive.today/20260509121212/https://a.com)."); // unmodified
+	});
 });
