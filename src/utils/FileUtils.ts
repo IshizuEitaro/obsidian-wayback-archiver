@@ -1,5 +1,6 @@
-import { Notice, TFile, Vault } from "obsidian";
-import { FailedArchiveEntry } from "../core/settings";
+import { Notice } from "obsidian";
+import type { TFile, Vault } from "obsidian";
+import { FailedArchiveEntry, appendFailedArchiveEntry } from "../core/settings";
 import type WaybackArchiverPlugin from "../main";
 
 export async function readFileOrThrow(vault: Vault, file: TFile): Promise<string> {
@@ -34,8 +35,7 @@ export async function logFailedArchive(
 	entry: FailedArchiveEntry,
 	save: boolean = true,
 ) {
-	if (!plugin.data.failedArchives) plugin.data.failedArchives = [];
-	plugin.data.failedArchives.push(entry);
+	plugin.data.failedArchives = appendFailedArchiveEntry(plugin.data.failedArchives ?? [], entry);
 	if (save && typeof plugin.saveSettings === "function") {
 		await plugin.saveSettings();
 	}

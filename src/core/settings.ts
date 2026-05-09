@@ -34,7 +34,7 @@ export interface WaybackArchiverSettings {
 	 * Template for the appended archive link text.
 	 * Placeholders:
 	 * - `{date}`: replaced with the formatted archive date.
-	 * - `{provider}`: replaced with the name of the archive provider (e.g., "Wayback Machine", "archive.today", "Megalodon").
+	 * - `{provider}`: replaced with the name of the archive provider (e.g., "Wayback Machine", "archive.today", "Web Gyotaku").
 	 * Default: "(Archived on {date})"
 	 */
 	archiveLinkText: string;
@@ -139,4 +139,39 @@ export interface WaybackArchiverData {
 	pendingArchives?: PendingArchiveEntry[];
 	spnAccessKey: string;
 	spnSecretKey: string;
+}
+
+/**
+ * The time window (in milliseconds) within which duplicate failures for the same URL, file,
+ * and stage are coalesced into a single entry to prevent log bloat. (Default: 5 minutes)
+ */
+export const FAILED_ARCHIVE_DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * Appends a failed archive entry to a list of entries, coalescing duplicates within a specified time window.
+ * This is a pure function used uniformly across all failed log pathways.
+ */
+export function appendFailedArchiveEntry(
+	entries: FailedArchiveEntry[],
+	entry: FailedArchiveEntry,
+	windowMs: number = FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
+): FailedArchiveEntry[] {
+	if (!entries) {
+		entries = [];
+	}
+	const duplicateIndex = entries.findIndex(
+		(existing) =>
+			existing.url === entry.url &&
+			existing.filePath === entry.filePath &&
+			existing.stage === entry.stage &&
+			(existing.targetUrl ?? "") === (entry.targetUrl ?? "") &&
+			entry.timestamp >= existing.timestamp &&
+			entry.timestamp - existing.timestamp <= windowMs,
+	);
+	if (duplicateIndex !== -1) {
+		const updated = [...entries];
+		updated[duplicateIndex] = { ...updated[duplicateIndex], ...entry };
+		return updated;
+	}
+	return [...entries, entry];
 }
