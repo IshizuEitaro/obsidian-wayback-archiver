@@ -1,5 +1,21 @@
 # Changelog
 
+**Merged pull requests:**
+
+- chore: increase tests coverage [\#7](https://github.com/IshizuEitaro/obsidian-wayback-archiver/pull/7) ([IshizuEitaro](https://github.com/IshizuEitaro))
+
+## [1.1.5](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/1.1.5) (2026-03-31)
+
+[Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.1.4...1.1.5)
+
+## [1.1.4](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/1.1.4) (2026-03-31)
+
+[Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.1.3...1.1.4)
+
+## [1.1.3](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/1.1.3) (2026-03-03)
+
+[Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.1.2...1.1.3)
+
 ## [1.1.2](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/1.1.2) (2026-02-22)
 
 [Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.1.1...1.1.2)

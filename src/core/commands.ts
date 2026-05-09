@@ -2,6 +2,7 @@ import { App, Editor, MarkdownView, MarkdownFileInfo, Notice, Plugin } from "obs
 import { ConfirmationModal, ExportFormatModal } from "../ui/modals";
 import { format } from "date-fns";
 import { WaybackArchiverData, WaybackArchiverSettings } from "./settings";
+import { serializeFailedArchiveEntriesToCsv } from "./failedArchiveLog";
 
 export function registerCommands(plugin: WaybackArchiverPlugin) {
 	// This creates an icon in the left ribbon.
@@ -38,6 +39,35 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 				},
 			).open();
 		},
+	});
+
+	plugin.addCommand({
+		id: "submit-current-note-links-to-archive-today",
+		name: "Submit current note links to archive.today",
+		editorCallback: (editor, ctx) =>
+			plugin.archiveLinksInCurrentNoteToArchiveTodayAction(editor, ctx),
+	});
+
+	plugin.addCommand({
+		id: "insert-latest-archive-today-snapshot",
+		name: "Insert latest archive.today snapshot in current note",
+		editorCallback: (editor, ctx) =>
+			plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday"),
+	});
+
+	plugin.addCommand({
+		id: "check-pending-archive-today-now",
+		name: "Check pending archive.today snapshots now",
+		callback: async () => {
+			await plugin.runPendingQueueCycle();
+		},
+	});
+
+	plugin.addCommand({
+		id: "insert-latest-megalodon-snapshot",
+		name: "Insert latest Web Gyotaku snapshot in current note",
+		editorCallback: (editor, ctx) =>
+			plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon"),
 	});
 
 	plugin.addCommand({
@@ -92,25 +122,7 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 						content = JSON.stringify(failedArchives, null, 2);
 						filename = `wayback-archiver-failed-log-${timestamp}.json`;
 					} else {
-						const header = "URL,FilePath,Timestamp,Error,RetryCount";
-						const escapeCsvField = (field: string | number | undefined): string => {
-							const str = String(field ?? ""); // Handle null/undefined
-							if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-								return `"${str.replace(/"/g, '""')}"`;
-							}
-							return str;
-						};
-
-						const rows = failedArchives.map((e) => {
-							return [
-								escapeCsvField(e.url),
-								escapeCsvField(e.filePath),
-								escapeCsvField(e.timestamp),
-								escapeCsvField(e.error),
-								escapeCsvField(e.retryCount ?? 0),
-							].join(",");
-						});
-						content = [header, ...rows].join("\n");
+						content = serializeFailedArchiveEntriesToCsv(failedArchives);
 						filename = `wayback-archiver-failed-log-${timestamp}.csv`;
 					}
 
@@ -168,6 +180,30 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 	});
 
 	plugin.addCommand({
+		id: "open-failed-archive-today-save-pages",
+		name: "Open next failed URLs in archive.today",
+		callback: async () => {
+			if (!plugin.data.failedArchives || plugin.data.failedArchives.length === 0) {
+				new Notice("No failed archives to process.");
+				return;
+			}
+			await plugin.openManualSavePagesForFailedArchives("archiveToday");
+		},
+	});
+
+	plugin.addCommand({
+		id: "open-failed-megalodon-save-pages",
+		name: "Open next failed URLs in Web Gyotaku",
+		callback: async () => {
+			if (!plugin.data.failedArchives || plugin.data.failedArchives.length === 0) {
+				new Notice("No failed archives to process.");
+				return;
+			}
+			await plugin.openManualSavePagesForFailedArchives("megalodon");
+		},
+	});
+
+	plugin.addCommand({
 		id: "clear-failed-archives",
 		name: "Clear failed archive log",
 		callback: async () => {
@@ -201,6 +237,19 @@ interface WaybackArchiverPlugin extends Plugin {
 	) => Promise<void>;
 	forceReArchiveAllLinksAction: () => Promise<void>;
 	retryFailedArchives: (forceReplace: boolean) => Promise<void>;
+	openManualSavePagesForFailedArchives: (
+		providerId: "archiveToday" | "megalodon",
+	) => Promise<void>;
+	archiveLinksInCurrentNoteToArchiveTodayAction: (
+		editor: Editor,
+		ctx: MarkdownView | MarkdownFileInfo,
+	) => Promise<void>;
+	insertLatestFallbackSnapshotAction: (
+		editor: Editor,
+		ctx: MarkdownView | MarkdownFileInfo,
+		providerId: "archiveToday" | "megalodon",
+	) => Promise<void>;
+	runPendingQueueCycle: () => Promise<void>;
 	saveSettings: () => Promise<void>;
 	loadSettings: () => Promise<void>;
 	data: WaybackArchiverData;

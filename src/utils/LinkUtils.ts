@@ -37,20 +37,77 @@ export const LINK_REGEX = new RegExp(
 export const getUrlFromMatch = (match: RegExpMatchArray) =>
 	match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || "";
 
+export const ARCHIVE_TODAY_HOSTS = [
+	"archive.today",
+	"archive.is",
+	"archive.md",
+	"archive.ph",
+	"archive.vn",
+	"archive.li",
+	"archive.fo",
+] as const;
+
+export const ARCHIVE_TODAY_HOST_PATTERN = String.raw`archive\.(?:today|is|md|ph|vn|li|fo)`;
+
 // Helper for matching URLs with balanced parentheses
 const URL_PATTERN = /(?:https?:\/\/|www\.)(?:[^\s()]+|\((?:[^\s()]+|\([^\s()]+\))*\))+/.source;
 
-// Regex to match both markdown and HTML adjacent archive links
+const ARCHIVE_URL_PATTERN = String.raw`(?:https?:\/\/web\.archive\.org\/web\/(?:\d+|\*)\/${URL_PATTERN}|https?:\/\/${ARCHIVE_TODAY_HOST_PATTERN}\/\d{14}\/${URL_PATTERN}|https?:\/\/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\/${URL_PATTERN})`;
+
+/**
+ * The maximum number of characters following an original link to scan for an adjacent archive link.
+ * This limit optimizes performance and prevents matching unrelated archive links further down the document.
+ */
+export const ADJACENT_LINK_SEARCH_LIMIT = 300;
+
+// Regex to match markdown and HTML adjacent archive links
 export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
-	// Markdown: [text](https://web.archive.org/web/123456789/http...)
-	String.raw`^\s*\n*\s*(\[.*?\]\(https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}\))` +
-		// OR HTML: <a href="https://web.archive.org/web/123456789/http...">text</a>
-		String.raw`|(\s*\n*\s*<a [^>]*href=[]?"https?:\/\/web\.archive\.org\/web\/(\d+|\*)\/${URL_PATTERN}[]?"[^>]*>.*?<\/a>)`,
-	"s",
+	String.raw`^\s*\n*\s*(\[.*?\]\(${ARCHIVE_URL_PATTERN}\)|<a\b[^>]*href=["']${ARCHIVE_URL_PATTERN}["'][^>]*>.*?<\/a>)`,
+	"is",
 );
 
+/**
+ * Searches for an adjacent archive link within the text following a link, up to the search limit of 300 characters.
+ * Slices the text to ensure adjacency and proper regex performance.
+ */
+export function getAdjacentArchiveLinkMatch(textFollowingLink: string): RegExpMatchArray | null {
+	const searchWindow = textFollowingLink.slice(0, ADJACENT_LINK_SEARCH_LIMIT);
+	return searchWindow.match(ADJACENT_ARCHIVE_LINK_REGEX);
+}
+
+/**
+ * Checks if the text following a link contains an adjacent archive link within the search limit.
+ */
 export function isFollowedByArchiveLink(textFollowingLink: string): boolean {
-	return ADJACENT_ARCHIVE_LINK_REGEX.test(textFollowingLink);
+	return getAdjacentArchiveLinkMatch(textFollowingLink) !== null;
+}
+
+/**
+ * Extracts a 14-digit archive timestamp (YYYYMMDDHHMMSS) from an archive URL or text.
+ * Supports Wayback Machine, Archive Today (all host aliases), and Megalodon.
+ * @param archiveUrlOrText - URL or text containing an archive link
+ * @returns 14-digit timestamp string, or undefined if no valid timestamp found
+ */
+export function extractArchiveTimestamp(archiveUrlOrText: string): string | undefined {
+	const wayback = archiveUrlOrText.match(/web\.archive\.org\/web\/(\d{14}|\*)\//);
+	if (wayback?.[1] && wayback[1] !== "*") {
+		return wayback[1];
+	}
+
+	const archiveTodayRegex = new RegExp(String.raw`${ARCHIVE_TODAY_HOST_PATTERN}\/(\d{14})\/`);
+	const archiveToday = archiveUrlOrText.match(archiveTodayRegex);
+	if (archiveToday?.[1]) {
+		return archiveToday[1];
+	}
+
+	const megalodon = archiveUrlOrText.match(
+		/megalodon\.jp\/(\d{4})-(\d{2})(\d{2})-(\d{2})(\d{2})-(\d{2})\//,
+	);
+	if (megalodon) {
+		return `${megalodon[1]}${megalodon[2]}${megalodon[3]}${megalodon[4]}${megalodon[5]}${megalodon[6]}`;
+	}
+
+	return undefined;
 }
 
 /**
@@ -114,23 +171,55 @@ export function applySubstitutionRules(
  * @param settings - The active plugin settings.
  * @returns The formatted archive link string (e.g., " [archive](url)" or " <a href='url'>archive</a>").
  */
+/**
+ * Normalizes an archive URL. For archive.today, replaces any of its mirror domains with the canonical host "archive.md".
+ * @param archiveUrl The original archive URL.
+ * @returns The normalized archive URL.
+ */
+export function normalizeArchiveUrl(archiveUrl: string): string {
+	const archiveTodayPattern =
+		/^(https?:\/\/)(?:www\.)?archive\.(?:today|is|md|ph|vn|li|fo)(\/.*)$/i;
+	if (archiveTodayPattern.test(archiveUrl)) {
+		return archiveUrl.replace(archiveTodayPattern, "$1archive.md$2");
+	}
+	return archiveUrl;
+}
+
 export function createArchiveLink(
 	match: RegExpMatchArray,
 	archiveUrl: string,
 	settings: WaybackArchiverSettings,
 ): string {
+	const normalizedUrl = normalizeArchiveUrl(archiveUrl);
 	const archiveDate = format(new Date(), settings.dateFormat);
+	const providerDisplayName = getProviderDisplayName(normalizedUrl);
 
-	const archiveLinkText = settings.archiveLinkText.replace("{date}", archiveDate);
+	const archiveLinkText = settings.archiveLinkText
+		.replace("{date}", archiveDate)
+		.replace("{provider}", providerDisplayName);
 
 	const isHtmlLink = match[2] || match[3] || match[4] || match[5];
 
 	if (isHtmlLink) {
-		const escapedArchiveUrl = archiveUrl.replace(/"/g, "&quot;");
+		const escapedArchiveUrl = normalizedUrl.replace(/"/g, "&quot;");
 		return ` <a href="${escapedArchiveUrl}">${archiveLinkText}</a>`;
 	} else {
-		return ` [${archiveLinkText}](${archiveUrl})`;
+		return ` [${archiveLinkText}](${normalizedUrl})`;
 	}
+}
+
+function getProviderDisplayName(archiveUrl: string): string {
+	if (archiveUrl.includes("web.archive.org")) {
+		return "Wayback Machine";
+	}
+	if (archiveUrl.includes("megalodon.jp")) {
+		return "Web Gyotaku";
+	}
+	const isArchiveToday = /archive\.(?:today|is|md|ph|vn|li|fo)/i.test(archiveUrl);
+	if (isArchiveToday) {
+		return "archive.today";
+	}
+	return "Archive"; // Fallback
 }
 
 /**
@@ -182,3 +271,122 @@ export const checkAdjacentLinkFreshness = (
 
 	return { shouldProcess, replaceExisting };
 };
+
+/**
+ * Decodes standard HTML entities in a string.
+ */
+export function decodeHtmlEntities(value: string): string {
+	return value
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#x27;/g, "'")
+		.replace(/&#x2F;/g, "/");
+}
+
+/**
+ * Normalizes a URL specifically for content comparison.
+ * Strips protocol, subdomains, standard ports, and trailing slashes.
+ */
+export function normalizeUrlForComparison(url: string): string {
+	try {
+		const decoded = decodeURIComponent(url);
+		return decoded
+			.toLowerCase()
+			.replace(/^https?:\/\//i, "")
+			.replace(/^www\./i, "")
+			.replace(/:(?:80|443)\b/g, "")
+			.replace(/\/+$/, "");
+	} catch {
+		return url
+			.toLowerCase()
+			.replace(/^https?:\/\//i, "")
+			.replace(/^www\./i, "")
+			.replace(/:(?:80|443)\b/g, "")
+			.replace(/\/+$/, "");
+	}
+}
+
+/**
+ * Validates if a snapshot URL corresponds to the requested target URL.
+ */
+export function isSnapshotForTargetUrl(
+	providerId: "archiveToday" | "megalodon",
+	snapshotUrl: string,
+	targetUrl: string,
+): boolean {
+	if (providerId === "archiveToday") {
+		const match = snapshotUrl.match(/\/(\d{14})\/(.*)$/);
+		if (!match) {
+			return false;
+		}
+		const extractedTarget = match[2];
+		return normalizeUrlForComparison(extractedTarget) === normalizeUrlForComparison(targetUrl);
+	} else if (providerId === "megalodon") {
+		const match = snapshotUrl.match(/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\/(.*)$/i);
+		if (!match) {
+			return false;
+		}
+		const extractedTarget = match[1];
+		return normalizeUrlForComparison(extractedTarget) === normalizeUrlForComparison(targetUrl);
+	}
+	return false;
+}
+
+/**
+ * Extracts absolute and relative provider snapshot URLs from raw text content.
+ */
+export function extractProviderSnapshotFromText(
+	providerId: "archiveToday" | "megalodon",
+	text: string | undefined,
+	targetUrl: string,
+): string | null {
+	if (!text) {
+		return null;
+	}
+	const decodedText = decodeHtmlEntities(text);
+	if (providerId === "archiveToday") {
+		const absolutePattern = new RegExp(
+			String.raw`(?:https?:)?\/\/${ARCHIVE_TODAY_HOST_PATTERN}\/\d{14}\/[^\s"'<>]+`,
+			"gi",
+		);
+		const absoluteMatches = decodedText.matchAll(absolutePattern);
+		for (const match of absoluteMatches) {
+			const candidate = match[0];
+			const url = candidate.startsWith("//") ? `https:${candidate}` : candidate;
+			if (isSnapshotForTargetUrl("archiveToday", url, targetUrl)) {
+				return url;
+			}
+		}
+
+		const ARCHIVE_TODAY_CANONICAL_HOST = "archive.md";
+		const relativePattern = new RegExp(
+			String.raw`["'=({\s](\/\d{14}\/https?:\/\/[^\s"'<>)}]+)`,
+			"gi",
+		);
+		const relativeMatches = decodedText.matchAll(relativePattern);
+		for (const match of relativeMatches) {
+			const relativePath = match[1];
+			const url = `https://${ARCHIVE_TODAY_CANONICAL_HOST}${relativePath}`;
+			if (isSnapshotForTargetUrl("archiveToday", url, targetUrl)) {
+				return url;
+			}
+		}
+		return null;
+	}
+
+	if (providerId === "megalodon") {
+		const megalodonPattern = /https?:\/\/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\/[^\s"'<>]+/gi;
+		const megalodonMatches = decodedText.matchAll(megalodonPattern);
+		for (const match of megalodonMatches) {
+			const candidate = match[0];
+			if (isSnapshotForTargetUrl("megalodon", candidate, targetUrl)) {
+				return candidate;
+			}
+		}
+		return null;
+	}
+
+	return null;
+}

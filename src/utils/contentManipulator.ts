@@ -1,4 +1,12 @@
-import { LINK_REGEX, getUrlFromMatch, createArchiveLink } from "./LinkUtils";
+import {
+	ADJACENT_LINK_SEARCH_LIMIT,
+	getAdjacentArchiveLinkMatch,
+	LINK_REGEX,
+	getUrlFromMatch,
+	createArchiveLink,
+	isSnapshotForTargetUrl,
+	normalizeUrlForComparison,
+} from "./LinkUtils";
 import { WaybackArchiverSettings } from "../core/settings";
 
 export interface ContainedLinkMatch {
@@ -59,11 +67,11 @@ export function findLatestLinkIndex(
 
 	// Find the match closest to the original approximate index
 	let bestMatch = eligibleMatches[0];
-	let minDistance = Math.abs((bestMatch.index || 0) - approximateIndex);
+	let minDistance = Math.abs((bestMatch.index ?? 0) - approximateIndex);
 
 	for (let i = 1; i < eligibleMatches.length; i++) {
 		const currentMatch = eligibleMatches[i];
-		const distance = Math.abs((currentMatch.index || 0) - approximateIndex);
+		const distance = Math.abs((currentMatch.index ?? 0) - approximateIndex);
 		if (distance < minDistance) {
 			minDistance = distance;
 			bestMatch = currentMatch;
@@ -79,7 +87,7 @@ export function findLatestLinkIndex(
 export interface ContentModification {
 	content: string;
 	modified: boolean;
-	insertedLength: number;
+	deltaLength: number;
 	newIndex: number;
 }
 
@@ -93,7 +101,7 @@ export function applyLinkModification(
 	archiveUrl: string,
 	approximateIndex: number,
 	settings: WaybackArchiverSettings,
-	options: { isReplacement: boolean; oldLinkEndIndex?: number },
+	options: { isReplacement: boolean; allowMismatchedReplacement?: boolean },
 ): ContentModification {
 	const latestIndex = findLatestLinkIndex(content, originalUrl, approximateIndex);
 
@@ -101,7 +109,7 @@ export function applyLinkModification(
 		return {
 			content,
 			modified: false,
-			insertedLength: 0,
+			deltaLength: 0,
 			newIndex: approximateIndex,
 		};
 	}
@@ -114,35 +122,68 @@ export function applyLinkModification(
 		return {
 			content,
 			modified: false,
-			insertedLength: 0,
+			deltaLength: 0,
 			newIndex: latestIndex,
 		};
 	}
 
 	const archiveLinkText = createArchiveLink(currentMatch, archiveUrl, settings);
+	const insertionPoint = latestIndex + currentMatch[0].length;
 
 	let newContent: string;
-	let insertedLength: number;
+	let deltaLength: number;
 	const newIndex = latestIndex;
 
-	if (options.isReplacement && options.oldLinkEndIndex !== undefined) {
-		// Find existing archive link if possible
-		// Note: Replacing is tricky because the user might have deleted the adjacent link.
-		const before = content.slice(0, latestIndex + currentMatch[0].length);
-
-		newContent = before + archiveLinkText + content.slice(options.oldLinkEndIndex);
-		insertedLength = archiveLinkText.length;
+	if (options.isReplacement) {
+		const textAfterLink = content.slice(
+			insertionPoint,
+			insertionPoint + ADJACENT_LINK_SEARCH_LIMIT,
+		);
+		const adjacentArchiveMatch = getAdjacentArchiveLinkMatch(textAfterLink);
+		if (
+			adjacentArchiveMatch &&
+			(options.allowMismatchedReplacement ||
+				isAdjacentArchiveForTarget(adjacentArchiveMatch[0], originalUrl))
+		) {
+			const replaceEnd = insertionPoint + adjacentArchiveMatch[0].length;
+			newContent =
+				content.slice(0, insertionPoint) + archiveLinkText + content.slice(replaceEnd);
+			deltaLength = archiveLinkText.length - adjacentArchiveMatch[0].length;
+		} else {
+			newContent =
+				content.slice(0, insertionPoint) + archiveLinkText + content.slice(insertionPoint);
+			deltaLength = archiveLinkText.length;
+		}
 	} else {
-		const insertionPoint = latestIndex + currentMatch[0].length;
 		newContent =
 			content.slice(0, insertionPoint) + archiveLinkText + content.slice(insertionPoint);
-		insertedLength = archiveLinkText.length;
+		deltaLength = archiveLinkText.length;
 	}
 
 	return {
 		content: newContent,
 		modified: true,
-		insertedLength,
+		deltaLength,
 		newIndex,
 	};
+}
+
+function isAdjacentArchiveForTarget(adjacentArchiveText: string, originalUrl: string): boolean {
+	const archiveMatch = Array.from(adjacentArchiveText.matchAll(LINK_REGEX))[0];
+	if (!archiveMatch) return false;
+
+	const archiveUrl = getUrlFromMatch(archiveMatch);
+	if (/archive\.(?:today|is|md|ph|vn|li|fo)\/\d{14}\//i.test(archiveUrl)) {
+		return isSnapshotForTargetUrl("archiveToday", archiveUrl, originalUrl);
+	}
+	if (/megalodon\.jp\/\d{4}-\d{4}-\d{4}-\d{2}\//i.test(archiveUrl)) {
+		return isSnapshotForTargetUrl("megalodon", archiveUrl, originalUrl);
+	}
+	const waybackMatch = archiveUrl.match(/web\.archive\.org\/web\/(?:\d{14}|\*)\/(.+)$/i);
+	if (waybackMatch?.[1]) {
+		return (
+			normalizeUrlForComparison(waybackMatch[1]) === normalizeUrlForComparison(originalUrl)
+		);
+	}
+	return false;
 }
