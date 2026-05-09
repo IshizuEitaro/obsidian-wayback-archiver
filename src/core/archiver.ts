@@ -216,15 +216,28 @@ export class ArchiverService {
 	}
 
 	private isUrlIgnored(url: string): boolean {
-		if (url.includes("web.archive.org/") || url.includes("megalodon.jp/")) {
-			return true;
-		}
-		const archiveTodayHostRegex = new RegExp(
-			String.raw`archive\.(?:today|is|md|ph|vn|li|fo)\/`,
-			"i",
-		);
-		if (archiveTodayHostRegex.test(url)) {
-			return true;
+		try {
+			const urlObj = new URL(url);
+			const hostname = urlObj.hostname.toLowerCase();
+			if (hostname === "web.archive.org" || hostname === "megalodon.jp") {
+				return true;
+			}
+			const archiveTodayHostRegex = /^(?:www\.)?archive\.(?:today|is|md|ph|vn|li|fo)$/i;
+			if (archiveTodayHostRegex.test(hostname)) {
+				return true;
+			}
+		} catch {
+			// fallback to substring-matching if URL parsing fails
+			if (url.includes("web.archive.org/") || url.includes("megalodon.jp/")) {
+				return true;
+			}
+			const archiveTodayHostRegex = new RegExp(
+				String.raw`archive\.(?:today|is|md|ph|vn|li|fo)\/`,
+				"i",
+			);
+			if (archiveTodayHostRegex.test(url)) {
+				return true;
+			}
 		}
 		return matchesAnyPattern(url, this.activeSettings.ignorePatterns);
 	}

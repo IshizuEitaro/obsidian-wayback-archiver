@@ -2261,6 +2261,22 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			),
 		).toBe(true);
 	});
+	it("isUrlIgnored allows target URLs with archive domains as query parameters", () => {
+		const service = createTddService({}, { ignorePatterns: [] });
+		const isIgnored = (service as unknown as { isUrlIgnored: (url: string) => boolean }).isUrlIgnored.bind(service);
+
+		// Valid archive links should be ignored
+		expect(isIgnored("https://web.archive.org/web/2026/https://google.com")).toBe(true);
+		expect(isIgnored("https://archive.today/12345/https://google.com")).toBe(true);
+		expect(isIgnored("HTTPS://WEB.ARCHIVE.ORG/web/2026/https://google.com")).toBe(true);
+
+		// Target URLs containing archive subpaths as parameter or path should NOT be ignored
+		expect(isIgnored("https://myblog.com/?redirect=https://web.archive.org/")).toBe(false);
+		expect(isIgnored("https://example.com/search?q=archive.today")).toBe(false);
+		expect(isIgnored("https://example.com/path/web.archive.org/")).toBe(false);
+		expect(isIgnored("https://archive.today.example.com/foo")).toBe(false);
+		expect(isIgnored("https://example.com/?q=https://archive.today/foo")).toBe(false);
+	});
 
 	it("skips CSV rows with invalid timestamp instead of using Date.now()", () => {
 		const csv =
