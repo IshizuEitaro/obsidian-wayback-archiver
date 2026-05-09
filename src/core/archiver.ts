@@ -123,6 +123,7 @@ export class ArchiverService {
 	private app: App;
 	private _schedulerStarted = false;
 	private _pendingQueueCycleRunning = false;
+	private _pendingQueueTimer: number | null = null;
 	// In-memory cache for recent archive results (not persisted)
 	private recentArchiveCache: Map<string, { status: string; url: string; timestamp: number }> =
 		new Map();
@@ -1032,17 +1033,15 @@ export class ArchiverService {
 		const pollIntervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
 		const batchSize = this.activeSettings.archiveTodayPendingPollBatchSize ?? 3;
 		const expired: PendingArchiveEntry[] = [];
-		const alive: PendingArchiveEntry[] = [];
 
 		for (const entry of this.data.pendingArchives) {
-			entry.status = "submitted";
 			if (now - entry.createdAt >= entry.maxWaitMs) {
 				expired.push(entry);
-			} else {
-				alive.push(entry);
 			}
 		}
 
+		// 1. Log and remove expired items
+		const expiredIds = new Set(expired.map((entry) => entry.id));
 		for (const entry of expired) {
 			await this.appendFailedArchive(
 				{
@@ -1061,7 +1060,12 @@ export class ArchiverService {
 			);
 		}
 
-		const candidates = alive
+		this.data.pendingArchives = this.data.pendingArchives.filter(
+			(entry) => !expiredIds.has(entry.id),
+		);
+
+		// 2. Identify and prepare candidates (increment check counts and save timestamps)
+		const candidates = this.data.pendingArchives
 			.filter(
 				(entry) =>
 					entry.lastCheckedAt === undefined ||
@@ -1069,29 +1073,32 @@ export class ArchiverService {
 			)
 			.slice(0, batchSize);
 
-		this.data.pendingArchives = alive;
+		for (const candidate of candidates) {
+			candidate.lastCheckedAt = now;
+			candidate.checkCount++;
+			candidate.status = "submitted";
+		}
+
+		// Save prepared candidate timestamps and counters immediately before async requests
 		await this.saveSettings();
 
+		// 3. Process the prepared candidates
 		for (const entry of candidates) {
 			try {
 				const resolution = await this.resolveProviderSnapshot(
 					"archiveToday",
 					entry.targetUrl,
 				);
-				entry.lastCheckedAt = Date.now();
-				entry.checkCount++;
 
 				if (!resolution.url) {
-					entry.status = "submitted";
-					if (!this.data.pendingArchives.find((pending) => pending.id === entry.id)) {
-						this.data.pendingArchives.push(entry);
-					}
+					// Entry stays in queue with the updated lastCheckedAt & checkCount
 					continue;
 				}
 				const resolvedSnapshotUrl = resolution.url;
 
 				const file = this.app.vault.getAbstractFileByPath(entry.filePath);
 				if (!file || !(file instanceof TFile)) {
+					// Permanent failure: target file no longer exists. Remove from queue.
 					this.data.pendingArchives = this.data.pendingArchives.filter(
 						(pending) => pending.id !== entry.id,
 					);
@@ -1133,9 +1140,11 @@ export class ArchiverService {
 					return modification.content;
 				});
 
+				// Remove from queue upon success/handling
 				this.data.pendingArchives = this.data.pendingArchives.filter(
 					(pending) => pending.id !== entry.id,
 				);
+
 				if (inserted) {
 					new Notice(`Inserted archive.today snapshot in ${entry.filePath}.`);
 					this.plugin.setStatusBarText?.("✅ archive.today snapshot inserted!");
@@ -1150,12 +1159,7 @@ export class ArchiverService {
 					);
 				}
 			} catch {
-				entry.lastCheckedAt = Date.now();
-				entry.checkCount++;
-				entry.status = "submitted";
-				if (!this.data.pendingArchives.find((pending) => pending.id === entry.id)) {
-					this.data.pendingArchives.push(entry);
-				}
+				// On error, the entry remains in the queue (already has updated lastCheckedAt / checkCount)
 			}
 		}
 
@@ -1166,13 +1170,28 @@ export class ArchiverService {
 		if (this._schedulerStarted) return;
 		this._schedulerStarted = true;
 
-		const intervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
-		void this.runPendingQueueCycle();
-		this.plugin.registerInterval(
-			window.setInterval(() => {
-				void this.runPendingQueueCycle();
-			}, intervalMs),
-		);
+		const scheduleNext = () => {
+			if (!this._schedulerStarted) return;
+
+			const intervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
+			this._pendingQueueTimer = window.setTimeout(async () => {
+				try {
+					await this.runPendingQueueCycle();
+				} finally {
+					scheduleNext();
+				}
+			}, intervalMs);
+		};
+
+		void this.runPendingQueueCycle().finally(scheduleNext);
+	}
+
+	stopPendingQueueScheduler(): void {
+		this._schedulerStarted = false;
+		if (this._pendingQueueTimer !== null) {
+			window.clearTimeout(this._pendingQueueTimer);
+			this._pendingQueueTimer = null;
+		}
 	}
 
 	private extractProviderSnapshotFromText(
@@ -2088,53 +2107,42 @@ export class ArchiverService {
 					const file = this.app.vault.getAbstractFileByPath(entry.filePath);
 					if (file && file instanceof TFile) {
 						await this.app.vault.process(file, (currentContent) => {
-							let newContent = currentContent;
-							const matches = Array.from(newContent.matchAll(LINK_REGEX));
-							for (const match of matches.reverse()) {
-								const originalUrlInFile = getUrlFromMatch(match);
-								if (originalUrlInFile !== entry.url) continue;
+							const matches = Array.from(
+								currentContent.matchAll(LINK_REGEX),
+							).reverse();
+
+							for (const match of matches) {
+								if (getUrlFromMatch(match) !== entry.url) continue;
 
 								const matchIndex = match.index;
 								if (matchIndex === undefined) continue;
 
 								const insertionPosIndex = matchIndex + match[0].length;
-								const textAfterLink = newContent.substring(
+								const textAfterLink = currentContent.substring(
 									insertionPosIndex,
-									insertionPosIndex + ADJACENT_LINK_SEARCH_LIMIT,
+									insertionPosIndex + 300,
 								);
-								const isHtmlLink = match[2] || match[3] || match[4] || match[5];
-								const existingArchiveMatch =
-									getAdjacentArchiveLinkMatch(textAfterLink);
+								const isAdjacent = isFollowedByArchiveLink(textAfterLink);
 
-								const archiveDate = format(
-									new Date(),
-									this.activeSettings.dateFormat,
-								);
-								const archiveLinkText = this.activeSettings.archiveLinkText.replace(
-									"{date}",
-									archiveDate,
-								);
-								const archiveLink = isHtmlLink
-									? ` <a href="${result.url}">${archiveLinkText}</a>`
-									: ` [${archiveLinkText}](${result.url})`;
-
-								const startIndexToReplace = insertionPosIndex;
-								let endIndexToReplace = insertionPosIndex;
-
-								if (existingArchiveMatch && forceReplace) {
-									endIndexToReplace =
-										insertionPosIndex + existingArchiveMatch[0].length;
-								} else if (existingArchiveMatch && !forceReplace) {
-									break;
+								if (isAdjacent && !forceReplace) {
+									return currentContent;
 								}
 
-								newContent =
-									newContent.slice(0, startIndexToReplace) +
-									archiveLink +
-									newContent.slice(endIndexToReplace);
-								break;
+								const modification = applyLinkModification(
+									currentContent,
+									entry.url,
+									result.url,
+									matchIndex,
+									this.activeSettings,
+									{ isReplacement: isAdjacent && forceReplace },
+								);
+
+								return modification.modified
+									? modification.content
+									: currentContent;
 							}
-							return newContent;
+
+							return currentContent;
 						});
 					}
 				} catch {
