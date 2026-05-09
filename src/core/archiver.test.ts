@@ -3031,7 +3031,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
 			status: "failed",
 			stage: "wayback-timeout",
-			error: "Connection timeout retry failure",
+			status_ext: "Connection timeout retry failure",
 		});
 
 		const entries: FailedArchiveEntry[] = [
@@ -3056,7 +3056,11 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		).executeRetryOfFailedArchives("failed_log.json", entries, entries.length, false);
 
 		expect(setup.plugin.app.vault.adapter.write).toHaveBeenCalledTimes(1);
-		const writtenContent = (setup.plugin.app.vault.adapter.write as vi.Mock).mock.calls[0][1];
+		const writtenContent = (
+			setup.plugin.app.vault.adapter.write as unknown as {
+				mock: { calls: [string, string][] };
+			}
+		).mock.calls[0][1];
 		const parsed = JSON.parse(writtenContent);
 		expect(parsed).toHaveLength(1);
 		expect(parsed[0].retryCount).toBe(1);

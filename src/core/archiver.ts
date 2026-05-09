@@ -2189,8 +2189,8 @@ export class ArchiverService {
 				);
 				const updatedMetadata = {
 					...entry,
-					error: result.error
-						? `Retry failed (status: ${result.status}): ${result.error}`
+					error: (result.status === "failed" && result.status_ext)
+						? `Retry failed (status: ${result.status}): ${result.status_ext}`
 						: `Retry failed (status: ${result.status})`,
 					retryCount: (entry.retryCount ?? 0) + 1,
 					stage: result.status === "failed" ? result.stage : entry.stage,
