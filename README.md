@@ -4,6 +4,8 @@
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ishizue)
 
+[日本語 (Japanese)](./README.ja.md)
+
 This is an Obsidian plugin which automatically archives web links via Wayback Machine and appends archived versions in notes. It has a vault-wide archiving, filtering (include/exclude), substitution rule, retrying failed archive, profile based settings, and more.
 
 ## Table of Contents
@@ -285,9 +287,9 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 
 ## Limitations
 
-[Megalodon](https://megalodon.jp/) and [archive.today](https://archive.is/) are not supported because they do not provide API.
-
-Wayback Machine often fails to archive pages and there's a rate limit. Please be patient and try them again later.
+- [Megalodon (Web Gyotaku)](https://megalodon.jp/) and [archive.today](https://archive.is/) do not offer official saving APIs.
+    - This plugin supports scraping/resolving existing snapshots from them, as well as an experimental background submission queue for `archive.today` to automate saves.
+- Wayback Machine often fails to archive pages and there's a rate limit. Please be patient and try them again later.
 
 ## LICENSE
 
