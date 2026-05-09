@@ -62,8 +62,8 @@ export const ADJACENT_LINK_SEARCH_LIMIT = 300;
 
 // Regex to match markdown and HTML adjacent archive links
 export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
-	String.raw`^\s*\n*\s*(\[.*?\]\(${ARCHIVE_URL_PATTERN}\)|<a [^>]*href=["']${ARCHIVE_URL_PATTERN}["'][^>]*>.*?<\/a>)`,
-	"s",
+	String.raw`^\s*\n*\s*(\[.*?\]\(${ARCHIVE_URL_PATTERN}\)|<a\b[^>]*href=["']${ARCHIVE_URL_PATTERN}["'][^>]*>.*?<\/a>)`,
+	"is",
 );
 
 /**

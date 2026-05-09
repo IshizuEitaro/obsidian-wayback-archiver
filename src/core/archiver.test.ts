@@ -24,15 +24,15 @@ vi.mock("obsidian", () => ({
 			empty: vi.fn(),
 		};
 
-		constructor(_app: unknown) {}
+		constructor(_app: unknown) { }
 
-		open() {}
+		open() { }
 
-		close() {}
+		close() { }
 	},
 	Notice: noticeMock,
 	requestUrl: requestUrlMock,
-	TFile: class TFile {},
+	TFile: class TFile { },
 	Plugin: class Plugin {
 		app: unknown;
 		manifest: unknown;
@@ -50,10 +50,10 @@ vi.mock("obsidian", () => ({
 	},
 	PluginSettingTab: class PluginSettingTab {
 		containerEl = { empty: vi.fn(), createEl: vi.fn() };
-		constructor(_app: unknown, _plugin: unknown) {}
+		constructor(_app: unknown, _plugin: unknown) { }
 	},
 	Setting: class Setting {
-		constructor(_containerEl: unknown) {}
+		constructor(_containerEl: unknown) { }
 		setName() {
 			return this;
 		}
@@ -76,9 +76,9 @@ vi.mock("obsidian", () => ({
 			return this;
 		}
 	},
-	ButtonComponent: class ButtonComponent {},
+	ButtonComponent: class ButtonComponent { },
 	addIcon: vi.fn(),
-	App: class App {},
+	App: class App { },
 }));
 
 const { ArchiverService } = await import("./archiver");
@@ -1573,6 +1573,7 @@ describe("Wayback Archiver Enhancements TDD", () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		vi.useRealTimers();
 	});
 
 	const createEnhancementService = (
