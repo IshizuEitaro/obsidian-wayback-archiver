@@ -148,18 +148,60 @@ export interface WaybackArchiverData {
 export const FAILED_ARCHIVE_DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
 
 /**
+ * Duplicate failures are coalesced as a UI/log-bloat control, not as an audit log.
+ * The merged entry represents the latest duplicate failure while preserving
+ * manual recovery metadata that may have been added by the user.
+ */
+function mergeDuplicateFailedArchiveEntry(
+	existing: FailedArchiveEntry,
+	entry: FailedArchiveEntry,
+): FailedArchiveEntry {
+	const manualProviderIds = Array.from(
+		new Set([...(existing.manualProviderIds ?? []), ...(entry.manualProviderIds ?? [])]),
+	);
+
+	const manualOpenedAt =
+		existing.manualOpenedAt === undefined && entry.manualOpenedAt === undefined
+			? undefined
+			: Math.max(existing.manualOpenedAt ?? 0, entry.manualOpenedAt ?? 0);
+
+	const manualOpenCount =
+		existing.manualOpenCount === undefined && entry.manualOpenCount === undefined
+			? undefined
+			: Math.max(existing.manualOpenCount ?? 0, entry.manualOpenCount ?? 0);
+
+	return {
+		...existing,
+
+		// Keep duplicate identity fields stable.
+		url: existing.url,
+		filePath: existing.filePath,
+		stage: existing.stage,
+		targetUrl: existing.targetUrl,
+
+		// Coalesced entries represent the latest duplicate failure, not a full audit history.
+		timestamp: entry.timestamp,
+		error: entry.error,
+		retryCount: entry.retryCount,
+
+		// Preserve manual-recovery metadata instead of losing it on duplicate failures.
+		manualProviderIds: manualProviderIds.length ? manualProviderIds : undefined,
+		manualOpenedAt,
+		manualOpenCount,
+	};
+}
+
+/**
  * Appends a failed archive entry to a list of entries, coalescing duplicates within a specified time window.
  * This is a pure function used uniformly across all failed log pathways.
  */
 export function appendFailedArchiveEntry(
-	entries: FailedArchiveEntry[],
+	entries: FailedArchiveEntry[] | null | undefined,
 	entry: FailedArchiveEntry,
 	windowMs: number = FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
 ): FailedArchiveEntry[] {
-	if (!entries) {
-		entries = [];
-	}
-	const duplicateIndex = entries.findIndex(
+	const safeEntries = entries || [];
+	const duplicateIndex = safeEntries.findIndex(
 		(existing) =>
 			existing.url === entry.url &&
 			existing.filePath === entry.filePath &&
@@ -169,9 +211,9 @@ export function appendFailedArchiveEntry(
 			entry.timestamp - existing.timestamp <= windowMs,
 	);
 	if (duplicateIndex !== -1) {
-		const updated = [...entries];
-		updated[duplicateIndex] = { ...updated[duplicateIndex], ...entry };
+		const updated = [...safeEntries];
+		updated[duplicateIndex] = mergeDuplicateFailedArchiveEntry(updated[duplicateIndex], entry);
 		return updated;
 	}
-	return [...entries, entry];
+	return [...safeEntries, entry];
 }

@@ -112,4 +112,69 @@ describe("appendFailedArchiveEntry", () => {
 		const result = appendFailedArchiveEntry([entry1], entry2);
 		expect(result).toEqual([entry1, entry2]);
 	});
+
+	it("coalesces duplicate failures with latest failure fields while preserving manual metadata", () => {
+		const existing: FailedArchiveEntry = {
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			filePath: "notes/test.md",
+			timestamp: 1000,
+			error: "first error",
+			retryCount: 1,
+			stage: "fallback-not-found",
+			manualProviderIds: ["archiveToday"],
+			manualOpenedAt: 1500,
+			manualOpenCount: 2,
+		};
+
+		const entry: FailedArchiveEntry = {
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			filePath: "notes/test.md",
+			timestamp: 2000,
+			error: "latest error",
+			retryCount: 0,
+			stage: "fallback-not-found",
+			manualProviderIds: ["megalodon"],
+		};
+
+		expect(appendFailedArchiveEntry([existing], entry, 5000)).toEqual([
+			{
+				url: "https://example.com",
+				targetUrl: "https://example.com",
+				filePath: "notes/test.md",
+				timestamp: 2000,
+				error: "latest error",
+				retryCount: 0,
+				stage: "fallback-not-found",
+				manualProviderIds: ["archiveToday", "megalodon"],
+				manualOpenedAt: 1500,
+				manualOpenCount: 2,
+			},
+		]);
+	});
+
+	it("does not coalesce duplicate failures outside the duplicate window", () => {
+		const existing: FailedArchiveEntry = {
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			filePath: "notes/test.md",
+			timestamp: 1000,
+			error: "first error",
+			retryCount: 0,
+			stage: "fallback-not-found",
+		};
+
+		const entry: FailedArchiveEntry = {
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			filePath: "notes/test.md",
+			timestamp: 7000,
+			error: "later error",
+			retryCount: 0,
+			stage: "fallback-not-found",
+		};
+
+		expect(appendFailedArchiveEntry([existing], entry, 5000)).toHaveLength(2);
+	});
 });
