@@ -2466,6 +2466,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 			"megalodon",
+			false,
 		);
 
 		const now = new Date();
@@ -2499,6 +2500,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 			"megalodon",
+			false,
 		);
 
 		const now = new Date();
