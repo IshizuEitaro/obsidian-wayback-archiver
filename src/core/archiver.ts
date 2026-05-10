@@ -1940,7 +1940,7 @@ export class ArchiverService {
 		);
 		const allMatches = selectedLinks.map((link) => link.match);
 
-		const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, true, {
+		const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, false, {
 			isSelection: isSelection,
 			fullDocContent,
 		});
