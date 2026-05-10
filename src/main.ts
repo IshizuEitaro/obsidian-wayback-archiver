@@ -27,6 +27,10 @@ export default class WaybackArchiverPlugin extends Plugin {
 	// Action handlers will be assigned from ArchiverService
 	archiveLinksAction!: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => Promise<void>;
 	archiveAllLinksVaultAction!: () => Promise<void>;
+	submitAllLinksVaultToArchiveTodayAction!: () => Promise<void>;
+	insertLatestFallbackSnapshotsVaultAction!: (
+		providerId: "archiveToday" | "megalodon",
+	) => Promise<void>;
 	forceReArchiveLinksAction!: (
 		editor: Editor,
 		ctx: MarkdownView | MarkdownFileInfo,
@@ -78,6 +82,10 @@ export default class WaybackArchiverPlugin extends Plugin {
 		// These assignments ensure the methods are called with the correct 'this' context (the archiverService instance)
 		this.archiveLinksAction = this.archiverService.archiveLinksAction;
 		this.archiveAllLinksVaultAction = this.archiverService.archiveAllLinksVaultAction;
+		this.submitAllLinksVaultToArchiveTodayAction =
+			this.archiverService.submitAllLinksVaultToArchiveTodayAction;
+		this.insertLatestFallbackSnapshotsVaultAction =
+			this.archiverService.insertLatestFallbackSnapshotsVaultAction;
 		this.forceReArchiveLinksAction = this.archiverService.forceReArchiveLinksAction;
 		this.forceReArchiveAllLinksAction = this.archiverService.forceReArchiveAllLinksAction;
 		this.retryFailedArchives = this.archiverService.retryFailedArchives;

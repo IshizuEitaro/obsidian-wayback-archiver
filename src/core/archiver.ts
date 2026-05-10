@@ -1478,6 +1478,245 @@ export class ArchiverService {
 		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
 	};
 
+	submitAllLinksVaultToArchiveTodayAction = async (): Promise<void> => {
+		new Notice("Starting vault-wide link submission to archive.today... This may take time.");
+		const markdownFiles = this.app.vault.getMarkdownFiles();
+
+		let processedCount = 0;
+		const insertedCount = 0;
+		let skippedCount = 0;
+		let failedCount = 0;
+		let pendingCount = 0;
+
+		const totalFiles = markdownFiles.length;
+		let fileIndex = 0;
+
+		for (const file of markdownFiles) {
+			fileIndex++;
+			this.plugin.setStatusBarText?.(
+				`⌛ Vault archiveToday submit: file ${fileIndex}/${totalFiles}...`,
+			);
+
+			let fileContent: string;
+			try {
+				fileContent = await this.app.vault.read(file);
+			} catch {
+				continue;
+			}
+
+			if (
+				this.activeSettings.pathPatterns?.length > 0 &&
+				!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)
+			) {
+				continue;
+			}
+			if (
+				this.activeSettings.wordPatterns?.length > 0 &&
+				!this.activeSettings.wordPatterns.some((p) => fileContent.includes(p))
+			) {
+				continue;
+			}
+
+			const allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
+			const filterResult = this.filterLinksForArchiving(allMatches, fileContent, true);
+			skippedCount += filterResult.skippedCount;
+
+			const linksToProcess = filterResult.linksToProcess;
+			if (!linksToProcess.length) continue;
+
+			const totalLinks = linksToProcess.length;
+			let linkIndex = 0;
+			for (const match of linksToProcess) {
+				linkIndex++;
+				processedCount++;
+				this.plugin.setStatusBarText?.(
+					`⌛ Submitting link ${linkIndex}/${totalLinks} in ${file.basename} to archive.today...`,
+				);
+
+				const originalUrl = getUrlFromMatch(match);
+				const absoluteOriginalIndex = match.index;
+				if (absoluteOriginalIndex === undefined) {
+					skippedCount++;
+					continue;
+				}
+
+				const substitutedUrl = applySubstitutionRules(
+					originalUrl,
+					this.activeSettings.substitutionRules,
+				);
+
+				const result = await this.submitArchiveTodayUrl(
+					originalUrl,
+					substitutedUrl,
+					file.path,
+					absoluteOriginalIndex,
+				);
+
+				if (result.status === "queued") {
+					pendingCount++;
+				} else if (result.status === "duplicate") {
+					skippedCount++;
+				} else if (result.status === "queue_full") {
+					failedCount++;
+				} else {
+					failedCount++;
+				}
+
+				const submitDelayMs = this.activeSettings.archiveTodaySubmitDelayMs ?? 5000;
+				if (submitDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, submitDelayMs));
+				}
+			}
+		}
+
+		await this.saveSettings();
+		new Notice(
+			`Vault archive.today submission complete.\n` +
+				`Processed: ${processedCount}\n` +
+				`Queued (Pending): ${pendingCount}\n` +
+				`Skipped: ${skippedCount}\n` +
+				`Failed: ${failedCount}\n` +
+				`Inserted: ${insertedCount}`,
+		);
+		this.plugin.setStatusBarText?.(
+			`✅ Vault archive.today complete! Queued: ${pendingCount}, Failed: ${failedCount}`,
+		);
+		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
+	};
+
+	insertLatestFallbackSnapshotsVaultAction = async (
+		providerId: ArchiveProviderId,
+	): Promise<void> => {
+		const providerName = providerId === "archiveToday" ? "archive.today" : "Web Gyotaku";
+		new Notice(`Starting vault-wide ${providerName} snapshot retrieval... This may take time.`);
+		const markdownFiles = this.app.vault.getMarkdownFiles();
+
+		let processedCount = 0;
+		let insertedCount = 0;
+		let skippedCount = 0;
+		let failedCount = 0;
+		const pendingCount = 0;
+
+		const totalFiles = markdownFiles.length;
+		let fileIndex = 0;
+
+		for (const file of markdownFiles) {
+			fileIndex++;
+			this.plugin.setStatusBarText?.(
+				`⌛ Vault ${providerName} retrieve: file ${fileIndex}/${totalFiles}...`,
+			);
+
+			let fileContent: string;
+			try {
+				fileContent = await this.app.vault.read(file);
+			} catch {
+				continue;
+			}
+
+			if (
+				this.activeSettings.pathPatterns?.length > 0 &&
+				!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)
+			) {
+				continue;
+			}
+			if (
+				this.activeSettings.wordPatterns?.length > 0 &&
+				!this.activeSettings.wordPatterns.some((p) => fileContent.includes(p))
+			) {
+				continue;
+			}
+
+			const allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
+			const filterResult = this.filterLinksForArchiving(allMatches, fileContent, true);
+			skippedCount += filterResult.skippedCount;
+
+			const linksToProcess = filterResult.linksToProcess;
+			if (!linksToProcess.length) continue;
+
+			const totalLinks = linksToProcess.length;
+			let linkIndex = 0;
+			for (const match of linksToProcess) {
+				linkIndex++;
+				processedCount++;
+				this.plugin.setStatusBarText?.(
+					`⌛ Retrieving snapshot ${linkIndex}/${totalLinks} from ${providerName} in ${file.basename}...`,
+				);
+
+				const originalUrl = getUrlFromMatch(match);
+				const absoluteOriginalIndex = match.index;
+				if (absoluteOriginalIndex === undefined) {
+					skippedCount++;
+					continue;
+				}
+
+				const substitutedUrl = applySubstitutionRules(
+					originalUrl,
+					this.activeSettings.substitutionRules,
+				);
+
+				const resolution = await this.resolveProviderSnapshot(providerId, substitutedUrl);
+
+				if (resolution.url) {
+					let applied = false;
+					await this.app.vault.process(file, (latestContent: string) => {
+						const latestIndex = findLatestLinkIndex(
+							latestContent,
+							originalUrl,
+							absoluteOriginalIndex,
+						);
+						if (latestIndex === null) return latestContent;
+
+						const latestMatches = Array.from(latestContent.matchAll(LINK_REGEX));
+						const currentMatch = latestMatches.find((m) => m.index === latestIndex);
+						if (!currentMatch) return latestContent;
+
+						const modification = applyLinkModification(
+							latestContent,
+							originalUrl,
+							resolution.url!,
+							absoluteOriginalIndex,
+							this.activeSettings,
+							{ isReplacement: true, allowMismatchedReplacement: true },
+						);
+
+						if (modification.modified) {
+							applied = true;
+							return modification.content;
+						}
+						return latestContent;
+					});
+
+					if (applied) {
+						insertedCount++;
+					} else {
+						skippedCount++;
+					}
+				} else {
+					failedCount++;
+				}
+
+				const lookupDelayMs = this.activeSettings.apiDelay ?? 1000;
+				if (lookupDelayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, lookupDelayMs));
+				}
+			}
+		}
+
+		await this.saveSettings();
+		new Notice(
+			`Vault ${providerName} retrieval complete.\n` +
+				`Processed: ${processedCount}\n` +
+				`Inserted: ${insertedCount}\n` +
+				`Skipped: ${skippedCount}\n` +
+				`Failed: ${failedCount}\n` +
+				`Pending: ${pendingCount}`,
+		);
+		this.plugin.setStatusBarText?.(
+			`✅ Vault ${providerName} done! Inserted: ${insertedCount}, Failed: ${failedCount}`,
+		);
+		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
+	};
+
 	forceReArchiveLinksAction = async (
 		editor: Editor,
 		ctx: MarkdownView | MarkdownFileInfo,

@@ -70,6 +70,25 @@ vi.mock("obsidian", () => ({
 	MarkdownView: class MarkdownView {},
 }));
 
+vi.mock("../ui/modals", () => ({
+	ConfirmationModal: class ConfirmationModal {
+		callback: (confirmed: boolean) => void;
+		constructor(
+			_app: unknown,
+			_title: string,
+			_message: string,
+			_buttonText: string,
+			callback: (confirmed: boolean) => void,
+		) {
+			this.callback = callback;
+		}
+		open() {
+			this.callback(true);
+		}
+	},
+	ExportFormatModal: class ExportFormatModal {},
+}));
+
 import { registerCommands } from "./commands";
 import { DEFAULT_SETTINGS, FailedArchiveEntry } from "./settings";
 import { Command, Editor, MarkdownFileInfo } from "obsidian";
@@ -90,6 +109,8 @@ describe("registerCommands - Conditional Visibility", () => {
 			activeSettings,
 			archiveLinksAction: { bind: vi.fn(() => vi.fn()) },
 			archiveAllLinksVaultAction: vi.fn(),
+			submitAllLinksVaultToArchiveTodayAction: vi.fn(),
+			insertLatestFallbackSnapshotsVaultAction: vi.fn(),
 			archiveLinksInCurrentNoteToArchiveTodayAction: vi.fn(),
 			insertLatestFallbackSnapshotAction: vi.fn(),
 			runPendingQueueCycle: vi.fn(),
@@ -302,5 +323,78 @@ describe("registerCommands - Conditional Visibility", () => {
 
 		openFailedCmdTrue?.checkCallback?.(false);
 		expect(pluginTrue.openManualSavePagesForFailedArchives).toHaveBeenCalledWith("megalodon");
+	});
+
+	it("shows/hides submit-links-vault-to-archive-today based on setting", () => {
+		const { plugin: pluginFalse, commands: cmdsFalse } = createMockPlugin({
+			archiveTodayExperimentalSubmit: false,
+		});
+		registerCommands(pluginFalse as unknown as WaybackArchiverPlugin);
+		const vaultSubmitCmdFalse = cmdsFalse.find(
+			(c) => c.id === "submit-links-vault-to-archive-today",
+		);
+		expect(vaultSubmitCmdFalse?.checkCallback?.(true)).toBe(false);
+
+		const { plugin: pluginTrue, commands: cmdsTrue } = createMockPlugin({
+			archiveTodayExperimentalSubmit: true,
+		});
+		registerCommands(pluginTrue as unknown as WaybackArchiverPlugin);
+		const vaultSubmitCmdTrue = cmdsTrue.find(
+			(c) => c.id === "submit-links-vault-to-archive-today",
+		);
+		expect(vaultSubmitCmdTrue?.checkCallback?.(true)).toBe(true);
+
+		vaultSubmitCmdTrue?.checkCallback?.(false);
+		expect(pluginTrue.submitAllLinksVaultToArchiveTodayAction).toHaveBeenCalled();
+	});
+
+	it("shows/hides insert-latest-archive-today-snapshots-vault based on provider settings", () => {
+		const { plugin: pluginFalse, commands: cmdsFalse } = createMockPlugin({
+			defaultArchiveProviders: ["wayback"],
+		});
+		registerCommands(pluginFalse as unknown as WaybackArchiverPlugin);
+		const vaultInsertCmdFalse = cmdsFalse.find(
+			(c) => c.id === "insert-latest-archive-today-snapshots-vault",
+		);
+		expect(vaultInsertCmdFalse?.checkCallback?.(true)).toBe(false);
+
+		const { plugin: pluginTrue, commands: cmdsTrue } = createMockPlugin({
+			defaultArchiveProviders: ["wayback", "archiveToday"],
+		});
+		registerCommands(pluginTrue as unknown as WaybackArchiverPlugin);
+		const vaultInsertCmdTrue = cmdsTrue.find(
+			(c) => c.id === "insert-latest-archive-today-snapshots-vault",
+		);
+		expect(vaultInsertCmdTrue?.checkCallback?.(true)).toBe(true);
+
+		vaultInsertCmdTrue?.checkCallback?.(false);
+		expect(pluginTrue.insertLatestFallbackSnapshotsVaultAction).toHaveBeenCalledWith(
+			"archiveToday",
+		);
+	});
+
+	it("shows/hides insert-latest-megalodon-snapshots-vault based on provider settings", () => {
+		const { plugin: pluginFalse, commands: cmdsFalse } = createMockPlugin({
+			defaultArchiveProviders: ["wayback"],
+		});
+		registerCommands(pluginFalse as unknown as WaybackArchiverPlugin);
+		const vaultInsertCmdFalse = cmdsFalse.find(
+			(c) => c.id === "insert-latest-megalodon-snapshots-vault",
+		);
+		expect(vaultInsertCmdFalse?.checkCallback?.(true)).toBe(false);
+
+		const { plugin: pluginTrue, commands: cmdsTrue } = createMockPlugin({
+			defaultArchiveProviders: ["wayback", "megalodon"],
+		});
+		registerCommands(pluginTrue as unknown as WaybackArchiverPlugin);
+		const vaultInsertCmdTrue = cmdsTrue.find(
+			(c) => c.id === "insert-latest-megalodon-snapshots-vault",
+		);
+		expect(vaultInsertCmdTrue?.checkCallback?.(true)).toBe(true);
+
+		vaultInsertCmdTrue?.checkCallback?.(false);
+		expect(pluginTrue.insertLatestFallbackSnapshotsVaultAction).toHaveBeenCalledWith(
+			"megalodon",
+		);
 	});
 });

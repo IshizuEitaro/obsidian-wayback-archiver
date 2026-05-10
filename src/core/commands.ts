@@ -42,6 +42,86 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 	});
 
 	plugin.addCommand({
+		id: "submit-links-vault-to-archive-today",
+		name: "Submit all links in vault to archive.today",
+		checkCallback: (checking) => {
+			if (plugin.activeSettings.archiveTodayExperimentalSubmit) {
+				if (!checking) {
+					new ConfirmationModal(
+						plugin.app,
+						"Submit all links in vault to archive.today?",
+						"This will scan all markdown notes in your vault and attempt to submit external links to archive.today. This may take a while depending on the number of notes and links.",
+						"Yes, submit all",
+						async (confirmed: boolean) => {
+							if (confirmed) {
+								await plugin.submitAllLinksVaultToArchiveTodayAction();
+							} else {
+								new Notice("Vault-wide submission cancelled.");
+							}
+						},
+					).open();
+				}
+				return true;
+			}
+			return false;
+		},
+	});
+
+	plugin.addCommand({
+		id: "insert-latest-archive-today-snapshots-vault",
+		name: "Insert latest archive.today snapshots in all notes in vault",
+		checkCallback: (checking) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("archiveToday")) {
+				if (!checking) {
+					new ConfirmationModal(
+						plugin.app,
+						"Insert latest archive.today snapshots?",
+						"This will scan all markdown notes in your vault and attempt to retrieve and insert the latest archive.today snapshots for external links. This may take a while.",
+						"Yes, insert all",
+						async (confirmed: boolean) => {
+							if (confirmed) {
+								await plugin.insertLatestFallbackSnapshotsVaultAction(
+									"archiveToday",
+								);
+							} else {
+								new Notice("Vault-wide insertion cancelled.");
+							}
+						},
+					).open();
+				}
+				return true;
+			}
+			return false;
+		},
+	});
+
+	plugin.addCommand({
+		id: "insert-latest-megalodon-snapshots-vault",
+		name: "Insert latest Web Gyotaku snapshots in all notes in vault",
+		checkCallback: (checking) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("megalodon")) {
+				if (!checking) {
+					new ConfirmationModal(
+						plugin.app,
+						"Insert latest Web Gyotaku snapshots?",
+						"This will scan all markdown notes in your vault and attempt to retrieve and insert the latest Web Gyotaku snapshots for external links. This may take a while.",
+						"Yes, insert all",
+						async (confirmed: boolean) => {
+							if (confirmed) {
+								await plugin.insertLatestFallbackSnapshotsVaultAction("megalodon");
+							} else {
+								new Notice("Vault-wide insertion cancelled.");
+							}
+						},
+					).open();
+				}
+				return true;
+			}
+			return false;
+		},
+	});
+
+	plugin.addCommand({
 		id: "submit-current-note-links-to-archive-today",
 		name: "Submit current note links to archive.today",
 		editorCheckCallback: (checking, editor, ctx) => {
