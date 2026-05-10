@@ -241,11 +241,21 @@ describe("registerCommands - Conditional Visibility", () => {
 
 		registerCommands(pluginTrue as unknown as WaybackArchiverPlugin);
 		const insertCmdTrue = cmdsTrue.find((c) => c.id === "insert-latest-archive-today-snapshot");
+		const forceReplaceCmdTrue = cmdsTrue.find(
+			(c) => c.id === "force-replace-archive-links-current-note-with-archive-today",
+		);
 		const openFailedCmdTrue = cmdsTrue.find(
 			(c) => c.id === "open-failed-archive-today-save-pages",
 		);
 		expect(
 			insertCmdTrue?.editorCheckCallback?.(
+				true,
+				{} as unknown as Editor,
+				{} as unknown as MarkdownFileInfo,
+			),
+		).toBe(true);
+		expect(
+			forceReplaceCmdTrue?.editorCheckCallback?.(
 				true,
 				{} as unknown as Editor,
 				{} as unknown as MarkdownFileInfo,
@@ -262,6 +272,19 @@ describe("registerCommands - Conditional Visibility", () => {
 			"editor",
 			"ctx",
 			"archiveToday",
+			false,
+		);
+
+		forceReplaceCmdTrue?.editorCheckCallback?.(
+			false,
+			"editor" as unknown as Editor,
+			"ctx" as unknown as MarkdownFileInfo,
+		);
+		expect(pluginTrue.insertLatestFallbackSnapshotAction).toHaveBeenCalledWith(
+			"editor",
+			"ctx",
+			"archiveToday",
+			true,
 		);
 
 		openFailedCmdTrue?.checkCallback?.(false);
@@ -277,8 +300,8 @@ describe("registerCommands - Conditional Visibility", () => {
 		});
 		registerCommands(pluginFalse as unknown as WaybackArchiverPlugin);
 		const insertCmdFalse = cmdsFalse.find((c) => c.id === "insert-latest-megalodon-snapshot");
-		const openFailedCmdFalse = cmdsFalse.find(
-			(c) => c.id === "open-failed-megalodon-save-pages",
+		const forceReplaceCmdFalse = cmdsFalse.find(
+			(c) => c.id === "force-replace-archive-links-current-note-with-megalodon",
 		);
 		expect(
 			insertCmdFalse?.editorCheckCallback?.(
@@ -287,6 +310,17 @@ describe("registerCommands - Conditional Visibility", () => {
 				{} as unknown as MarkdownFileInfo,
 			),
 		).toBe(false);
+		expect(
+			forceReplaceCmdFalse?.editorCheckCallback?.(
+				true,
+				{} as unknown as Editor,
+				{} as unknown as MarkdownFileInfo,
+			),
+		).toBe(false);
+
+		const openFailedCmdFalse = cmdsFalse.find(
+			(c) => c.id === "open-failed-megalodon-save-pages",
+		);
 		expect(openFailedCmdFalse?.checkCallback?.(true)).toBe(false);
 
 		// When megalodon is enabled
@@ -300,9 +334,19 @@ describe("registerCommands - Conditional Visibility", () => {
 
 		registerCommands(pluginTrue as unknown as WaybackArchiverPlugin);
 		const insertCmdTrue = cmdsTrue.find((c) => c.id === "insert-latest-megalodon-snapshot");
+		const forceReplaceCmdTrue = cmdsTrue.find(
+			(c) => c.id === "force-replace-archive-links-current-note-with-megalodon",
+		);
 		const openFailedCmdTrue = cmdsTrue.find((c) => c.id === "open-failed-megalodon-save-pages");
 		expect(
 			insertCmdTrue?.editorCheckCallback?.(
+				true,
+				{} as unknown as Editor,
+				{} as unknown as MarkdownFileInfo,
+			),
+		).toBe(true);
+		expect(
+			forceReplaceCmdTrue?.editorCheckCallback?.(
 				true,
 				{} as unknown as Editor,
 				{} as unknown as MarkdownFileInfo,
@@ -319,6 +363,19 @@ describe("registerCommands - Conditional Visibility", () => {
 			"editor",
 			"ctx",
 			"megalodon",
+			false,
+		);
+
+		forceReplaceCmdTrue?.editorCheckCallback?.(
+			false,
+			"editor" as unknown as Editor,
+			"ctx" as unknown as MarkdownFileInfo,
+		);
+		expect(pluginTrue.insertLatestFallbackSnapshotAction).toHaveBeenCalledWith(
+			"editor",
+			"ctx",
+			"megalodon",
+			true,
 		);
 
 		openFailedCmdTrue?.checkCallback?.(false);

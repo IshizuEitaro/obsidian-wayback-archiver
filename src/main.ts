@@ -47,6 +47,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 		editor: Editor,
 		ctx: MarkdownView | MarkdownFileInfo,
 		providerId: "archiveToday" | "megalodon",
+		isForce: boolean,
 	) => Promise<void>;
 	runPendingQueueCycle!: () => Promise<void>;
 

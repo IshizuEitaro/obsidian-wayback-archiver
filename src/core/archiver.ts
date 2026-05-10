@@ -2076,6 +2076,7 @@ export class ArchiverService {
 		editor: Editor,
 		ctx: MarkdownView | MarkdownFileInfo,
 		providerId: ArchiveProviderId,
+		isForce: boolean,
 	): Promise<void> => {
 		const file = ctx.file;
 		if (!file) {
@@ -2099,7 +2100,7 @@ export class ArchiverService {
 		);
 		const allMatches = selectedLinks.map((link) => link.match);
 
-		const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, true, {
+		const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, isForce, {
 			isSelection,
 			fullDocContent,
 		});
@@ -2145,7 +2146,7 @@ export class ArchiverService {
 					originalUrl,
 					absoluteOriginalIndex,
 					resolution.url,
-					true,
+					isForce,
 				);
 				if (applied) {
 					insertedCount++;

@@ -203,7 +203,21 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		editorCheckCallback: (checking, editor, ctx) => {
 			if (plugin.activeSettings.defaultArchiveProviders.includes("archiveToday")) {
 				if (!checking) {
-					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday");
+					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday", false);
+				}
+				return true;
+			}
+			return false;
+		},
+	});
+
+	plugin.addCommand({
+		id: "force-replace-archive-links-current-note-with-archive-today",
+		name: "Force replace archive links with latest archive.today snapshot in current note",
+		editorCheckCallback: (checking, editor, ctx) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("archiveToday")) {
+				if (!checking) {
+					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday", true);
 				}
 				return true;
 			}
@@ -231,7 +245,21 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		editorCheckCallback: (checking, editor, ctx) => {
 			if (plugin.activeSettings.defaultArchiveProviders.includes("megalodon")) {
 				if (!checking) {
-					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon");
+					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon", false);
+				}
+				return true;
+			}
+			return false;
+		},
+	});
+
+	plugin.addCommand({
+		id: "force-replace-archive-links-current-note-with-megalodon",
+		name: "Force replace archive links with latest Web Gyotaku snapshot in current note",
+		editorCheckCallback: (checking, editor, ctx) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("megalodon")) {
+				if (!checking) {
+					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon", true);
 				}
 				return true;
 			}
@@ -434,6 +462,7 @@ interface WaybackArchiverPlugin extends Plugin {
 		editor: Editor,
 		ctx: MarkdownView | MarkdownFileInfo,
 		providerId: "archiveToday" | "megalodon",
+		isForce: boolean,
 	) => Promise<void>;
 	runPendingQueueCycle: () => Promise<void>;
 	saveSettings: () => Promise<void>;
