@@ -345,91 +345,94 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						activeSettings.archiveTodayExperimentalSubmit = value;
 						await this.plugin.saveSettings();
+						this.display();
 					}),
 			);
 
-		containerEl.createEl("p", {
-			text: "The pending queue is capped internally to avoid accidental excessive submissions.",
-			cls: "setting-item-description",
-		});
+		if (activeSettings.archiveTodayExperimentalSubmit) {
+			containerEl.createEl("p", {
+				text: "The pending queue is capped internally to avoid accidental excessive submissions.",
+				cls: "setting-item-description",
+			});
 
-		new Setting(containerEl)
-			.setName("archive.today submit delay between requests (ms)")
-			.setDesc(
-				"Delay between consecutive submit requests to be gentle on archive.today. Range: 1,000ms-10,000ms.",
-			)
-			.addSlider((slider) =>
-				slider
-					.setLimits(1000, 10000, 500)
-					.setValue(activeSettings.archiveTodaySubmitDelayMs)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.archiveTodaySubmitDelayMs = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+			new Setting(containerEl)
+				.setName("archive.today submit delay between requests (ms)")
+				.setDesc(
+					"Delay between consecutive submit requests to be gentle on archive.today. Range: 1,000ms-10,000ms.",
+				)
+				.addSlider((slider) =>
+					slider
+						.setLimits(1000, 10000, 500)
+						.setValue(activeSettings.archiveTodaySubmitDelayMs)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							activeSettings.archiveTodaySubmitDelayMs = value;
+							await this.plugin.saveSettings();
+						}),
+				);
 
-		new Setting(containerEl)
-			.setName("archive.today pending poll interval (ms)")
-			.setDesc(
-				"How often the plugin checks pending archive.today snapshots. Range: 15,000ms-300,000ms.",
-			)
-			.addSlider((slider) =>
-				slider
-					.setLimits(15000, 300000, 5000)
-					.setValue(activeSettings.archiveTodayPendingPollIntervalMs)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.archiveTodayPendingPollIntervalMs = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+			new Setting(containerEl)
+				.setName("archive.today pending poll interval (ms)")
+				.setDesc(
+					"How often the plugin checks pending archive.today snapshots. Range: 15,000ms-300,000ms.",
+				)
+				.addSlider((slider) =>
+					slider
+						.setLimits(15000, 300000, 5000)
+						.setValue(activeSettings.archiveTodayPendingPollIntervalMs)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							activeSettings.archiveTodayPendingPollIntervalMs = value;
+							await this.plugin.saveSettings();
+						}),
+				);
 
-		new Setting(containerEl)
-			.setName("archive.today pending poll batch size")
-			.setDesc("How many pending snapshots to check per poll cycle. Range: 1-10.")
-			.addSlider((slider) =>
-				slider
-					.setLimits(1, 10, 1)
-					.setValue(activeSettings.archiveTodayPendingPollBatchSize)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.archiveTodayPendingPollBatchSize = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+			new Setting(containerEl)
+				.setName("archive.today pending poll batch size")
+				.setDesc("How many pending snapshots to check per poll cycle. Range: 1-10.")
+				.addSlider((slider) =>
+					slider
+						.setLimits(1, 10, 1)
+						.setValue(activeSettings.archiveTodayPendingPollBatchSize)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							activeSettings.archiveTodayPendingPollBatchSize = value;
+							await this.plugin.saveSettings();
+						}),
+				);
 
-		new Setting(containerEl)
-			.setName("archive.today pending queue capacity")
-			.setDesc(
-				"Maximum number of pending items allowed in the background queue. Range: 1-100. Default: 30.",
-			)
-			.addSlider((slider) =>
-				slider
-					.setLimits(1, 100, 1)
-					.setValue(activeSettings.archiveTodayMaxPendingCount ?? 30)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.archiveTodayMaxPendingCount = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+			new Setting(containerEl)
+				.setName("archive.today pending queue capacity")
+				.setDesc(
+					"Maximum number of pending items allowed in the background queue. Range: 1-100. Default: 30.",
+				)
+				.addSlider((slider) =>
+					slider
+						.setLimits(1, 100, 1)
+						.setValue(activeSettings.archiveTodayMaxPendingCount ?? 30)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							activeSettings.archiveTodayMaxPendingCount = value;
+							await this.plugin.saveSettings();
+						}),
+				);
 
-		new Setting(containerEl)
-			.setName("archive.today pending max wait (ms)")
-			.setDesc(
-				"Max time a pending snapshot is kept before moving to failed queue. Range: 60,000ms-1,200,000ms.",
-			)
-			.addSlider((slider) =>
-				slider
-					.setLimits(60000, 1200000, 60000)
-					.setValue(activeSettings.archiveTodayPendingMaxWaitMs)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.archiveTodayPendingMaxWaitMs = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+			new Setting(containerEl)
+				.setName("archive.today pending max wait (ms)")
+				.setDesc(
+					"Max time a pending snapshot is kept before moving to failed queue. Range: 60,000ms-1,200,000ms.",
+				)
+				.addSlider((slider) =>
+					slider
+						.setLimits(60000, 1200000, 60000)
+						.setValue(activeSettings.archiveTodayPendingMaxWaitMs)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							activeSettings.archiveTodayPendingMaxWaitMs = value;
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
 
 		new Setting(containerEl)
 			.setName("Manual save batch size")
