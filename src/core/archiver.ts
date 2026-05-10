@@ -1483,7 +1483,6 @@ export class ArchiverService {
 		const markdownFiles = this.app.vault.getMarkdownFiles();
 
 		let processedCount = 0;
-		const insertedCount = 0;
 		let skippedCount = 0;
 		let failedCount = 0;
 		let pendingCount = 0;
@@ -1575,8 +1574,7 @@ export class ArchiverService {
 				`Processed: ${processedCount}\n` +
 				`Queued (Pending): ${pendingCount}\n` +
 				`Skipped: ${skippedCount}\n` +
-				`Failed: ${failedCount}\n` +
-				`Inserted: ${insertedCount}`,
+				`Failed: ${failedCount}`,
 		);
 		this.plugin.setStatusBarText?.(
 			`✅ Vault archive.today complete! Queued: ${pendingCount}, Failed: ${failedCount}`,
@@ -1675,7 +1673,7 @@ export class ArchiverService {
 							latestContent,
 							originalUrl,
 							resolution.url!,
-							absoluteOriginalIndex,
+							latestIndex,
 							this.activeSettings,
 							{ isReplacement: isForce, allowMismatchedReplacement: isForce },
 						);
