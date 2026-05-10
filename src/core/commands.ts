@@ -350,6 +350,10 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 interface WaybackArchiverPlugin extends Plugin {
 	archiveLinksAction: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => Promise<void>;
 	archiveAllLinksVaultAction: () => Promise<void>;
+	submitAllLinksVaultToArchiveTodayAction: () => Promise<void>;
+	insertLatestFallbackSnapshotsVaultAction: (
+		providerId: "archiveToday" | "megalodon",
+	) => Promise<void>;
 	forceReArchiveLinksAction: (
 		editor: Editor,
 		ctx: MarkdownView | MarkdownFileInfo,
