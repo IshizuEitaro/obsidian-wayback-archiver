@@ -1135,17 +1135,17 @@ export class ArchiverService {
 
 					const insertionPos = latestIndex + currentMatch[0].length;
 					const textAfterLink = latestContent.slice(insertionPos, insertionPos + 300);
-					
+
 					const adjacentMatch = getAdjacentArchiveLinkMatch(textAfterLink);
 					if (adjacentMatch) {
 						const adjacentTimestamp = extractArchiveTimestamp(adjacentMatch[0]);
 						const resolvedTimestamp = extractArchiveTimestamp(resolvedSnapshotUrl);
-						
+
 						if (!adjacentTimestamp || !resolvedTimestamp) {
 							skippedBecauseAlreadyArchived = true;
 							return latestContent;
 						}
-						
+
 						if (resolvedTimestamp > adjacentTimestamp) {
 							isReplacement = true;
 						} else {
@@ -2178,20 +2178,27 @@ export class ArchiverService {
 				}
 
 				const indexToRemove = parsedEntries.findIndex(
-					(e) => e.url === entry.url && e.filePath === entry.filePath && e.timestamp === entry.timestamp,
+					(e) =>
+						e.url === entry.url &&
+						e.filePath === entry.filePath &&
+						e.timestamp === entry.timestamp,
 				);
 				if (indexToRemove !== -1) {
 					parsedEntries.splice(indexToRemove, 1);
 				}
 			} else {
 				const matchingIndex = parsedEntries.findIndex(
-					(e) => e.url === entry.url && e.filePath === entry.filePath && e.timestamp === entry.timestamp,
+					(e) =>
+						e.url === entry.url &&
+						e.filePath === entry.filePath &&
+						e.timestamp === entry.timestamp,
 				);
 				const updatedMetadata = {
 					...entry,
-					error: (result.status === "failed" && result.status_ext)
-						? `Retry failed (status: ${result.status}): ${result.status_ext}`
-						: `Retry failed (status: ${result.status})`,
+					error:
+						result.status === "failed" && result.status_ext
+							? `Retry failed (status: ${result.status}): ${result.status_ext}`
+							: `Retry failed (status: ${result.status})`,
 					retryCount: (entry.retryCount ?? 0) + 1,
 					stage: result.status === "failed" ? result.stage : entry.stage,
 					manualProviderIds:

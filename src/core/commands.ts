@@ -44,30 +44,57 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 	plugin.addCommand({
 		id: "submit-current-note-links-to-archive-today",
 		name: "Submit current note links to archive.today",
-		editorCallback: (editor, ctx) =>
-			plugin.archiveLinksInCurrentNoteToArchiveTodayAction(editor, ctx),
+		editorCheckCallback: (checking, editor, ctx) => {
+			if (plugin.activeSettings.archiveTodayExperimentalSubmit) {
+				if (!checking) {
+					plugin.archiveLinksInCurrentNoteToArchiveTodayAction(editor, ctx);
+				}
+				return true;
+			}
+			return false;
+		},
 	});
 
 	plugin.addCommand({
 		id: "insert-latest-archive-today-snapshot",
 		name: "Insert latest archive.today snapshot in current note",
-		editorCallback: (editor, ctx) =>
-			plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday"),
+		editorCheckCallback: (checking, editor, ctx) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("archiveToday")) {
+				if (!checking) {
+					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday");
+				}
+				return true;
+			}
+			return false;
+		},
 	});
 
 	plugin.addCommand({
 		id: "check-pending-archive-today-now",
 		name: "Check pending archive.today snapshots now",
-		callback: async () => {
-			await plugin.runPendingQueueCycle();
+		checkCallback: (checking) => {
+			if (plugin.activeSettings.archiveTodayExperimentalSubmit) {
+				if (!checking) {
+					plugin.runPendingQueueCycle();
+				}
+				return true;
+			}
+			return false;
 		},
 	});
 
 	plugin.addCommand({
 		id: "insert-latest-megalodon-snapshot",
 		name: "Insert latest Web Gyotaku snapshot in current note",
-		editorCallback: (editor, ctx) =>
-			plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon"),
+		editorCheckCallback: (checking, editor, ctx) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("megalodon")) {
+				if (!checking) {
+					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon");
+				}
+				return true;
+			}
+			return false;
+		},
 	});
 
 	plugin.addCommand({
@@ -182,24 +209,36 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 	plugin.addCommand({
 		id: "open-failed-archive-today-save-pages",
 		name: "Open next failed URLs in archive.today",
-		callback: async () => {
-			if (!plugin.data.failedArchives || plugin.data.failedArchives.length === 0) {
-				new Notice("No failed archives to process.");
-				return;
+		checkCallback: (checking) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("archiveToday")) {
+				if (!checking) {
+					if (!plugin.data.failedArchives || plugin.data.failedArchives.length === 0) {
+						new Notice("No failed archives to process.");
+						return;
+					}
+					plugin.openManualSavePagesForFailedArchives("archiveToday");
+				}
+				return true;
 			}
-			await plugin.openManualSavePagesForFailedArchives("archiveToday");
+			return false;
 		},
 	});
 
 	plugin.addCommand({
 		id: "open-failed-megalodon-save-pages",
 		name: "Open next failed URLs in Web Gyotaku",
-		callback: async () => {
-			if (!plugin.data.failedArchives || plugin.data.failedArchives.length === 0) {
-				new Notice("No failed archives to process.");
-				return;
+		checkCallback: (checking) => {
+			if (plugin.activeSettings.defaultArchiveProviders.includes("megalodon")) {
+				if (!checking) {
+					if (!plugin.data.failedArchives || plugin.data.failedArchives.length === 0) {
+						new Notice("No failed archives to process.");
+						return;
+					}
+					plugin.openManualSavePagesForFailedArchives("megalodon");
+				}
+				return true;
 			}
-			await plugin.openManualSavePagesForFailedArchives("megalodon");
+			return false;
 		},
 	});
 

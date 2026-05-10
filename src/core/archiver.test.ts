@@ -109,10 +109,12 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 				process: vi.fn(async (_file: unknown, updater: (latest: string) => string) => {
 					currentContent = updater(currentContent);
 				}),
-				adapter: undefined as undefined | {
-					write: ReturnType<typeof vi.fn>;
-					remove: ReturnType<typeof vi.fn>;
-				},
+				adapter: undefined as
+					| undefined
+					| {
+							write: ReturnType<typeof vi.fn>;
+							remove: ReturnType<typeof vi.fn>;
+					  },
 			},
 		},
 		data,
@@ -2263,7 +2265,9 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 	});
 	it("isUrlIgnored allows target URLs with archive domains as query parameters", () => {
 		const service = createTddService({}, { ignorePatterns: [] });
-		const isIgnored = (service as unknown as { isUrlIgnored: (url: string) => boolean }).isUrlIgnored.bind(service);
+		const isIgnored = (
+			service as unknown as { isUrlIgnored: (url: string) => boolean }
+		).isUrlIgnored.bind(service);
 
 		// Valid archive links should be ignored
 		expect(isIgnored("https://web.archive.org/web/2026/https://google.com")).toBe(true);
@@ -2980,7 +2984,9 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		).runPendingQueueCycle();
 
 		expect(setup.data.pendingArchives).toHaveLength(0);
-		expect(setup.getContent()).toBe("See [A](https://a.com) [(Archived)](https://web.archive.org/web/*/https://a.com)."); // unmodified
+		expect(setup.getContent()).toBe(
+			"See [A](https://a.com) [(Archived)](https://web.archive.org/web/*/https://a.com).",
+		); // unmodified
 	});
 
 	it("runPendingQueueCycle preserves existing link and removes from queue if resolved snapshot lacks timestamp", async () => {
@@ -3017,7 +3023,9 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 		).runPendingQueueCycle();
 
 		expect(setup.data.pendingArchives).toHaveLength(0);
-		expect(setup.getContent()).toBe("See [A](https://a.com) [(Archived on 2026-05-09)](https://archive.today/20260509121212/https://a.com)."); // unmodified
+		expect(setup.getContent()).toBe(
+			"See [A](https://a.com) [(Archived on 2026-05-09)](https://archive.today/20260509121212/https://a.com).",
+		); // unmodified
 	});
 
 	it("executeRetryOfFailedArchives persists updated retry metadata on failure", async () => {
