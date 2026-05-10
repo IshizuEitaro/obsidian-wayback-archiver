@@ -370,6 +370,17 @@ describe("registerCommands - Conditional Visibility", () => {
 		vaultInsertCmdTrue?.checkCallback?.(false);
 		expect(pluginTrue.insertLatestFallbackSnapshotsVaultAction).toHaveBeenCalledWith(
 			"archiveToday",
+			false,
+		);
+
+		const vaultForceReplaceCmdTrue = cmdsTrue.find(
+			(c) => c.id === "force-replace-archive-links-vault-with-archive-today",
+		);
+		expect(vaultForceReplaceCmdTrue?.checkCallback?.(true)).toBe(true);
+		vaultForceReplaceCmdTrue?.checkCallback?.(false);
+		expect(pluginTrue.insertLatestFallbackSnapshotsVaultAction).toHaveBeenCalledWith(
+			"archiveToday",
+			true,
 		);
 	});
 
@@ -395,6 +406,17 @@ describe("registerCommands - Conditional Visibility", () => {
 		vaultInsertCmdTrue?.checkCallback?.(false);
 		expect(pluginTrue.insertLatestFallbackSnapshotsVaultAction).toHaveBeenCalledWith(
 			"megalodon",
+			false,
+		);
+
+		const vaultForceReplaceCmdTrue = cmdsTrue.find(
+			(c) => c.id === "force-replace-archive-links-vault-with-megalodon",
+		);
+		expect(vaultForceReplaceCmdTrue?.checkCallback?.(true)).toBe(true);
+		vaultForceReplaceCmdTrue?.checkCallback?.(false);
+		expect(pluginTrue.insertLatestFallbackSnapshotsVaultAction).toHaveBeenCalledWith(
+			"megalodon",
+			true,
 		);
 	});
 });

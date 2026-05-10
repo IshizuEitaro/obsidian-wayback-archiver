@@ -1518,7 +1518,7 @@ export class ArchiverService {
 			}
 
 			const allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
-			const filterResult = this.filterLinksForArchiving(allMatches, fileContent, true);
+			const filterResult = this.filterLinksForArchiving(allMatches, fileContent, false);
 			skippedCount += filterResult.skippedCount;
 
 			const linksToProcess = filterResult.linksToProcess;
@@ -1586,6 +1586,7 @@ export class ArchiverService {
 
 	insertLatestFallbackSnapshotsVaultAction = async (
 		providerId: ArchiveProviderId,
+		isForce: boolean,
 	): Promise<void> => {
 		const providerName = providerId === "archiveToday" ? "archive.today" : "Web Gyotaku";
 		new Notice(`Starting vault-wide ${providerName} snapshot retrieval... This may take time.`);
@@ -1627,7 +1628,7 @@ export class ArchiverService {
 			}
 
 			const allMatches = Array.from(fileContent.matchAll(LINK_REGEX));
-			const filterResult = this.filterLinksForArchiving(allMatches, fileContent, true);
+			const filterResult = this.filterLinksForArchiving(allMatches, fileContent, isForce);
 			skippedCount += filterResult.skippedCount;
 
 			const linksToProcess = filterResult.linksToProcess;
@@ -1676,7 +1677,7 @@ export class ArchiverService {
 							resolution.url!,
 							absoluteOriginalIndex,
 							this.activeSettings,
-							{ isReplacement: true, allowMismatchedReplacement: true },
+							{ isReplacement: isForce, allowMismatchedReplacement: isForce },
 						);
 
 						if (modification.modified) {

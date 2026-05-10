@@ -30,6 +30,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 	submitAllLinksVaultToArchiveTodayAction!: () => Promise<void>;
 	insertLatestFallbackSnapshotsVaultAction!: (
 		providerId: "archiveToday" | "megalodon",
+		isForce: boolean,
 	) => Promise<void>;
 	forceReArchiveLinksAction!: (
 		editor: Editor,
