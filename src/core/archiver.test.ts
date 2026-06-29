@@ -29,15 +29,15 @@ vi.mock("obsidian", () => ({
 			empty: vi.fn(),
 		};
 
-		constructor(_app: unknown) {}
+		constructor(_app: unknown) { }
 
-		open() {}
+		open() { }
 
-		close() {}
+		close() { }
 	},
 	Notice: noticeMock,
 	requestUrl: requestUrlMock,
-	TFile: class TFile {},
+	TFile: class TFile { },
 	Plugin: class Plugin {
 		app: unknown;
 		manifest: unknown;
@@ -55,10 +55,10 @@ vi.mock("obsidian", () => ({
 	},
 	PluginSettingTab: class PluginSettingTab {
 		containerEl = { empty: vi.fn(), createEl: vi.fn() };
-		constructor(_app: unknown, _plugin: unknown) {}
+		constructor(_app: unknown, _plugin: unknown) { }
 	},
 	Setting: class Setting {
-		constructor(_containerEl: unknown) {}
+		constructor(_containerEl: unknown) { }
 		setName() {
 			return this;
 		}
@@ -81,9 +81,9 @@ vi.mock("obsidian", () => ({
 			return this;
 		}
 	},
-	ButtonComponent: class ButtonComponent {},
+	ButtonComponent: class ButtonComponent { },
 	addIcon: vi.fn(),
-	App: class App {},
+	App: class App { },
 }));
 
 const { ArchiverService } = await import("./archiver");
@@ -112,9 +112,9 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 				adapter: undefined as
 					| undefined
 					| {
-							write: ReturnType<typeof vi.fn>;
-							remove: ReturnType<typeof vi.fn>;
-					  },
+						write: ReturnType<typeof vi.fn>;
+						remove: ReturnType<typeof vi.fn>;
+					},
 			},
 		},
 		data,
@@ -435,6 +435,72 @@ describe("ArchiverService.archiveUrl", () => {
 			"https://web.archive.org/save",
 		);
 		expect(service["plugin"].data.pendingArchives ?? []).toHaveLength(0);
+	});
+
+	it("uses Wayback default for URLs that do not match an archive.today per-URL policy", async () => {
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 200, json: { job_id: "job-1" } })
+			.mockResolvedValueOnce({
+				status: 200,
+				json: {
+					status: "success",
+					timestamp: "20260627170954",
+					original_url: "https://cdn.imgchest.com/files/xxxxxxxxxxxxx.png",
+				},
+			});
+		const service = createService(
+			{},
+			{
+				defaultArchiveProviders: ["wayback"],
+				archivePolicies: [
+					{
+						pattern: "^https://x\\.com/",
+						providers: ["archiveToday"],
+						archiveTodayExperimentalSubmit: false,
+					},
+				],
+			},
+		);
+
+		await expect(
+			service.archiveUrl("https://cdn.imgchest.com/files/xxxxxxxxxxxxx.png"),
+		).resolves.toEqual({
+			status: "success",
+			url: "https://web.archive.org/web/20260627170954/https://cdn.imgchest.com/files/xxxxxxxxxxxxx.png",
+		});
+		expect(requestUrlMock.mock.calls.map((call) => call[0].url)).toEqual([
+			"https://web.archive.org/save",
+			"https://web.archive.org/save/status/job-1",
+		]);
+	});
+
+	it("does not use global archive.today fallback for URLs outside configured per-URL policies", async () => {
+		requestUrlMock.mockResolvedValueOnce({ status: 500, json: {} });
+		const service = createService(
+			{},
+			{
+				defaultArchiveProviders: ["wayback", "archiveToday"],
+				archivePolicies: [
+					{
+						pattern: "^https://x\\.com/",
+						providers: ["archiveToday"],
+						archiveTodayExperimentalSubmit: false,
+					},
+				],
+			},
+		);
+
+		await expect(
+			service.archiveUrl("https://cdn.imgchest.com/files/xxxxxxxxxxxxx.png"),
+		).resolves.toEqual({
+			status: "failed",
+			status_ext: "Initiation failed (500)",
+			stage: "wayback-initiation-failed",
+			targetUrl: "https://cdn.imgchest.com/files/xxxxxxxxxxxxx.png",
+		});
+		expect(requestUrlMock.mock.calls.map((call) => call[0].url)).toEqual([
+			"https://web.archive.org/save",
+		]);
 	});
 
 	it("archiveUrl returns failed when archive.today experimental submit-only request returns 429", async () => {

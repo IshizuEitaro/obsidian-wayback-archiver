@@ -691,7 +691,9 @@ export class ArchiverService {
 				? this.activeSettings.defaultArchiveProviders
 				: (["wayback"] as ArchiveServiceId[]);
 
-		for (const rule of this.activeSettings.archivePolicies ?? []) {
+		const policyRules = this.activeSettings.archivePolicies ?? [];
+
+		for (const rule of policyRules) {
 			if (!rule.pattern || !rule.providers?.length) {
 				continue;
 			}
@@ -709,6 +711,13 @@ export class ArchiverService {
 				archiveTodayExperimentalSubmit:
 					rule.archiveTodayExperimentalSubmit ??
 					this.activeSettings.archiveTodayExperimentalSubmit,
+			};
+		}
+
+		if (policyRules.length > 0) {
+			return {
+				providers: ["wayback"],
+				archiveTodayExperimentalSubmit: false,
 			};
 		}
 
