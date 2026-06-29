@@ -45,7 +45,8 @@
 		"overrides": {
 			"picomatch": "4.0.4",
 			"flatted": "3.4.2",
-			"postcss": "8.5.10"
+			"postcss": "8.5.10",
+			"undici": "7.28.0"
 		}
 	}
 }
