@@ -1,7 +1,20 @@
-import { App, Modal } from "obsidian";
+import { App, Modal, Notice } from "obsidian";
+import { runAsyncAction } from "../utils/async";
+
+type ModalSubmit<T> = (result: T) => void | Promise<void>;
+
+const submitModalResult = <T>(onSubmit: ModalSubmit<T>, result: T): void => {
+	runAsyncAction(
+		() => onSubmit(result),
+		(error: unknown) => {
+			console.error("Error handling modal submission:", error);
+			new Notice("The requested action could not be completed.");
+		},
+	);
+};
 
 class ConfirmationModal extends Modal {
-	onSubmit: (result: boolean) => void;
+	onSubmit: ModalSubmit<boolean>;
 	titleText: string;
 	messageText: string;
 	confirmButtonText: string;
@@ -11,7 +24,7 @@ class ConfirmationModal extends Modal {
 		title: string,
 		message: string,
 		confirmText: string,
-		onSubmit: (result: boolean) => void,
+		onSubmit: ModalSubmit<boolean>,
 	) {
 		super(app);
 		this.titleText = title;
@@ -36,7 +49,7 @@ class ConfirmationModal extends Modal {
 		});
 		confirmButton.addEventListener("click", () => {
 			this.close();
-			this.onSubmit(true);
+			submitModalResult(this.onSubmit, true);
 		});
 
 		const cancelButton = buttonContainer.createEl("button", {
@@ -44,7 +57,7 @@ class ConfirmationModal extends Modal {
 		});
 		cancelButton.addEventListener("click", () => {
 			this.close();
-			this.onSubmit(false);
+			submitModalResult(this.onSubmit, false);
 		});
 	}
 
@@ -55,10 +68,10 @@ class ConfirmationModal extends Modal {
 }
 
 class ProfileNameModal extends Modal {
-	onSubmit: (name: string | null) => void;
+	onSubmit: ModalSubmit<string | null>;
 	initialValue?: string;
 
-	constructor(app: App, onSubmit: (name: string | null) => void, initialValue?: string) {
+	constructor(app: App, onSubmit: ModalSubmit<string | null>, initialValue?: string) {
 		super(app);
 		this.onSubmit = onSubmit;
 		this.initialValue = initialValue;
@@ -90,7 +103,7 @@ class ProfileNameModal extends Modal {
 		okButton.addEventListener("click", () => {
 			const value = inputEl.value.trim();
 			this.close();
-			this.onSubmit(value || null);
+			submitModalResult(this.onSubmit, value || null);
 		});
 
 		const cancelButton = buttonContainer.createEl("button", {
@@ -98,7 +111,7 @@ class ProfileNameModal extends Modal {
 		});
 		cancelButton.addEventListener("click", () => {
 			this.close();
-			this.onSubmit(null);
+			submitModalResult(this.onSubmit, null);
 		});
 	}
 
@@ -109,9 +122,9 @@ class ProfileNameModal extends Modal {
 }
 
 class ExportFormatModal extends Modal {
-	onSubmit: (format: "csv" | "json" | null) => void;
+	onSubmit: ModalSubmit<"csv" | "json" | null>;
 
-	constructor(app: App, onSubmit: (format: "csv" | "json" | null) => void) {
+	constructor(app: App, onSubmit: ModalSubmit<"csv" | "json" | null>) {
 		super(app);
 		this.onSubmit = onSubmit;
 	}
@@ -134,7 +147,7 @@ class ExportFormatModal extends Modal {
 		});
 		jsonButton.addEventListener("click", () => {
 			this.close();
-			this.onSubmit("json");
+			submitModalResult(this.onSubmit, "json");
 		});
 
 		const csvButton = buttonContainer.createEl("button", {
@@ -143,7 +156,7 @@ class ExportFormatModal extends Modal {
 		});
 		csvButton.addEventListener("click", () => {
 			this.close();
-			this.onSubmit("csv");
+			submitModalResult(this.onSubmit, "csv");
 		});
 
 		const cancelButton = buttonContainer.createEl("button", {
@@ -151,7 +164,7 @@ class ExportFormatModal extends Modal {
 		});
 		cancelButton.addEventListener("click", () => {
 			this.close();
-			this.onSubmit(null);
+			submitModalResult(this.onSubmit, null);
 		});
 	}
 
@@ -163,9 +176,9 @@ class ExportFormatModal extends Modal {
 
 class FileSelectModal extends Modal {
 	fileList: string[];
-	onSubmit: (selectedFileName: string | null) => void;
+	onSubmit: ModalSubmit<string | null>;
 
-	constructor(app: App, fileList: string[], onSubmit: (selectedFileName: string | null) => void) {
+	constructor(app: App, fileList: string[], onSubmit: ModalSubmit<string | null>) {
 		super(app);
 		this.fileList = fileList;
 		this.onSubmit = onSubmit;
@@ -191,7 +204,7 @@ class FileSelectModal extends Modal {
 			});
 			fileButton.addEventListener("click", () => {
 				this.close();
-				this.onSubmit(fileName);
+				submitModalResult(this.onSubmit, fileName);
 			});
 		});
 
@@ -200,7 +213,7 @@ class FileSelectModal extends Modal {
 		});
 		cancelButton.addEventListener("click", () => {
 			this.close();
-			this.onSubmit(null);
+			submitModalResult(this.onSubmit, null);
 		});
 	}
 

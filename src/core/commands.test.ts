@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+const { noticeMock } = vi.hoisted(() => ({ noticeMock: vi.fn() }));
+
 // Mock the external obsidian dependency comprehensively before importing any files that depend on it
 vi.mock("obsidian", () => ({
 	Modal: class Modal {
@@ -17,7 +19,7 @@ vi.mock("obsidian", () => ({
 
 		close() {}
 	},
-	Notice: vi.fn(),
+	Notice: noticeMock,
 	requestUrl: vi.fn(),
 	TFile: class TFile {},
 	Plugin: class Plugin {
@@ -141,6 +143,24 @@ describe("registerCommands - Conditional Visibility", () => {
 		const { plugin, commands } = createMockPlugin();
 		registerCommands(plugin as unknown as WaybackArchiverPlugin);
 		expect(commands.length).toBeGreaterThan(0);
+	});
+
+	it("reports rejected fire-and-forget command actions", async () => {
+		const { plugin, commands } = createMockPlugin({
+			archiveTodayExperimentalSubmit: true,
+		});
+		plugin.runPendingQueueCycle.mockRejectedValueOnce(new Error("save failed"));
+		registerCommands(plugin as unknown as WaybackArchiverPlugin);
+
+		commands
+			.find((command) => command.id === "check-pending-archive-today-now")
+			?.checkCallback?.(false);
+
+		await vi.waitFor(() =>
+			expect(noticeMock).toHaveBeenCalledWith(
+				"The Wayback Archiver command could not be completed.",
+			),
+		);
 	});
 
 	it("shows/hides archive.today experimental submit command based on setting", () => {

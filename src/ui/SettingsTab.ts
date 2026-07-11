@@ -1,5 +1,6 @@
 import { App, ButtonComponent, PluginSettingTab, Notice, Setting } from "obsidian";
 import { ConfirmationModal, ProfileNameModal } from "./modals";
+import { runAsyncAction } from "../utils/async";
 import { WaybackArchiverPlugin } from "../main";
 import { ArchivePolicyRule, ArchiveServiceId, DEFAULT_SETTINGS } from "../core/settings";
 
@@ -559,9 +560,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				cls: "wa-findInput",
 			});
 			findInput.value = rule.find;
-			findInput.addEventListener("change", async (e) => {
+			findInput.addEventListener("change", (e) => {
 				rule.find = (e.target as HTMLInputElement).value;
-				await this.plugin.saveSettings();
+				void this.plugin.saveSettings();
 			});
 
 			const replaceInput = ruleEl.createEl("input", {
@@ -570,9 +571,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				cls: "wa-replaceInput",
 			});
 			replaceInput.value = rule.replace;
-			replaceInput.addEventListener("change", async (e) => {
+			replaceInput.addEventListener("change", (e) => {
 				rule.replace = (e.target as HTMLInputElement).value;
-				await this.plugin.saveSettings();
+				void this.plugin.saveSettings();
 			});
 
 			const regexToggleLabel = ruleEl.createEl("label", {
@@ -583,16 +584,30 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				type: "checkbox",
 			});
 			regexToggle.checked = rule.regex;
-			regexToggle.addEventListener("change", async (e) => {
+			regexToggle.addEventListener("change", (e) => {
 				rule.regex = (e.target as HTMLInputElement).checked;
-				await this.plugin.saveSettings();
+				void this.plugin.saveSettings();
 			});
 
-			const removeButton = ruleEl.createEl("button", { text: "Remove" });
-			removeButton.addEventListener("click", async () => {
-				activeSettings.substitutionRules.splice(index, 1);
-				await this.plugin.saveSettings();
-				this.renderSubstitutionRules(containerEl);
+			const removeButton = ruleEl.createEl("button", {
+				text: "Remove",
+				cls: "wa-removeRuleButton",
+			});
+			removeButton.addEventListener("click", () => {
+				if (removeButton.disabled) return;
+				containerEl
+					.querySelectorAll<HTMLButtonElement>(".wa-removeRuleButton")
+					.forEach((button) => (button.disabled = true));
+				const [removedRule] = activeSettings.substitutionRules.splice(index, 1);
+				runAsyncAction(
+					() => this.plugin.saveSettings(),
+					(error: unknown) => {
+						activeSettings.substitutionRules.splice(index, 0, removedRule);
+						console.error("Error removing substitution rule:", error);
+						new Notice("Could not remove the substitution rule.");
+					},
+					() => this.renderSubstitutionRules(containerEl),
+				);
 			});
 		});
 	}

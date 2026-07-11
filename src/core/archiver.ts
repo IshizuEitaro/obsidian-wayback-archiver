@@ -39,6 +39,7 @@ import {
 	findLatestLinkIndex,
 	selectFullyContainedLinkMatches,
 } from "../utils/contentManipulator";
+import { runAsyncAction } from "../utils/async";
 
 export type ArchiveMode = "selection" | "file" | "vault";
 
@@ -532,7 +533,7 @@ export class ArchiverService {
 
 		// Enforce fixed delay before initial archive request to avoid 429 rate limits
 		// console.log(`Waiting ${this.activeSettings.apiDelay}ms before archiving to respect SPN2 rate limits...`);
-		await new Promise((resolve) => setTimeout(resolve, this.activeSettings.apiDelay));
+		await new Promise((resolve) => window.setTimeout(resolve, this.activeSettings.apiDelay));
 		// console.log('Proceeding with archive request...');
 
 		try {
@@ -613,7 +614,9 @@ export class ArchiverService {
 
 			let retries = 0;
 			while (retries < this.activeSettings.maxRetries) {
-				await new Promise((resolve) => setTimeout(resolve, this.activeSettings.apiDelay));
+				await new Promise((resolve) =>
+					window.setTimeout(resolve, this.activeSettings.apiDelay),
+				);
 
 				try {
 					// console.log(`Checking status for Job ID: ${jobId} (Attempt ${retries + 1}/${this.activeSettings.maxRetries})`);
@@ -1185,7 +1188,7 @@ export class ArchiverService {
 				if (inserted) {
 					new Notice(`Inserted archive.today snapshot in ${entry.filePath}.`);
 					this.plugin.setStatusBarText?.("✅ archive.today snapshot inserted!");
-					setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+					window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 				} else if (skippedBecauseAlreadyArchived) {
 					new Notice(
 						`archive.today snapshot resolved but link was already archived in ${entry.filePath}.`,
@@ -1211,16 +1214,26 @@ export class ArchiverService {
 			if (!this._schedulerStarted) return;
 
 			const intervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
-			this._pendingQueueTimer = window.setTimeout(async () => {
-				try {
-					await this.runPendingQueueCycle();
-				} finally {
-					scheduleNext();
-				}
+			this._pendingQueueTimer = window.setTimeout(() => {
+				runAsyncAction(
+					() => this.runPendingQueueCycle(),
+					(error: unknown) => {
+						console.error("Error checking pending archive.today snapshots:", error);
+						new Notice("Could not check pending archive.today snapshots.");
+					},
+					scheduleNext,
+				);
 			}, intervalMs);
 		};
 
-		void this.runPendingQueueCycle().finally(scheduleNext);
+		runAsyncAction(
+			() => this.runPendingQueueCycle(),
+			(error: unknown) => {
+				console.error("Error checking pending archive.today snapshots:", error);
+				new Notice("Could not check pending archive.today snapshots.");
+			},
+			scheduleNext,
+		);
 	}
 
 	stopPendingQueueScheduler(): void {
@@ -1304,7 +1317,7 @@ export class ArchiverService {
 				entry.targetUrl ??
 				applySubstitutionRules(entry.url, this.activeSettings.substitutionRules);
 
-			globalThis.open?.(provider.saveUrl(targetUrl), "_blank", "noopener");
+			window.open(provider.saveUrl(targetUrl), "_blank", "noopener");
 			entry.manualOpenedAt = Date.now();
 			entry.manualOpenCount = (entry.manualOpenCount ?? 0) + 1;
 		}
@@ -1461,7 +1474,7 @@ export class ArchiverService {
 		this.plugin.setStatusBarText?.(
 			`✅ Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
 		);
-		setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 	};
 
 	archiveAllLinksVaultAction = async (): Promise<void> => {
@@ -1484,7 +1497,7 @@ export class ArchiverService {
 		this.plugin.setStatusBarText?.(
 			`✅ Vault archived! Success: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
 		);
-		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
+		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
 	};
 
 	submitAllLinksVaultToArchiveTodayAction = async (): Promise<void> => {
@@ -1572,7 +1585,7 @@ export class ArchiverService {
 
 				const submitDelayMs = this.activeSettings.archiveTodaySubmitDelayMs ?? 5000;
 				if (submitDelayMs > 0) {
-					await new Promise((resolve) => setTimeout(resolve, submitDelayMs));
+					await new Promise((resolve) => window.setTimeout(resolve, submitDelayMs));
 				}
 			}
 		}
@@ -1588,7 +1601,7 @@ export class ArchiverService {
 		this.plugin.setStatusBarText?.(
 			`✅ Vault archive.today complete! Queued: ${pendingCount}, Failed: ${failedCount}`,
 		);
-		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
+		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
 	};
 
 	insertLatestFallbackSnapshotsVaultAction = async (
@@ -1705,7 +1718,7 @@ export class ArchiverService {
 
 				const lookupDelayMs = this.activeSettings.apiDelay ?? 1000;
 				if (lookupDelayMs > 0) {
-					await new Promise((resolve) => setTimeout(resolve, lookupDelayMs));
+					await new Promise((resolve) => window.setTimeout(resolve, lookupDelayMs));
 				}
 			}
 		}
@@ -1722,7 +1735,7 @@ export class ArchiverService {
 		this.plugin.setStatusBarText?.(
 			`✅ Vault ${providerName} done! Inserted: ${insertedCount}, Failed: ${failedCount}`,
 		);
-		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
+		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
 	};
 
 	forceReArchiveLinksAction = async (
@@ -1834,7 +1847,7 @@ export class ArchiverService {
 		this.plugin.setStatusBarText?.(
 			`✅ Force re-archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
 		);
-		setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 	};
 
 	/**
@@ -2005,7 +2018,7 @@ export class ArchiverService {
 
 				const submitDelayMs = this.activeSettings.archiveTodaySubmitDelayMs ?? 5000;
 				if (current < total && submitDelayMs > 0) {
-					await new Promise((resolve) => setTimeout(resolve, submitDelayMs));
+					await new Promise((resolve) => window.setTimeout(resolve, submitDelayMs));
 				}
 			} else {
 				const policy: EffectiveArchivePolicy = {
@@ -2054,7 +2067,7 @@ export class ArchiverService {
 			this.plugin.setStatusBarText?.(
 				`⏳ ${pendingCount} archive.today snapshot(s) pending...`,
 			);
-			setTimeout(() => this.plugin.setStatusBarText?.(""), 6000);
+			window.setTimeout(() => this.plugin.setStatusBarText?.(""), 6000);
 		} else if (archivedCount > 0) {
 			const msg =
 				"archive.today archival complete." +
@@ -2065,7 +2078,7 @@ export class ArchiverService {
 			this.plugin.setStatusBarText?.(
 				`✅ archive.today done! Archived: ${archivedCount}, Failed: ${failedCount}`,
 			);
-			setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+			window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 		} else if (failedCount > 0 || queueFullCount > 0 || duplicateCount > 0) {
 			const msg =
 				"No new archive.today snapshots queued or inserted." +
@@ -2074,7 +2087,7 @@ export class ArchiverService {
 				(queueFullCount ? ` Queue full: ${queueFullCount}` : "");
 			new Notice(msg);
 			this.plugin.setStatusBarText?.("No new archive.today snapshots queued or inserted.");
-			setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+			window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 		} else {
 			new Notice("No new archive.today snapshots queued or inserted.");
 			this.plugin.setStatusBarText?.("");
@@ -2172,7 +2185,7 @@ export class ArchiverService {
 		this.plugin.setStatusBarText?.(
 			`✅ ${providerName} done! Inserted: ${insertedCount}, Not Found: ${failedCount}`,
 		);
-		setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
 	};
 
 	forceReArchiveAllLinksAction = async (): Promise<void> => {
@@ -2197,7 +2210,7 @@ export class ArchiverService {
 		this.plugin.setStatusBarText?.(
 			`✅ Vault force re-archived! Success: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
 		);
-		setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
+		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 5000);
 	};
 
 	retryFailedArchives = async (forceReplace: boolean): Promise<void> => {
@@ -2364,7 +2377,7 @@ export class ArchiverService {
 				continue;
 			}
 
-			await new Promise((res) => setTimeout(res, this.activeSettings.apiDelay));
+			await new Promise((res) => window.setTimeout(res, this.activeSettings.apiDelay));
 			const result = await this.archiveUrl(entry.url);
 			if (result.status === "success" || result.status === "too_many_captures") {
 				successCount++;

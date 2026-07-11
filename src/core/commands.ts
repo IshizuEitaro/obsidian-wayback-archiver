@@ -3,6 +3,14 @@ import { ConfirmationModal, ExportFormatModal } from "../ui/modals";
 import { format } from "date-fns";
 import { WaybackArchiverData, WaybackArchiverSettings } from "./settings";
 import { serializeFailedArchiveEntriesToCsv } from "./failedArchiveLog";
+import { runAsyncAction } from "../utils/async";
+
+const runCommandAction = (action: () => Promise<void>): void => {
+	runAsyncAction(action, (error: unknown) => {
+		console.error("Error running Wayback Archiver command:", error);
+		new Notice("The Wayback Archiver command could not be completed.");
+	});
+};
 
 export function registerCommands(plugin: WaybackArchiverPlugin) {
 	// This creates an icon in the left ribbon.
@@ -189,7 +197,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		editorCheckCallback: (checking, editor, ctx) => {
 			if (plugin.activeSettings.archiveTodayExperimentalSubmit) {
 				if (!checking) {
-					plugin.archiveLinksInCurrentNoteToArchiveTodayAction(editor, ctx);
+					runCommandAction(() =>
+						plugin.archiveLinksInCurrentNoteToArchiveTodayAction(editor, ctx),
+					);
 				}
 				return true;
 			}
@@ -203,7 +213,14 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		editorCheckCallback: (checking, editor, ctx) => {
 			if (plugin.activeSettings.defaultArchiveProviders.includes("archiveToday")) {
 				if (!checking) {
-					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday", false);
+					runCommandAction(() =>
+						plugin.insertLatestFallbackSnapshotAction(
+							editor,
+							ctx,
+							"archiveToday",
+							false,
+						),
+					);
 				}
 				return true;
 			}
@@ -217,7 +234,14 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		editorCheckCallback: (checking, editor, ctx) => {
 			if (plugin.activeSettings.defaultArchiveProviders.includes("archiveToday")) {
 				if (!checking) {
-					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "archiveToday", true);
+					runCommandAction(() =>
+						plugin.insertLatestFallbackSnapshotAction(
+							editor,
+							ctx,
+							"archiveToday",
+							true,
+						),
+					);
 				}
 				return true;
 			}
@@ -231,7 +255,7 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		checkCallback: (checking) => {
 			if (plugin.activeSettings.archiveTodayExperimentalSubmit) {
 				if (!checking) {
-					plugin.runPendingQueueCycle();
+					runCommandAction(() => plugin.runPendingQueueCycle());
 				}
 				return true;
 			}
@@ -245,7 +269,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		editorCheckCallback: (checking, editor, ctx) => {
 			if (plugin.activeSettings.defaultArchiveProviders.includes("megalodon")) {
 				if (!checking) {
-					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon", false);
+					runCommandAction(() =>
+						plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon", false),
+					);
 				}
 				return true;
 			}
@@ -259,7 +285,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		editorCheckCallback: (checking, editor, ctx) => {
 			if (plugin.activeSettings.defaultArchiveProviders.includes("megalodon")) {
 				if (!checking) {
-					plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon", true);
+					runCommandAction(() =>
+						plugin.insertLatestFallbackSnapshotAction(editor, ctx, "megalodon", true),
+					);
 				}
 				return true;
 			}
@@ -386,7 +414,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 						new Notice("No failed archives to process.");
 						return;
 					}
-					plugin.openManualSavePagesForFailedArchives("archiveToday");
+					runCommandAction(() =>
+						plugin.openManualSavePagesForFailedArchives("archiveToday"),
+					);
 				}
 				return true;
 			}
@@ -404,7 +434,9 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 						new Notice("No failed archives to process.");
 						return;
 					}
-					plugin.openManualSavePagesForFailedArchives("megalodon");
+					runCommandAction(() =>
+						plugin.openManualSavePagesForFailedArchives("megalodon"),
+					);
 				}
 				return true;
 			}

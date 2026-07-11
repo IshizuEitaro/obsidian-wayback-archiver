@@ -19,6 +19,10 @@ const { noticeMock, requestUrlMock } = vi.hoisted(() => ({
 	requestUrlMock: vi.fn(),
 }));
 
+beforeEach(() => {
+	vi.stubGlobal("window", globalThis);
+});
+
 vi.mock("obsidian", () => ({
 	Modal: class Modal {
 		contentEl = {
@@ -29,15 +33,15 @@ vi.mock("obsidian", () => ({
 			empty: vi.fn(),
 		};
 
-		constructor(_app: unknown) { }
+		constructor(_app: unknown) {}
 
-		open() { }
+		open() {}
 
-		close() { }
+		close() {}
 	},
 	Notice: noticeMock,
 	requestUrl: requestUrlMock,
-	TFile: class TFile { },
+	TFile: class TFile {},
 	Plugin: class Plugin {
 		app: unknown;
 		manifest: unknown;
@@ -55,10 +59,10 @@ vi.mock("obsidian", () => ({
 	},
 	PluginSettingTab: class PluginSettingTab {
 		containerEl = { empty: vi.fn(), createEl: vi.fn() };
-		constructor(_app: unknown, _plugin: unknown) { }
+		constructor(_app: unknown, _plugin: unknown) {}
 	},
 	Setting: class Setting {
-		constructor(_containerEl: unknown) { }
+		constructor(_containerEl: unknown) {}
 		setName() {
 			return this;
 		}
@@ -81,9 +85,9 @@ vi.mock("obsidian", () => ({
 			return this;
 		}
 	},
-	ButtonComponent: class ButtonComponent { },
+	ButtonComponent: class ButtonComponent {},
 	addIcon: vi.fn(),
-	App: class App { },
+	App: class App {},
 }));
 
 const { ArchiverService } = await import("./archiver");
@@ -112,9 +116,9 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 				adapter: undefined as
 					| undefined
 					| {
-						write: ReturnType<typeof vi.fn>;
-						remove: ReturnType<typeof vi.fn>;
-					},
+							write: ReturnType<typeof vi.fn>;
+							remove: ReturnType<typeof vi.fn>;
+					  },
 			},
 		},
 		data,
@@ -1547,7 +1551,7 @@ describe("ArchiverService manual fallback saves", () => {
 	it("opens only the next configured batch of archive.today save pages", () => {
 		const service = createManualSaveService();
 
-		service.openManualSavePagesForFailedArchives("archiveToday");
+		void service.openManualSavePagesForFailedArchives("archiveToday");
 
 		expect(globalThis.open).toHaveBeenCalledTimes(2);
 		expect(globalThis.open).toHaveBeenNthCalledWith(
@@ -1609,7 +1613,7 @@ describe("ArchiverService manual fallback saves", () => {
 			plugin as unknown as ConstructorParameters<typeof ArchiverService>[0],
 		);
 
-		service.openManualSavePagesForFailedArchives("archiveToday");
+		void service.openManualSavePagesForFailedArchives("archiveToday");
 
 		expect(globalThis.open).toHaveBeenCalledTimes(1);
 		expect(globalThis.open).toHaveBeenCalledWith(
@@ -1630,7 +1634,7 @@ describe("ArchiverService manual fallback saves", () => {
 	it("opens Megalodon manual save pages with encoding the original URL path", () => {
 		const service = createManualSaveService();
 
-		service.openManualSavePagesForFailedArchives("megalodon");
+		void service.openManualSavePagesForFailedArchives("megalodon");
 
 		expect(globalThis.open).toHaveBeenNthCalledWith(
 			1,
