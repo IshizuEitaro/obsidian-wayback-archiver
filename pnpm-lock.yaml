@@ -21,9 +21,6 @@ importers:
       '@types/node':
         specifier: 25.5.0
         version: 25.5.0
-      builtin-modules:
-        specifier: 5.0.0
-        version: 5.0.0
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
@@ -731,10 +728,6 @@ packages:
 
   bidi-js@1.0.3:
     resolution: {integrity: sha512-RKshQI1R3YQ+n9YJz2QQ147P66ELpa1FQEg20Dk8oW9t2KgLbpDLLp9aGZ7y8WHSshDknG0bknqGw5/tyCs5tw==}
-
-  builtin-modules@5.0.0:
-    resolution: {integrity: sha512-bkXY9WsVpY7CvMhKSR6pZilZu9Ln5WDrKVBUXf2S443etkmEO4V58heTecXcUIsNsi4Rx8JUO4NfX1IcQl4deg==}
-    engines: {node: '>=18.20'}
 
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
@@ -1585,8 +1578,6 @@ snapshots:
     dependencies:
       require-from-string: 2.0.2
     optional: true
-
-  builtin-modules@5.0.0: {}
 
   chai@6.2.2: {}
 
