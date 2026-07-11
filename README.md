@@ -41,6 +41,7 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
         - [Advanced Settings](#advanced-settings)
         - [SPN API v2 Options](#spn-api-v2-options)
 - [Troubleshooting FAQ](#troubleshooting-faq)
+- [Supporting the Project & Providers](#supporting-the-project--providers)
 - [Limitations](#limitations)
     - [Experimental: archive.today auto-submit](#experimental-archivetoday-auto-submit)
 - [LICENSE](#license)

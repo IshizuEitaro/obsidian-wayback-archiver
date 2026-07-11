@@ -41,6 +41,7 @@
         - [詳細設定 (Advanced Settings)](#詳細設定-advanced-settings)
         - [SPN API v2 オプション](#spn-api-v2-オプション)
 - [トラブルシューティング FAQ](#トラブルシューティング-faq)
+- [プロジェクトとプロバイダーへの支援](#プロジェクトとプロバイダーへの支援)
 - [制限事項](#制限事項)
     - [【実験的機能】archive.today 自動送信 (auto-submit)](#実験的機能archivetoday-自動送信-auto-submit)
 - [ライセンス](#ライセンス)
