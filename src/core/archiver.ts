@@ -206,6 +206,7 @@ export class ArchiverService {
 		file: TFile,
 		sourceUrl: string,
 		isForce: boolean,
+		confirmed = false,
 	): Promise<void> => {
 		const originalContent = await this.app.vault.read(file);
 		if (!this.fileMatchesActiveFilters(file, originalContent)) {
@@ -219,6 +220,18 @@ export class ArchiverService {
 		).filter((occurrence) => this.isOccurrenceEligible(originalContent, occurrence, isForce));
 		if (occurrences.length === 0) {
 			new Notice("No eligible occurrences of this URL were found in the active note.");
+			return;
+		}
+		if (isForce && !confirmed) {
+			new ConfirmationModal(
+				this.app,
+				"Force re-archive URL occurrences?",
+				`Replace adjacent archive links for ${occurrences.length} eligible occurrence${occurrences.length === 1 ? "" : "s"} in ${file.basename}.`,
+				"Force re-archive",
+				async (accepted) => {
+					if (accepted) await this.archiveUrlScopeAction(file, sourceUrl, true, true);
+				},
+			).open();
 			return;
 		}
 

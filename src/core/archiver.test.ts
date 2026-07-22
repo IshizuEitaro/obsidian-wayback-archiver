@@ -94,6 +94,7 @@ vi.mock("obsidian", () => ({
 }));
 
 const { ArchiverService } = await import("./archiver");
+const { ConfirmationModal } = await import("../ui/modals");
 
 const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 	let currentContent = content;
@@ -222,11 +223,16 @@ describe("archiveUrlScopeAction", () => {
 			status: "success",
 			url: "https://web.archive.org/web/20260722120000/https://e.example",
 		});
+		vi.spyOn(ConfirmationModal.prototype, "open").mockImplementation(function () {
+			void this.onSubmit(true);
+		});
 
 		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", true);
 
-		expect(setup.getContent()).not.toContain("20200101000000");
-		expect(setup.getContent().match(/20260722120000/g)).toHaveLength(2);
+		await vi.waitFor(() => {
+			expect(setup.getContent()).not.toContain("20200101000000");
+			expect(setup.getContent().match(/20260722120000/g)).toHaveLength(2);
+		});
 	});
 });
 
