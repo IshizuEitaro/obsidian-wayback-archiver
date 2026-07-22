@@ -5,7 +5,8 @@ vi.mock("obsidian", () => ({
 }));
 import type { SettingDefinitionItem } from "obsidian";
 import { DEFAULT_SETTINGS } from "../../core/settings";
-import { buildSettingDefinitions } from "./definitions";
+import { buildSettingDefinitions, DECLARATIVE_SETTING_IDS } from "./definitions";
+import { LEGACY_SETTING_IDS } from "./legacyRenderer";
 
 const createContext = (overrides = {}) => ({
 	plugin: {
@@ -79,5 +80,10 @@ describe("declarative setting definitions", () => {
 		);
 		expect(substitutions?.type).toBe("list");
 		expect(substitutions?.addItem).toBeDefined();
+	});
+
+	it("keeps every user-facing setting available in both implementations", () => {
+		expect(new Set(DECLARATIVE_SETTING_IDS)).toEqual(new Set(LEGACY_SETTING_IDS));
+		expect(new Set(DECLARATIVE_SETTING_IDS).size).toBe(DECLARATIVE_SETTING_IDS.length);
 	});
 });

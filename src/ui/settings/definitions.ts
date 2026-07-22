@@ -21,6 +21,49 @@ import {
 	updateSubstitutionRule,
 } from "./shared";
 
+export const SETTING_IDS = [
+	"credential-storage-mode",
+	"spn-access-key",
+	"spn-secret-key",
+	"purge-plaintext-credentials",
+	"active-profile",
+	"profile-actions",
+	"date-format",
+	"archive-link-text",
+	"ignore-url-patterns",
+	"ignored-domains",
+	"archive-bare-urls",
+	"path-patterns",
+	"url-patterns",
+	"word-patterns",
+	"substitution-rules",
+	"api-delay",
+	"max-status-retries",
+	"archive-freshness",
+	"fresh-capture-max-wait",
+	"throttle-retry-delay",
+	"max-throttle-retries",
+	"auto-clear-failed-logs",
+	"fallback-latest-snapshot",
+	"archive-today-fallback",
+	"megalodon-fallback",
+	"archive-today-auto-submit",
+	"archive-today-submit-delay",
+	"archive-today-poll-interval",
+	"archive-today-poll-batch-size",
+	"archive-today-queue-capacity",
+	"archive-today-max-wait",
+	"manual-save-batch-size",
+	"archive-policies",
+	"capture-screenshot",
+	"capture-all",
+	"js-behavior-timeout",
+	"force-get",
+	"capture-outlinks",
+] as const;
+
+export const DECLARATIVE_SETTING_IDS: readonly string[] = SETTING_IDS;
+
 export interface SettingDefinitionContext {
 	plugin: WaybackArchiverPlugin;
 	refresh(structural: boolean): void;

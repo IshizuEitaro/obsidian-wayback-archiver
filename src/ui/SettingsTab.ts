@@ -16,6 +16,7 @@ import {
 	setDeclarativeSettingValue,
 } from "./settings/bindings";
 import { buildSettingDefinitions } from "./settings/definitions";
+import { renderLegacySettings } from "./settings/legacyRenderer";
 import { WaybackArchiverPlugin } from "../main";
 import {
 	ArchivePolicyRule,
@@ -76,7 +77,10 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
-		const { containerEl } = this;
+		renderLegacySettings(this, this.containerEl);
+	}
+
+	renderLegacySettingsInto(containerEl: HTMLElement): void {
 		containerEl.empty();
 
 		new Setting(containerEl).setName("Archive.org API keys (global)").setHeading();
