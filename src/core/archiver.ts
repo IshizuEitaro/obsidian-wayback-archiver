@@ -46,6 +46,12 @@ import {
 import { runAsyncAction } from "../utils/async";
 import { ArchiveScanSummary, ArchiveWorkItem, summarizeArchiveWork } from "./vaultScan";
 import { BatchCanceledError, BatchRunController, waitForBatchDelay } from "./batchRun";
+import {
+	areSameSourceUrl,
+	collectUrlOccurrences,
+	reconcileOccurrences,
+	SourceOccurrence,
+} from "./archiveScope";
 
 export type ArchiveMode = "selection" | "file" | "vault";
 
@@ -157,6 +163,155 @@ export class ArchiverService {
 		await this.plugin.saveSettings();
 	}
 
+	private fileMatchesActiveFilters(file: TFile, content: string): boolean {
+		if (
+			this.activeSettings.pathPatterns.length > 0 &&
+			!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)
+		) {
+			return false;
+		}
+		return !(
+			this.activeSettings.wordPatterns.length > 0 &&
+			!this.activeSettings.wordPatterns.some((pattern) => content.includes(pattern))
+		);
+	}
+
+	private isOccurrenceEligible(
+		content: string,
+		occurrence: SourceOccurrence,
+		isForce: boolean,
+	): boolean {
+		if (this.isUrlIgnored(occurrence.url)) return false;
+		if (
+			this.activeSettings.urlPatterns.length > 0 &&
+			!matchesAnyPattern(occurrence.url, this.activeSettings.urlPatterns)
+		) {
+			return false;
+		}
+		if (!/^https?:\/\//iu.test(occurrence.url)) return false;
+		if (isForce) return true;
+		const following = content.slice(
+			occurrence.index + occurrence.matchText.length,
+			occurrence.index + occurrence.matchText.length + ADJACENT_LINK_SEARCH_LIMIT,
+		);
+		const adjacent = getAdjacentArchiveLinkMatch(following);
+		if (!adjacent) return true;
+		return checkAdjacentLinkFreshness(
+			extractArchiveTimestamp(adjacent[0]),
+			this.activeSettings,
+		).shouldProcess;
+	}
+
+	archiveUrlScopeAction = async (
+		file: TFile,
+		sourceUrl: string,
+		isForce: boolean,
+	): Promise<void> => {
+		const originalContent = await this.app.vault.read(file);
+		if (!this.fileMatchesActiveFilters(file, originalContent)) {
+			new Notice("This URL is excluded by the active profile.");
+			return;
+		}
+		const occurrences = collectUrlOccurrences(
+			originalContent,
+			sourceUrl,
+			this.activeSettings,
+		).filter((occurrence) => this.isOccurrenceEligible(originalContent, occurrence, isForce));
+		if (occurrences.length === 0) {
+			new Notice("No eligible occurrences of this URL were found in the active note.");
+			return;
+		}
+
+		const captureUrl = occurrences[0].url;
+		const outcome = await this.processSingleUrlArchival(
+			captureUrl,
+			isForce,
+			file.path,
+			occurrences[0].index,
+		);
+		if (outcome.status === "submitted") {
+			new Notice("URL submitted to archive.today; the note will update when it resolves.");
+			return;
+		}
+		if (outcome.status === "archived_failed") {
+			await this.logFailedArchive(
+				captureUrl,
+				file.path,
+				`Archiving failed (${outcome.error ?? "Unknown error"})`,
+				0,
+				{
+					stage: outcome.stage,
+					manualProviderIds: outcome.manualProviderIds,
+					targetUrl: outcome.targetUrl,
+				},
+			);
+			return;
+		}
+		if (
+			isForce &&
+			(outcome.status === "archived_limited" || outcome.status === "cache_hit_limited")
+		) {
+			new Notice("No new fixed snapshot was available for force replacement.");
+			return;
+		}
+
+		let appliedCount = 0;
+		await this.app.vault.process(file, (latestContent) => {
+			const resolved = reconcileOccurrences(
+				occurrences,
+				latestContent,
+				this.activeSettings,
+			)
+				.filter((occurrence) =>
+					areSameSourceUrl(occurrence.url, captureUrl),
+				)
+				.filter((occurrence) => this.isOccurrenceEligible(latestContent, occurrence, isForce))
+				.sort((left, right) => right.index - left.index);
+			let content = latestContent;
+			for (const occurrence of resolved) {
+				const following = content.slice(
+					occurrence.index + occurrence.matchText.length,
+					occurrence.index + occurrence.matchText.length + ADJACENT_LINK_SEARCH_LIMIT,
+				);
+				const change = applyLinkModification(
+					content,
+					occurrence.url,
+					outcome.url,
+					occurrence.index,
+					this.activeSettings,
+					{
+						isReplacement: isFollowedByArchiveLink(following),
+						allowMismatchedReplacement: isForce,
+					},
+				);
+				if (change.modified) appliedCount++;
+				content = change.content;
+			}
+			return content;
+		});
+		new Notice(`Archived ${appliedCount} occurrence${appliedCount === 1 ? "" : "s"}.`);
+	};
+
+	archiveFilesAction = async (files: TFile[], isForce: boolean): Promise<void> => {
+		const markdownFiles = Array.from(
+			new Map(
+				files
+					.filter((file) => file.path.toLowerCase().endsWith(".md"))
+					.map((file) => [file.path, file]),
+			).values(),
+		);
+		const summary = await this.scanFilesForArchiving(markdownFiles, isForce);
+		if (summary.items.length === 0) {
+			new Notice("No eligible links were found in the selected notes.");
+			return;
+		}
+		this.plugin.startArchiveRun(
+			summary,
+			isForce ? "Force re-archive selected notes?" : "Archive selected notes?",
+			[{ label: "Excluded selections", value: files.length - markdownFiles.length }],
+		);
+	};
+
 	async scanFilesForArchiving(files: TFile[], isForce: boolean): Promise<ArchiveScanSummary> {
 		const uniqueFiles = Array.from(
 			new Map(
@@ -175,18 +330,7 @@ export class ArchiverService {
 				new Notice(`Error reading file: ${file.path}`);
 				continue;
 			}
-			if (
-				this.activeSettings.pathPatterns.length > 0 &&
-				!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)
-			) {
-				continue;
-			}
-			if (
-				this.activeSettings.wordPatterns.length > 0 &&
-				!this.activeSettings.wordPatterns.some((pattern) => content.includes(pattern))
-			) {
-				continue;
-			}
+			if (!this.fileMatchesActiveFilters(file, content)) continue;
 
 			const { linksToProcess } = this.filterLinksForArchiving(
 				Array.from(content.matchAll(LINK_REGEX)),

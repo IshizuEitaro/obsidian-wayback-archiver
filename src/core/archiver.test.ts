@@ -176,6 +176,60 @@ describe("archive preflight scan", () => {
 	});
 });
 
+describe("archiveUrlScopeAction", () => {
+	it("captures once and applies the result to every eligible occurrence", async () => {
+		const setup = createFileService(
+			[
+				"[a](https://e.example)",
+				"![b](https://e.example)",
+				'<a href="https://e.example">c</a>',
+				'<img src="https://e.example">',
+			].join("\n"),
+		);
+		const capture = vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
+			status: "success",
+			url: "https://web.archive.org/web/20260722120000/https://e.example",
+		});
+
+		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", false);
+
+		expect(capture).toHaveBeenCalledOnce();
+		expect(setup.getContent().match(/web\.archive\.org\/web\/20260722120000/g)).toHaveLength(
+			4,
+		);
+	});
+
+	it("does not capture when every occurrence has a fresh adjacent archive", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-22T12:00:00Z"));
+		const setup = createFileService(
+			"[a](https://e.example) [(Archived)](https://web.archive.org/web/20260722110000/https://e.example)",
+			{ ...DEFAULT_SETTINGS, archiveFreshnessDays: 1 },
+		);
+		const capture = vi.spyOn(setup.service, "archiveUrl");
+
+		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", false);
+
+		expect(capture).not.toHaveBeenCalled();
+		vi.useRealTimers();
+	});
+
+	it("uses force replacement semantics for all occurrences", async () => {
+		const setup = createFileService(
+			"[a](https://e.example) [(Archived)](https://web.archive.org/web/20200101000000/https://e.example)\n[b](https://e.example)",
+		);
+		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
+			status: "success",
+			url: "https://web.archive.org/web/20260722120000/https://e.example",
+		});
+
+		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", true);
+
+		expect(setup.getContent()).not.toContain("20200101000000");
+		expect(setup.getContent().match(/20260722120000/g)).toHaveLength(2);
+	});
+});
+
 describe("archiveScannedLinksAction", () => {
 	it("applies completed work and leaves later items unchanged after cancellation", async () => {
 		const { file, getContent, service } = createFileService(
