@@ -8,6 +8,8 @@ Bare URLs can be enabled or disabled, while Markdown and HTML image URLs remain 
 
 Archive.org credentials continue to use the explicitly selected SecretStorage or plaintext `data.json` mode.
 
+On Obsidian 1.13+, settings use the searchable declarative interface with inline validation. Obsidian 1.8.10–1.12 continues to use the legacy renderer. Stored legacy numeric values are normalized safely on load, while profile data and credential storage choices keep their existing format.
+
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/IshizuEitaro/obsidian-wayback-archiver?style=for-the-badge&sort=semver) ![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22wayback-archiver%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ishizue)

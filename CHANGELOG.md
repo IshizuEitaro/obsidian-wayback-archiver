@@ -9,6 +9,8 @@
 - Added optional bare-URL handling and hostname-boundary ignored domains while preserving legacy ignore patterns.
 - Added throttle retries and fixed-timestamp fallback restricted to the Archive freshness window. Bare URLs and fresh fallback default to enabled; freshness `0` disables fallback.
 - Preserved the selected SecretStorage or plaintext credential mode and existing credential data.
+- Added searchable Declarative Settings on Obsidian 1.13+ with inline validation, while retaining the legacy renderer for Obsidian 1.8.10–1.12.
+- Kept `minAppVersion` and persisted settings/credential formats unchanged; compile-time API types use the latest published `obsidian@1.13.1` package.
 
 ## [2.0.0](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/2.0.0) (2026-05-10)
 
