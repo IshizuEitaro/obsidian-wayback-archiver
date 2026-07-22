@@ -12,6 +12,7 @@ import {
 	validateIntegerRange,
 	validateNonNegativeInteger,
 } from "./bindings";
+import { SPN_ACCESS_KEY_SECRET_ID, SPN_SECRET_KEY_SECRET_ID } from "../../core/settings";
 import {
 	addSubstitutionRule,
 	deleteSubstitutionRule,
@@ -118,8 +119,7 @@ function buildCredentialGroup(
 				desc: "Credential used by the SPN API v2.",
 				render: (setting) => {
 					if (isSecretMode()) {
-						const name =
-							plugin.data.spnAccessKeySecretName ?? "WaybackArchiver_spnAccessKey";
+						const name = plugin.data.spnAccessKeySecretName ?? SPN_ACCESS_KEY_SECRET_ID;
 						new SecretComponent(plugin.app, setting.controlEl)
 							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
 							.onChange(async (value) => {
@@ -145,8 +145,7 @@ function buildCredentialGroup(
 				desc: "Secret credential used by the SPN API v2.",
 				render: (setting) => {
 					if (isSecretMode()) {
-						const name =
-							plugin.data.spnSecretKeySecretName ?? "WaybackArchiver_spnSecretKey";
+						const name = plugin.data.spnSecretKeySecretName ?? SPN_SECRET_KEY_SECRET_ID;
 						new SecretComponent(plugin.app, setting.controlEl)
 							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
 							.onChange(async (value) => {

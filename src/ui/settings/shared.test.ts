@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, type WaybackArchiverData } from "../../core/settings";
+import {
+	DEFAULT_SETTINGS,
+	SPN_ACCESS_KEY_SECRET_ID,
+	SPN_SECRET_KEY_SECRET_ID,
+	type WaybackArchiverData,
+} from "../../core/settings";
 import {
 	deleteSubstitutionRule,
 	reorderSubstitutionRule,
@@ -41,8 +46,8 @@ describe("shared settings mutations", () => {
 		await switchCredentialStorageMode(plugin as never, "secretStorage");
 
 		expect(plugin.data.spnCredentialStorageMode).toBe("secretStorage");
-		expect(plugin.data.spnAccessKeySecretName).toBe("WaybackArchiver_spnAccessKey");
-		expect(plugin.data.spnSecretKeySecretName).toBe("WaybackArchiver_spnSecretKey");
+		expect(plugin.data.spnAccessKeySecretName).toBe(SPN_ACCESS_KEY_SECRET_ID);
+		expect(plugin.data.spnSecretKeySecretName).toBe(SPN_SECRET_KEY_SECRET_ID);
 		expect(plugin.data.spnAccessKey).toBe("access");
 		expect(plugin.data.spnSecretKey).toBe("secret");
 	});

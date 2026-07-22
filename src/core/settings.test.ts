@@ -9,6 +9,8 @@ import {
 	migrateSecretStorage,
 	normalizeProfileSettings,
 	purgePlaintextCredentials,
+	SPN_ACCESS_KEY_SECRET_ID,
+	SPN_SECRET_KEY_SECRET_ID,
 } from "./settings";
 
 describe("normalizeProfileSettings", () => {
@@ -289,6 +291,33 @@ describe("getSpnCredentials", () => {
 });
 
 describe("migrateSecretStorage & purgePlaintextCredentials", () => {
+	it("uses Obsidian-compatible IDs when importing legacy credentials", async () => {
+		const secretIds: string[] = [];
+		const mockApp = {
+			secretStorage: {
+				setSecret: (name: string) => {
+					if (!/^[a-z0-9-]{1,64}$/u.test(name)) {
+						throw new Error(
+							"Secret ID is invalid. Use only lowercase letters, numbers and dashes.",
+						);
+					}
+					secretIds.push(name);
+				},
+			},
+		};
+		const data: CredentialStorageData = {
+			spnAccessKey: "my_access_key",
+			spnSecretKey: "my_secret_key",
+		};
+
+		await migrateSecretStorage(mockApp, data);
+
+		expect(secretIds).toEqual([
+			"wayback-archiver-spn-access-key",
+			"wayback-archiver-spn-secret-key",
+		]);
+	});
+
 	it("auto-imports legacy keys into secretStorage without deleting legacy keys", async () => {
 		const savedSecrets: Record<string, string> = {};
 		const mockApp = {
@@ -306,10 +335,10 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 
 		const migrated = await migrateSecretStorage(mockApp, data);
 		expect(migrated).toBe(true);
-		expect(data.spnAccessKeySecretName).toBe("WaybackArchiver_spnAccessKey");
-		expect(data.spnSecretKeySecretName).toBe("WaybackArchiver_spnSecretKey");
-		expect(savedSecrets["WaybackArchiver_spnAccessKey"]).toBe("my_access_key");
-		expect(savedSecrets["WaybackArchiver_spnSecretKey"]).toBe("my_secret_key");
+		expect(data.spnAccessKeySecretName).toBe(SPN_ACCESS_KEY_SECRET_ID);
+		expect(data.spnSecretKeySecretName).toBe(SPN_SECRET_KEY_SECRET_ID);
+		expect(savedSecrets[SPN_ACCESS_KEY_SECRET_ID]).toBe("my_access_key");
+		expect(savedSecrets[SPN_SECRET_KEY_SECRET_ID]).toBe("my_secret_key");
 		// Crucial requirement: keep legacy keys for synced devices until user purges
 		expect(data.spnAccessKey).toBe("my_access_key");
 		expect(data.spnSecretKey).toBe("my_secret_key");

@@ -256,6 +256,9 @@ export interface CredentialStorageData {
 	spnSecretKey?: string;
 }
 
+export const SPN_ACCESS_KEY_SECRET_ID = "wayback-archiver-spn-access-key";
+export const SPN_SECRET_KEY_SECRET_ID = "wayback-archiver-spn-secret-key";
+
 interface SecretStorageLike {
 	getSecret?(name: string): string | null | undefined;
 	setSecret?(name: string, value: string): void;
@@ -335,14 +338,14 @@ export async function migrateSecretStorage(
 
 	if (data.spnCredentialStorageMode === "secretStorage") {
 		if (!data.spnAccessKeySecretName && data.spnAccessKey) {
-			const name = "WaybackArchiver_spnAccessKey";
+			const name = SPN_ACCESS_KEY_SECRET_ID;
 			secretStorage?.setSecret?.(name, data.spnAccessKey);
 			data.spnAccessKeySecretName = name;
 			modified = true;
 		}
 
 		if (!data.spnSecretKeySecretName && data.spnSecretKey) {
-			const name = "WaybackArchiver_spnSecretKey";
+			const name = SPN_SECRET_KEY_SECRET_ID;
 			secretStorage?.setSecret?.(name, data.spnSecretKey);
 			data.spnSecretKeySecretName = name;
 			modified = true;

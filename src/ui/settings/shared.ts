@@ -1,5 +1,10 @@
 import type WaybackArchiverPlugin from "../../main";
-import { purgePlaintextCredentials, WaybackArchiverSettings } from "../../core/settings";
+import {
+	purgePlaintextCredentials,
+	SPN_ACCESS_KEY_SECRET_ID,
+	SPN_SECRET_KEY_SECRET_ID,
+	WaybackArchiverSettings,
+} from "../../core/settings";
 
 export type SubstitutionRule = WaybackArchiverSettings["substitutionRules"][number];
 
@@ -10,12 +15,12 @@ export async function switchCredentialStorageMode(
 	const storage = plugin.app.secretStorage;
 	if (mode === "secretStorage") {
 		if (plugin.data.spnAccessKey) {
-			const name = plugin.data.spnAccessKeySecretName ?? "WaybackArchiver_spnAccessKey";
+			const name = plugin.data.spnAccessKeySecretName ?? SPN_ACCESS_KEY_SECRET_ID;
 			storage.setSecret(name, plugin.data.spnAccessKey);
 			plugin.data.spnAccessKeySecretName = name;
 		}
 		if (plugin.data.spnSecretKey) {
-			const name = plugin.data.spnSecretKeySecretName ?? "WaybackArchiver_spnSecretKey";
+			const name = plugin.data.spnSecretKeySecretName ?? SPN_SECRET_KEY_SECRET_ID;
 			storage.setSecret(name, plugin.data.spnSecretKey);
 			plugin.data.spnSecretKeySecretName = name;
 		}

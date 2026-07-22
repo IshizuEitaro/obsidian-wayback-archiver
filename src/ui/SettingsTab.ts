@@ -23,6 +23,8 @@ import {
 	ArchiveServiceId,
 	DEFAULT_SETTINGS,
 	purgePlaintextCredentials,
+	SPN_ACCESS_KEY_SECRET_ID,
+	SPN_SECRET_KEY_SECRET_ID,
 } from "../core/settings";
 
 export function supportsDeclarativeSettings(tab: PluginSettingTab): boolean {
@@ -120,7 +122,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									this.plugin.data.spnAccessKey &&
 									!this.plugin.data.spnAccessKeySecretName
 								) {
-									const name = "WaybackArchiver_spnAccessKey";
+									const name = SPN_ACCESS_KEY_SECRET_ID;
 									this.app.secretStorage.setSecret(
 										name,
 										this.plugin.data.spnAccessKey,
@@ -131,7 +133,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									this.plugin.data.spnSecretKey &&
 									!this.plugin.data.spnSecretKeySecretName
 								) {
-									const name = "WaybackArchiver_spnSecretKey";
+									const name = SPN_SECRET_KEY_SECRET_ID;
 									this.app.secretStorage.setSecret(
 										name,
 										this.plugin.data.spnSecretKey,
