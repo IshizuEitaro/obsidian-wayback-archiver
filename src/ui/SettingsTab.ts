@@ -11,12 +11,31 @@ import {
 	purgePlaintextCredentials,
 } from "../core/settings";
 
+export function supportsDeclarativeSettings(
+	tab: PluginSettingTab,
+): boolean {
+	return typeof (tab as { update?: unknown }).update === "function";
+}
+
 class WaybackArchiverSettingTab extends PluginSettingTab {
 	plugin: WaybackArchiverPlugin;
 
 	constructor(app: App, plugin: WaybackArchiverPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	refreshSettingsUi(structural: boolean): void {
+		if (supportsDeclarativeSettings(this)) {
+			const declarativeTab = this as PluginSettingTab & {
+				update(): void;
+				refreshDomState(): void;
+			};
+			if (structural) declarativeTab.update();
+			else declarativeTab.refreshDomState();
+			return;
+		}
+		this.display();
 	}
 
 	display(): void {
@@ -100,7 +119,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 							}
 
 							await this.plugin.saveSettings();
-							this.display();
+							this.refreshSettingsUi(true);
 						});
 				});
 		}
@@ -158,7 +177,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 								purgePlaintextCredentials(this.plugin.data);
 								await this.plugin.saveSettings();
 								new Notice("Legacy plaintext API keys purged from data.json.");
-								this.display();
+								this.refreshSettingsUi(true);
 							});
 					});
 			}
@@ -208,7 +227,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.data.activeProfileId = value;
 					await this.plugin.saveSettings();
-					this.display();
+					this.refreshSettingsUi(true);
 				});
 			});
 
@@ -555,7 +574,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						activeSettings.archiveTodayExperimentalSubmit = value;
 						await this.plugin.saveSettings();
-						this.display();
+						this.refreshSettingsUi(false);
 					}),
 			);
 
@@ -878,7 +897,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				};
 				this.plugin.data.activeProfileId = newName;
 				await this.plugin.saveSettings();
-				this.display();
+				this.refreshSettingsUi(true);
 				new Notice(`Profile "${newName}" created and activated.`);
 			} else if (newName) {
 				new Notice(`Profile "${newName}" already exists.`);
@@ -904,7 +923,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					delete this.plugin.data.profiles[currentId];
 					this.plugin.data.activeProfileId = newName;
 					await this.plugin.saveSettings();
-					this.display();
+					this.refreshSettingsUi(true);
 					new Notice(`Profile "${currentId}" renamed to "${newName}".`);
 				} else if (newName === currentId) {
 					new Notice("New name is the same as the current name.");
@@ -936,7 +955,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					delete this.plugin.data.profiles[profileIdToDelete];
 					this.plugin.data.activeProfileId = "default";
 					await this.plugin.saveSettings();
-					this.display();
+					this.refreshSettingsUi(true);
 					new Notice(`Profile "${profileIdToDelete}" deleted.`);
 				} else {
 					new Notice("Profile deletion cancelled.");
