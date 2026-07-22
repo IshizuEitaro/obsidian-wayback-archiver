@@ -138,6 +138,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 		title: string,
 		additionalCounts: Array<{ label: string; value: number }> = [],
 	): void {
+		this.activeArchiveRun?.cancel();
 		this.activeRunUnsubscribe?.();
 		const run = new BatchRunController(
 			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),

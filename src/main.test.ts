@@ -77,6 +77,21 @@ const createManifest = () =>
 		author: "ISHIZUE",
 	}) as never;
 
+const createArchiveSummary = (id: string) => ({
+	noteCount: 1,
+	linkCount: 1,
+	uniqueUrlCount: 1,
+	items: [
+		{
+			id,
+			filePath: "a.md",
+			url: "https://example.com",
+			approximateIndex: 0,
+			isForce: false,
+		},
+	],
+});
+
 describe("plugin startup lifecycle", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -111,25 +126,23 @@ describe("plugin startup lifecycle", () => {
 		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
 		await plugin.onload();
 
-		plugin.startArchiveRun(
-			{
-				noteCount: 1,
-				linkCount: 1,
-				uniqueUrlCount: 1,
-				items: [
-					{
-						id: "a.md:0",
-						filePath: "a.md",
-						url: "https://example.com",
-						approximateIndex: 0,
-						isForce: false,
-					},
-				],
-			},
-			"Archive selected links?",
-		);
+		plugin.startArchiveRun(createArchiveSummary("a.md:0"), "Archive selected links?");
 
 		expect(plugin.activeArchiveRun).not.toBeNull();
 		expect(lifecycle.modalOpen).toHaveBeenCalledOnce();
+	});
+
+	it("cancels a superseded archive run before starting another", async () => {
+		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
+		await plugin.onload();
+		plugin.startArchiveRun(createArchiveSummary("first"), "First run");
+		const firstRun = plugin.activeArchiveRun;
+		expect(firstRun).not.toBeNull();
+		const cancel = vi.spyOn(firstRun!, "cancel");
+
+		plugin.startArchiveRun(createArchiveSummary("second"), "Second run");
+
+		expect(cancel).toHaveBeenCalledOnce();
+		expect(plugin.activeArchiveRun).not.toBe(firstRun);
 	});
 });
