@@ -1,8 +1,21 @@
 import * as obsidian from "obsidian";
-import { App, ButtonComponent, PluginSettingTab, Notice, Setting } from "obsidian";
+import {
+	App,
+	ButtonComponent,
+	PluginSettingTab,
+	Notice,
+	Setting,
+	SettingDefinitionItem,
+} from "obsidian";
 import { ConfirmationModal, ProfileNameModal } from "./modals";
 import { runAsyncAction } from "../utils/async";
 import { parseIgnoredDomains } from "../utils/LinkUtils";
+import {
+	DeclarativeSettingKey,
+	getDeclarativeSettingValue,
+	setDeclarativeSettingValue,
+} from "./settings/bindings";
+import { buildSettingDefinitions } from "./settings/definitions";
 import { WaybackArchiverPlugin } from "../main";
 import {
 	ArchivePolicyRule,
@@ -36,6 +49,30 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			return;
 		}
 		this.display();
+	}
+
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return buildSettingDefinitions({
+			plugin: this.plugin,
+			refresh: (structural) => this.refreshSettingsUi(structural),
+			createProfile: () => this.handleCreateProfileClick(),
+			renameProfile: () => this.handleRenameProfileClick(),
+			deleteProfile: () => this.handleDeleteProfileClick(),
+		});
+	}
+
+	getControlValue(key: string): unknown {
+		return getDeclarativeSettingValue(this.plugin, key as DeclarativeSettingKey);
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const effect = await setDeclarativeSettingValue(
+			this.plugin,
+			key as DeclarativeSettingKey,
+			value,
+		);
+		if (effect === "structure") this.refreshSettingsUi(true);
+		if (effect === "visibility") this.refreshSettingsUi(false);
 	}
 
 	display(): void {

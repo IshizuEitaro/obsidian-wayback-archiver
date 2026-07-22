@@ -16,17 +16,26 @@ vi.mock("obsidian", () => ({
 }));
 
 import { WaybackArchiverSettingTab } from "./SettingsTab";
+import { DEFAULT_SETTINGS } from "../core/settings";
 
-const createSettingTab = () =>
-	new WaybackArchiverSettingTab({} as never, {
-		activeSettings: {},
-		data: {},
-		saveSettings: vi.fn(),
-	} as never);
+const createSettingTab = () => {
+	const plugin = {
+		activeSettings: { ...DEFAULT_SETTINGS },
+		data: {
+			activeProfileId: "default",
+			profiles: { default: { ...DEFAULT_SETTINGS } },
+		},
+		saveSettings: vi.fn(async () => undefined),
+	};
+	return {
+		plugin,
+		tab: new WaybackArchiverSettingTab({} as never, plugin as never),
+	};
+};
 
 describe("declarative settings compatibility", () => {
 	it("uses update when the 1.13 declarative host method exists", () => {
-		const tab = createSettingTab();
+		const { tab } = createSettingTab();
 		const update = vi.fn();
 		Object.assign(tab, { update });
 
@@ -37,12 +46,23 @@ describe("declarative settings compatibility", () => {
 	});
 
 	it("falls back to display on pre-1.13 hosts", () => {
-		const tab = createSettingTab();
+		const { tab } = createSettingTab();
 		Object.assign(tab, { update: undefined });
 		const display = vi.spyOn(tab, "display").mockImplementation(() => undefined);
 
 		tab.refreshSettingsUi(true);
 
 		expect(display).toHaveBeenCalledOnce();
+	});
+
+	it("routes declarative definitions and control values through the binding adapter", async () => {
+		const { plugin, tab } = createSettingTab();
+
+		expect(tab.getSettingDefinitions().length).toBeGreaterThan(0);
+		expect(tab.getControlValue("profile.apiDelay")).toBe(DEFAULT_SETTINGS.apiDelay);
+		await tab.setControlValue("profile.apiDelay", 2500);
+
+		expect(plugin.activeSettings.apiDelay).toBe(2500);
+		expect(plugin.saveSettings).toHaveBeenCalledOnce();
 	});
 });
