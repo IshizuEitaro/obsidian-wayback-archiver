@@ -1,5 +1,13 @@
 # Wayback Archiver
 
+## 安全な長時間アーカイブ
+
+Vault 全体の実行前に、対象ノート数、処理対象リンク数、ユニーク URL 数を表示します。進捗ダイアログでは URL ごとの状態を確認でき、ステータスバーから再表示できます。Cancel 後は新しい処理を開始せず、完了済みの追記だけを保持します。実行中の通信は完了する場合がありますが、その結果は Cancel 後に書き込みません。
+
+bare URL は設定で有効・無効を切り替えられ、Markdown/HTML の画像 URL は引き続き対象です。Ignored domains は完全な hostname 境界でサブドメインも除外し、従来の正規表現 URL パターンも互換性のため残ります。Throttle 後は設定した間隔と回数で再試行します。Capture 失敗時の fallback は Archive freshness 内の固定 timestamp snapshot だけを使用し、freshness が `0` の場合は使用しません。
+
+Archive.org の資格情報は、ユーザーが選択した SecretStorage または平文 `data.json` の保存方式を引き続き使用します。
+
 [English](./README.md)
 
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/IshizuEitaro/obsidian-wayback-archiver?style=for-the-badge&sort=semver) ![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22wayback-archiver%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge)

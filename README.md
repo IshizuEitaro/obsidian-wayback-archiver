@@ -1,5 +1,13 @@
 # Wayback Archiver
 
+## Safe long-running archival
+
+Vault-wide runs show affected notes, eligible link occurrences, and unique URLs before starting. The progress dialog reports each URL and can be reopened from the status bar. Cancel stops new work and preserves only edits completed before cancellation; an in-flight request may finish, but its result is not written after cancellation.
+
+Bare URLs can be enabled or disabled, while Markdown and HTML image URLs remain eligible. Ignored domains match exact hostnames and their subdomains; legacy regular-expression URL patterns remain available. Throttled captures retry with the configured delay and limit. A failed capture can use only a fixed-timestamp snapshot inside the configured Archive freshness window; freshness `0` disables that fallback.
+
+Archive.org credentials continue to use the explicitly selected SecretStorage or plaintext `data.json` mode.
+
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/IshizuEitaro/obsidian-wayback-archiver?style=for-the-badge&sort=semver) ![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22wayback-archiver%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ishizue)
