@@ -15,6 +15,12 @@ describe("Obsidian scorecard compliance", () => {
 		expect(read("package.json")).not.toContain('"builtin-modules"');
 	});
 
+	it("minifies production builds while preserving development source maps", () => {
+		const source = read("esbuild.config.mjs");
+		expect(source).toContain("minify: prod");
+		expect(source).toContain('sourcemap: prod ? false : "inline"');
+	});
+
 	it("does not use settings in a settings heading", () => {
 		expect(read("src/ui/SettingsTab.ts")).not.toContain(
 			'.setName("SPN API v2 settings").setHeading()',
