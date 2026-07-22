@@ -5,6 +5,7 @@ const lifecycle = vi.hoisted(() => ({
 	startScheduler: vi.fn(),
 	stopScheduler: vi.fn(),
 	registerCommands: vi.fn(),
+	registerContextMenus: vi.fn(),
 	modalOpen: vi.fn(),
 	modalShowProgress: vi.fn(),
 }));
@@ -49,6 +50,10 @@ vi.mock("./core/commands", () => ({
 	registerCommands: lifecycle.registerCommands,
 }));
 
+vi.mock("./core/contextMenus", () => ({
+	registerContextMenus: lifecycle.registerContextMenus,
+}));
+
 vi.mock("./ui/SettingsTab", () => ({
 	WaybackArchiverSettingTab: class WaybackArchiverSettingTab {},
 }));
@@ -84,6 +89,7 @@ describe("plugin startup lifecycle", () => {
 
 		expect(plugin.addSettingTab).toHaveBeenCalledOnce();
 		expect(lifecycle.registerCommands).toHaveBeenCalledOnce();
+		expect(lifecycle.registerContextMenus).toHaveBeenCalledOnce();
 		expect(plugin.app.workspace.onLayoutReady).toHaveBeenCalledOnce();
 		expect(lifecycle.startScheduler).not.toHaveBeenCalled();
 

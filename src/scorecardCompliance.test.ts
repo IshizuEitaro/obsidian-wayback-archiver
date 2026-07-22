@@ -27,6 +27,14 @@ describe("Obsidian scorecard compliance", () => {
 		);
 	});
 
+	it("manages all context-menu listeners through the plugin lifecycle", () => {
+		const source = read("src/core/contextMenus.ts");
+		expect(source.match(/plugin\.registerEvent\(/gu)).toHaveLength(4);
+		for (const event of ["editor-menu", "file-menu", "url-menu", "files-menu"]) {
+			expect(source).toContain(`workspace.on("${event}"`);
+		}
+	});
+
 	it("attests release assets and installs from the frozen lockfile", () => {
 		const workflow = read(".github/workflows/release.yaml");
 		expect(workflow).toContain("pnpm install --frozen-lockfile");
