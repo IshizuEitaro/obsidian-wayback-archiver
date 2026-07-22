@@ -338,6 +338,8 @@ export class ArchiverService {
 		isForce: boolean,
 		filePath: string,
 		approximateIndex?: number,
+		run?: BatchRunController,
+		itemId?: string,
 	): Promise<SingleArchiveOutcome> {
 		const cached = this.recentArchiveCache.get(originalUrl);
 		if (
@@ -354,7 +356,7 @@ export class ArchiverService {
 			}
 		} else {
 			// console.log(`[DEBUG] Calling archiveUrl (cache miss/stale) for: ${originalUrl}`);
-			const archiveResult = await this.archiveUrl(originalUrl);
+			const archiveResult = await this.archiveUrl(originalUrl, run, itemId);
 			// console.log(`[DEBUG] archiveUrl returned:`, archiveResult);
 			if (archiveResult.status === "success") {
 				this.recentArchiveCache.set(originalUrl, {
@@ -390,6 +392,100 @@ export class ArchiverService {
 			}
 		}
 	}
+
+	archiveScannedLinksAction = async (
+		summary: ArchiveScanSummary,
+		run: BatchRunController,
+	): Promise<void> => {
+		try {
+			for (const item of summary.items) {
+				run.assertActive();
+				run.updateItem(item.id, "capturing", "Requesting Save Page Now");
+				const outcome = await this.processSingleUrlArchival(
+					item.url,
+					item.isForce,
+					item.filePath,
+					item.approximateIndex,
+					run,
+					item.id,
+				);
+				run.assertActive();
+				if (outcome.status === "submitted") {
+					run.updateItem(item.id, "success", "Submitted to archive.today");
+					continue;
+				}
+				if (outcome.status === "archived_failed") {
+					run.updateItem(item.id, "failed", outcome.error ?? "Archiving failed");
+					await this.logFailedArchive(
+						item.url,
+						item.filePath,
+						`Archiving failed (${outcome.error ?? "Unknown error"})`,
+						0,
+						{
+							stage: outcome.stage,
+							manualProviderIds: outcome.manualProviderIds,
+							targetUrl: outcome.targetUrl,
+						},
+					);
+					continue;
+				}
+				if (
+					item.isForce &&
+					(outcome.status === "archived_limited" ||
+						outcome.status === "cache_hit_limited")
+				) {
+					run.updateItem(item.id, "skipped", "No new fixed snapshot");
+					continue;
+				}
+				const file = this.app.vault.getAbstractFileByPath(item.filePath);
+				if (!file || !(file instanceof TFile)) {
+					run.updateItem(item.id, "failed", "Note no longer exists");
+					continue;
+				}
+				let modified = false;
+				await this.app.vault.process(file, (latestContent) => {
+					if (run.isCanceled()) return latestContent;
+					const latestIndex = findLatestLinkIndex(
+						latestContent,
+						item.url,
+						item.approximateIndex,
+					);
+					if (latestIndex === null) return latestContent;
+					const latestMatch = Array.from(latestContent.matchAll(LINK_REGEX)).find(
+						(match) => match.index === latestIndex,
+					);
+					if (!latestMatch) return latestContent;
+					const following = latestContent.slice(
+						latestIndex + latestMatch[0].length,
+						latestIndex + latestMatch[0].length + ADJACENT_LINK_SEARCH_LIMIT,
+					);
+					const change = applyLinkModification(
+						latestContent,
+						item.url,
+						outcome.url,
+						latestIndex,
+						this.activeSettings,
+						{
+							isReplacement: isFollowedByArchiveLink(following),
+							allowMismatchedReplacement: item.isForce,
+						},
+					);
+					modified = change.modified;
+					return change.content;
+				});
+				run.assertActive();
+				run.updateItem(
+					item.id,
+					modified ? "success" : "skipped",
+					modified ? "Captured" : "Occurrence changed or already archived",
+				);
+			}
+		} catch (error) {
+			if (!(error instanceof BatchCanceledError)) throw error;
+		} finally {
+			run.finish();
+		}
+	};
 
 	private async logFailedArchive(
 		originalUrl: string,

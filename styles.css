@@ -39,3 +39,28 @@
 .wa-spnDesc {
 	margin-bottom: 10px;
 }
+
+.wayback-progress-list {
+	max-height: 50vh;
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.wayback-progress-row {
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.wayback-progress-url {
+	overflow-wrap: anywhere;
+	font-weight: var(--font-semibold);
+}
+
+.wayback-progress-detail {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.wayback-status-clickable {
+	cursor: pointer;
+}

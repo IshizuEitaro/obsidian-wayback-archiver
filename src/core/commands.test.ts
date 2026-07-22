@@ -111,6 +111,21 @@ describe("registerCommands - Conditional Visibility", () => {
 			activeSettings,
 			archiveLinksAction: { bind: vi.fn(() => vi.fn()) },
 			archiveAllLinksVaultAction: vi.fn(),
+			scanVaultForArchiving: vi.fn().mockResolvedValue({
+				noteCount: 1,
+				linkCount: 1,
+				uniqueUrlCount: 1,
+				items: [
+					{
+						id: "a.md:0",
+						filePath: "a.md",
+						url: "https://example.com",
+						approximateIndex: 0,
+						isForce: false,
+					},
+				],
+			}),
+			startArchiveRun: vi.fn(),
 			submitAllLinksVaultToArchiveTodayAction: vi.fn(),
 			insertLatestFallbackSnapshotsVaultAction: vi.fn(),
 			archiveLinksInCurrentNoteToArchiveTodayAction: vi.fn(),
@@ -143,6 +158,19 @@ describe("registerCommands - Conditional Visibility", () => {
 		const { plugin, commands } = createMockPlugin();
 		registerCommands(plugin as unknown as WaybackArchiverPlugin);
 		expect(commands.length).toBeGreaterThan(0);
+	});
+
+	it("preflights vault archival before opening shared progress", async () => {
+		const { plugin, commands } = createMockPlugin();
+		registerCommands(plugin as unknown as WaybackArchiverPlugin);
+
+		await commands.find((command) => command.id === "archive-links-vault")?.callback?.();
+
+		expect(plugin.scanVaultForArchiving).toHaveBeenCalledWith(false);
+		expect(plugin.startArchiveRun).toHaveBeenCalledWith(
+			expect.objectContaining({ linkCount: 1 }),
+			"Archive all links in vault?",
+		);
 	});
 
 	it("reports rejected fire-and-forget command actions", async () => {

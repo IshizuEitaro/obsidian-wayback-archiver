@@ -5,6 +5,8 @@ const lifecycle = vi.hoisted(() => ({
 	startScheduler: vi.fn(),
 	stopScheduler: vi.fn(),
 	registerCommands: vi.fn(),
+	modalOpen: vi.fn(),
+	modalShowProgress: vi.fn(),
 }));
 
 vi.mock("obsidian", () => ({
@@ -16,7 +18,11 @@ vi.mock("obsidian", () => ({
 				}),
 			},
 		};
-		addStatusBarItem = vi.fn(() => ({ setText: vi.fn() }));
+		addStatusBarItem = vi.fn(() => ({
+			setText: vi.fn(),
+			addEventListener: vi.fn(),
+			classList: { add: vi.fn() },
+		}));
 		addSettingTab = vi.fn();
 		addCommand = vi.fn();
 		loadData = vi.fn(async () => null);
@@ -34,6 +40,8 @@ vi.mock("./core/archiver", () => ({
 		startPendingQueueScheduler = lifecycle.startScheduler;
 		stopPendingQueueScheduler = lifecycle.stopScheduler;
 		runPendingQueueCycle = vi.fn();
+		scanVaultForArchiving = vi.fn();
+		archiveScannedLinksAction = vi.fn();
 	},
 }));
 
@@ -43,6 +51,13 @@ vi.mock("./core/commands", () => ({
 
 vi.mock("./ui/SettingsTab", () => ({
 	WaybackArchiverSettingTab: class WaybackArchiverSettingTab {},
+}));
+
+vi.mock("./ui/ArchiveProgressModal", () => ({
+	ArchiveProgressModal: class ArchiveProgressModal {
+		open = lifecycle.modalOpen;
+		showProgress = lifecycle.modalShowProgress;
+	},
 }));
 
 import WaybackArchiverPlugin from "./main";
@@ -84,5 +99,31 @@ describe("plugin startup lifecycle", () => {
 
 		expect(lifecycle.startScheduler).not.toHaveBeenCalled();
 		expect(lifecycle.stopScheduler).toHaveBeenCalledOnce();
+	});
+
+	it("opens a shared archive run and exposes progress through the status bar", async () => {
+		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
+		await plugin.onload();
+
+		plugin.startArchiveRun(
+			{
+				noteCount: 1,
+				linkCount: 1,
+				uniqueUrlCount: 1,
+				items: [
+					{
+						id: "a.md:0",
+						filePath: "a.md",
+						url: "https://example.com",
+						approximateIndex: 0,
+						isForce: false,
+					},
+				],
+			},
+			"Archive selected links?",
+		);
+
+		expect(plugin.activeArchiveRun).not.toBeNull();
+		expect(lifecycle.modalOpen).toHaveBeenCalledOnce();
 	});
 });

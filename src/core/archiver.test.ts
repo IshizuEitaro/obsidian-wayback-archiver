@@ -9,6 +9,7 @@ import { App, PluginManifest, Editor, MarkdownView, TFile } from "obsidian";
 import WaybackArchiverPlugin from "../main";
 import { getUrlFromMatch, LINK_REGEX } from "../utils/LinkUtils";
 import { BatchCanceledError, BatchRunController } from "./batchRun";
+import type { ArchiveScanSummary } from "./vaultScan";
 
 import {
 	serializeFailedArchiveEntriesToCsv,
@@ -172,6 +173,51 @@ describe("archive preflight scan", () => {
 		expect(summary).toMatchObject({ noteCount: 1, linkCount: 1, uniqueUrlCount: 1 });
 		expect(summary.items[0].url).toBe("https://kept.example");
 		vi.useRealTimers();
+	});
+});
+
+describe("archiveScannedLinksAction", () => {
+	it("applies completed work and leaves later items unchanged after cancellation", async () => {
+		const { file, getContent, service } = createFileService(
+			"[a](https://a.example)\n[b](https://b.example)",
+		);
+		const summary = await service.scanFilesForArchiving([file], false);
+		const run = new BatchRunController(
+			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
+		);
+		const processSingle = vi.spyOn(
+			service as unknown as {
+				processSingleUrlArchival: () => Promise<unknown>;
+			},
+			"processSingleUrlArchival",
+		);
+		processSingle
+			.mockResolvedValueOnce({
+				status: "archived_success",
+				url: "https://web.archive.org/web/20260722120000/https://a.example",
+			})
+			.mockImplementationOnce(async () => {
+				run.cancel();
+				return {
+					status: "archived_success",
+					url: "https://web.archive.org/web/20260722120000/https://b.example",
+				};
+			});
+
+		await (
+			service as unknown as {
+				archiveScannedLinksAction: (
+					summary: ArchiveScanSummary,
+					run: BatchRunController,
+				) => Promise<void>;
+			}
+		).archiveScannedLinksAction(summary, run);
+
+		expect(getContent()).toContain("web.archive.org/web/20260722120000/https://a.example");
+		expect(getContent()).not.toContain(
+			"web.archive.org/web/20260722120000/https://b.example",
+		);
+		expect(run.snapshot()).toMatchObject({ canceled: true, finished: true });
 	});
 });
 
