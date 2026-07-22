@@ -219,10 +219,7 @@ export function getSpnCredentials(
  * Automatically imports legacy plaintext credentials from data.json into Obsidian SecretStorage.
  * Crucially, leaves legacy plaintext credentials in data.json so other synced devices can also auto-import.
  */
-export async function migrateSecretStorage(
-	app: any,
-	data: WaybackArchiverData,
-): Promise<boolean> {
+export async function migrateSecretStorage(app: any, data: WaybackArchiverData): Promise<boolean> {
 	const hasSecretStorage = Boolean(
 		app && app.secretStorage && typeof app.secretStorage.setSecret === "function",
 	);

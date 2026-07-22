@@ -116,17 +116,17 @@ export class BatchRunController {
 	}
 }
 
-export async function waitForBatchDelay(
-	ms: number,
-	run: BatchRunController,
-): Promise<void> {
+export async function waitForBatchDelay(ms: number, run: BatchRunController): Promise<void> {
 	run.assertActive();
 	await new Promise<void>((resolve, reject) => {
 		let unsubscribe: () => void = () => undefined;
-		const timer = globalThis.setTimeout(() => {
-			unsubscribe();
-			resolve();
-		}, Math.max(0, ms));
+		const timer = globalThis.setTimeout(
+			() => {
+				unsubscribe();
+				resolve();
+			},
+			Math.max(0, ms),
+		);
 		unsubscribe = run.subscribe((snapshot) => {
 			if (!snapshot.canceled) return;
 			globalThis.clearTimeout(timer);

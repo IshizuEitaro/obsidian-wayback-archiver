@@ -32,9 +32,7 @@ export class ArchiveProgressModal extends Modal {
 
 	showProgress(): void {
 		this.unsubscribe?.();
-		this.unsubscribe = this.options.run.subscribe((snapshot) =>
-			this.renderProgress(snapshot),
-		);
+		this.unsubscribe = this.options.run.subscribe((snapshot) => this.renderProgress(snapshot));
 	}
 
 	private renderConfirmation(): void {
@@ -54,9 +52,9 @@ export class ArchiveProgressModal extends Modal {
 				this.showProgress();
 				void this.options.onStart();
 			});
-		buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () =>
-			this.close(),
-		);
+		buttons
+			.createEl("button", { text: "Cancel" })
+			.addEventListener("click", () => this.close());
 	}
 
 	private renderProgress(snapshot: BatchRunSnapshot): void {

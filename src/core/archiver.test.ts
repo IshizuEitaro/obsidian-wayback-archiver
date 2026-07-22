@@ -214,9 +214,7 @@ describe("archiveScannedLinksAction", () => {
 		).archiveScannedLinksAction(summary, run);
 
 		expect(getContent()).toContain("web.archive.org/web/20260722120000/https://a.example");
-		expect(getContent()).not.toContain(
-			"web.archive.org/web/20260722120000/https://b.example",
-		);
+		expect(getContent()).not.toContain("web.archive.org/web/20260722120000/https://b.example");
 		expect(run.snapshot()).toMatchObject({ canceled: true, finished: true });
 	});
 });
@@ -391,11 +389,14 @@ describe("ArchiverService.archiveUrl", () => {
 				status: 200,
 				json: [["timestamp"], ["20200101000000"]],
 			});
-		const service = createService({}, {
-			archiveFreshnessDays: 30,
-			fallbackToLatestSnapshot: true,
-			defaultArchiveProviders: ["wayback"],
-		});
+		const service = createService(
+			{},
+			{
+				archiveFreshnessDays: 30,
+				fallbackToLatestSnapshot: true,
+				defaultArchiveProviders: ["wayback"],
+			},
+		);
 
 		await expect(service.archiveUrl("https://example.com")).resolves.toMatchObject({
 			status: "failed",
@@ -409,11 +410,14 @@ describe("ArchiverService.archiveUrl", () => {
 				status: 200,
 				json: [["timestamp"], ["20260722110000"]],
 			});
-		const service = createService({}, {
-			archiveFreshnessDays: 1,
-			fallbackToLatestSnapshot: true,
-			defaultArchiveProviders: ["wayback"],
-		});
+		const service = createService(
+			{},
+			{
+				archiveFreshnessDays: 1,
+				fallbackToLatestSnapshot: true,
+				defaultArchiveProviders: ["wayback"],
+			},
+		);
 
 		await expect(service.archiveUrl("https://example.com")).resolves.toEqual({
 			status: "too_many_captures",
@@ -437,11 +441,14 @@ describe("ArchiverService.archiveUrl", () => {
 					original_url: "https://example.com",
 				},
 			});
-		const service = createService({}, {
-			apiDelay: 0,
-			throttleRetryDelayMs: 0,
-			maxThrottleRetries: 2,
-		});
+		const service = createService(
+			{},
+			{
+				apiDelay: 0,
+				throttleRetryDelayMs: 0,
+				maxThrottleRetries: 2,
+			},
+		);
 
 		const result = await service.archiveUrl("https://example.com", run, "item");
 
@@ -2305,8 +2312,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 
 	it("filters ignored domains at hostname boundaries", () => {
 		const service = createTddService({}, { ignoredDomains: ["skip.example"] });
-		const content =
-			"[ignored](https://sub.skip.example/a) [kept](https://evil-skip.example/a)";
+		const content = "[ignored](https://sub.skip.example/a) [kept](https://evil-skip.example/a)";
 		const result = (
 			service as unknown as {
 				filterLinksForArchiving: (
@@ -2317,9 +2323,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			}
 		).filterLinksForArchiving(Array.from(content.matchAll(LINK_REGEX)), content, false);
 
-		expect(result.linksToProcess.map(getUrlFromMatch)).toEqual([
-			"https://evil-skip.example/a",
-		]);
+		expect(result.linksToProcess.map(getUrlFromMatch)).toEqual(["https://evil-skip.example/a"]);
 	});
 
 	it("logs targetUrl for selection-mode failures", async () => {

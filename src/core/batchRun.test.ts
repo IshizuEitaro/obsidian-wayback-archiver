@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-	BatchCanceledError,
-	BatchRunController,
-	waitForBatchDelay,
-} from "./batchRun";
+import { BatchCanceledError, BatchRunController, waitForBatchDelay } from "./batchRun";
 
 describe("BatchRunController", () => {
 	afterEach(() => vi.useRealTimers());
@@ -19,9 +15,7 @@ describe("BatchRunController", () => {
 		expect(run.snapshot().items[0].status).toBe("success");
 		expect(run.snapshot().items[1].status).toBe("canceled");
 		expect(run.snapshot().canceled).toBe(true);
-		await expect(waitForBatchDelay(10_000, run)).rejects.toBeInstanceOf(
-			BatchCanceledError,
-		);
+		await expect(waitForBatchDelay(10_000, run)).rejects.toBeInstanceOf(BatchCanceledError);
 	});
 
 	it("notifies subscribers with immutable snapshots", () => {

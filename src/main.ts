@@ -144,7 +144,9 @@ export default class WaybackArchiverPlugin extends Plugin {
 		this.activeArchiveProgressModal = modal;
 		this.activeRunUnsubscribe = run.subscribe((snapshot) => {
 			if (snapshot.canceled) {
-				this.setStatusBarText(`Canceled · ${snapshot.completed}/${snapshot.total} complete`);
+				this.setStatusBarText(
+					`Canceled · ${snapshot.completed}/${snapshot.total} complete`,
+				);
 			} else {
 				this.setStatusBarText(
 					`⌛ ${snapshot.completed}/${snapshot.total} · ${snapshot.succeeded} saved · ${snapshot.failed} failed`,

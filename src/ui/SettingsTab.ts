@@ -44,8 +44,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				.setDesc("Choose where your API credentials are stored.")
 				.addDropdown((dropdown) => {
 					dropdown
-						.addOption("secretStorage", "Obsidian SecretStorage (Secure, stored locally per device)")
-						.addOption("plaintext", "data.json (Vault file, plaintext, synced across devices)")
+						.addOption(
+							"secretStorage",
+							"Obsidian SecretStorage (Secure, stored locally per device)",
+						)
+						.addOption(
+							"plaintext",
+							"data.json (Vault file, plaintext, synced across devices)",
+						)
 						.setValue(currentMode)
 						.onChange(async (value) => {
 							const newMode = value as "secretStorage" | "plaintext";
@@ -102,7 +108,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		if (currentMode === "secretStorage" && hasSecretStorage) {
 			new Setting(containerEl)
 				.setName("Archive.org SPN access key")
-				.setDesc("Select or create a secret in SecretStorage for the SPN API v2 access key.")
+				.setDesc(
+					"Select or create a secret in SecretStorage for the SPN API v2 access key.",
+				)
 				.addComponent((el) =>
 					new SecretComponentClass(this.app, el)
 						.setValue(this.plugin.data.spnAccessKeySecretName || "")
@@ -114,7 +122,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 			new Setting(containerEl)
 				.setName("Archive.org SPN secret key")
-				.setDesc("Select or create a secret in SecretStorage for the SPN API v2 secret key.")
+				.setDesc(
+					"Select or create a secret in SecretStorage for the SPN API v2 secret key.",
+				)
 				.addComponent((el) =>
 					new SecretComponentClass(this.app, el)
 						.setValue(this.plugin.data.spnSecretKeySecretName || "")
@@ -284,7 +294,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Ignored domains")
-			.setDesc("Skip these domains and all subdomains. Separate entries with commas or new lines.")
+			.setDesc(
+				"Skip these domains and all subdomains. Separate entries with commas or new lines.",
+			)
 			.addTextArea((text) =>
 				text
 					.setPlaceholder("example.com\nnews.example.org")
@@ -460,33 +472,19 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(containerEl)
-			.setName("Throttle retry delay (ms)")
-			.addText((text) =>
-				text
-					.setValue(String(activeSettings.throttleRetryDelayMs))
-					.onChange(async (value) => {
-						activeSettings.throttleRetryDelayMs = Math.max(
-							0,
-							Number.parseInt(value, 10) || 0,
-						);
-						await this.plugin.saveSettings();
-					}),
-			);
+		new Setting(containerEl).setName("Throttle retry delay (ms)").addText((text) =>
+			text.setValue(String(activeSettings.throttleRetryDelayMs)).onChange(async (value) => {
+				activeSettings.throttleRetryDelayMs = Math.max(0, Number.parseInt(value, 10) || 0);
+				await this.plugin.saveSettings();
+			}),
+		);
 
-		new Setting(containerEl)
-			.setName("Maximum throttle retries")
-			.addText((text) =>
-				text
-					.setValue(String(activeSettings.maxThrottleRetries))
-					.onChange(async (value) => {
-						activeSettings.maxThrottleRetries = Math.max(
-							0,
-							Number.parseInt(value, 10) || 0,
-						);
-						await this.plugin.saveSettings();
-					}),
-			);
+		new Setting(containerEl).setName("Maximum throttle retries").addText((text) =>
+			text.setValue(String(activeSettings.maxThrottleRetries)).onChange(async (value) => {
+				activeSettings.maxThrottleRetries = Math.max(0, Number.parseInt(value, 10) || 0);
+				await this.plugin.saveSettings();
+			}),
+		);
 
 		new Setting(containerEl).setName("Fallback archive providers").setHeading();
 
@@ -511,14 +509,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						activeSettings.defaultArchiveProviders = value
 							? Array.from(
-								new Set([
-									...activeSettings.defaultArchiveProviders,
-									"archiveToday" as const,
-								]),
-							)
+									new Set([
+										...activeSettings.defaultArchiveProviders,
+										"archiveToday" as const,
+									]),
+								)
 							: activeSettings.defaultArchiveProviders.filter(
-								(p) => p !== "archiveToday",
-							);
+									(p) => p !== "archiveToday",
+								);
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -534,14 +532,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						activeSettings.defaultArchiveProviders = value
 							? Array.from(
-								new Set([
-									...activeSettings.defaultArchiveProviders,
-									"megalodon" as const,
-								]),
-							)
+									new Set([
+										...activeSettings.defaultArchiveProviders,
+										"megalodon" as const,
+									]),
+								)
 							: activeSettings.defaultArchiveProviders.filter(
-								(p) => p !== "megalodon",
-							);
+									(p) => p !== "megalodon",
+								);
 						await this.plugin.saveSettings();
 					}),
 			);

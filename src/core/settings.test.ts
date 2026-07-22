@@ -344,5 +344,3 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 		expect(data.spnCredentialStorageMode).toBe("plaintext");
 	});
 });
-
-

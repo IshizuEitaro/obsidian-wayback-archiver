@@ -44,11 +44,7 @@ import {
 	selectFullyContainedLinkMatches,
 } from "../utils/contentManipulator";
 import { runAsyncAction } from "../utils/async";
-import {
-	ArchiveScanSummary,
-	ArchiveWorkItem,
-	summarizeArchiveWork,
-} from "./vaultScan";
+import { ArchiveScanSummary, ArchiveWorkItem, summarizeArchiveWork } from "./vaultScan";
 import { BatchCanceledError, BatchRunController, waitForBatchDelay } from "./batchRun";
 
 export type ArchiveMode = "selection" | "file" | "vault";
@@ -751,16 +747,20 @@ export class ArchiverService {
 			}
 
 			// console.log(`Initiating capture for ${substitutedUrl} via requestUrl...`);
-			const initResponse = await this.initiateCapture({
-				method: "POST",
-				url: "https://web.archive.org/save",
-				headers: {
-					Accept: "application/json",
-					Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
-					"Content-Type": "application/x-www-form-urlencoded",
+			const initResponse = await this.initiateCapture(
+				{
+					method: "POST",
+					url: "https://web.archive.org/save",
+					headers: {
+						Accept: "application/json",
+						Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					body: new URLSearchParams(params).toString(),
 				},
-				body: new URLSearchParams(params).toString(),
-			}, run, itemId);
+				run,
+				itemId,
+			);
 			run?.assertActive();
 
 			// console.log(`Capture initiation response status: ${initResponse.status}`);
@@ -1424,8 +1424,7 @@ export class ArchiverService {
 	wakePendingQueueScheduler(delayMs?: number): void {
 		if (!this._schedulerStarted || !this.data.pendingArchives?.length) return;
 		if (this._pendingQueueTimer !== null) return;
-		const waitMs =
-			delayMs ?? this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60_000;
+		const waitMs = delayMs ?? this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60_000;
 		this._pendingQueueTimer = window.setTimeout(
 			() => {
 				this._pendingQueueTimer = null;
@@ -1628,10 +1627,7 @@ export class ArchiverService {
 		if (!this.activeSettings.fallbackToLatestSnapshot) return null;
 		const snapshot = await this.getLatestSnapshot(targetUrl);
 		if (!snapshot) return null;
-		return isArchiveTimestampFresh(
-			snapshot.timestamp,
-			this.activeSettings.archiveFreshnessDays,
-		)
+		return isArchiveTimestampFresh(snapshot.timestamp, this.activeSettings.archiveFreshnessDays)
 			? snapshot.url
 			: null;
 	}
