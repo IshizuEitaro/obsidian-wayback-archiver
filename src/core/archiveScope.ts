@@ -81,10 +81,23 @@ export function reconcileOccurrences(
 ): SourceOccurrence[] {
 	if (original.length === 0) return [];
 	const latest = collectMatches(latestContent, settings);
+	const signature = (item: SourceOccurrence) => `${item.url}\u0000${item.matchText}`;
+	const originalCounts = new Map<string, number>();
+	const latestCounts = new Map<string, number>();
+	for (const item of original) {
+		originalCounts.set(signature(item), (originalCounts.get(signature(item)) ?? 0) + 1);
+	}
+	for (const item of latest) {
+		latestCounts.set(signature(item), (latestCounts.get(signature(item)) ?? 0) + 1);
+	}
 	const claimed = new Set<number>();
 	const resolved: SourceOccurrence[] = [];
 
 	for (const source of original) {
+		const sourceSignature = signature(source);
+		if ((latestCounts.get(sourceSignature) ?? 0) > (originalCounts.get(sourceSignature) ?? 0)) {
+			continue;
+		}
 		const candidates = latest.filter(
 			(item, index) =>
 				!claimed.has(index) &&
