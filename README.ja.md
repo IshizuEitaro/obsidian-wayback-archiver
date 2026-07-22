@@ -10,6 +10,10 @@ Archive.org の資格情報は、ユーザーが選択した SecretStorage ま�
 
 Obsidian 1.13 以降では、検索と inline validation に対応した Declarative Settings を使用します。Obsidian 1.8.10–1.12 では従来の renderer を引き続き使用します。保存済みの不正な数値は load 時に安全な範囲へ正規化し、profile data と資格情報の保存方式は既存形式を維持します。
 
+## コンテキストメニュー操作
+
+Desktop と Mobile では、Editor、File Explorer の単一ノート、URL、複数ノート選択から通常または force のアーカイブ操作を開始できます。URL 操作は対象 URL を一度だけ取得し、active note 内の対象箇所すべてへ同じ結果を適用します。Markdown のリンクと画像、HTML の anchor と画像、設定で有効な bare URL を含みます。複数ノート操作は重複を除いた Markdown note だけを事前スキャンし、共通の進捗表示と Cancel 処理を使用します。
+
 [English](./README.md)
 
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/IshizuEitaro/obsidian-wayback-archiver?style=for-the-badge&sort=semver) ![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22wayback-archiver%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge)

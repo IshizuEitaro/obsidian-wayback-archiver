@@ -11,6 +11,7 @@
 - Preserved the selected SecretStorage or plaintext credential mode and existing credential data.
 - Added searchable Declarative Settings on Obsidian 1.13+ with inline validation, while retaining the legacy renderer for Obsidian 1.8.10–1.12.
 - Kept `minAppVersion` and persisted settings/credential formats unchanged; compile-time API types use the latest published `obsidian@1.13.1` package.
+- Added normal and force archive actions to editor, file, URL, and multi-file context menus. URL actions safely update all original eligible occurrences with one capture, while selected notes share preflight, progress, and cancellation behavior.
 
 ## [2.0.0](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/2.0.0) (2026-05-10)
 
