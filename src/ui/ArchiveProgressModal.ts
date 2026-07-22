@@ -12,6 +12,7 @@ export interface ArchiveProgressModalOptions {
 
 export class ArchiveProgressModal extends Modal {
 	private unsubscribe: (() => void) | null = null;
+	private hasStarted = false;
 
 	constructor(
 		app: App,
@@ -25,6 +26,7 @@ export class ArchiveProgressModal extends Modal {
 	}
 
 	onClose(): void {
+		if (!this.hasStarted) this.options.run.cancel();
 		this.unsubscribe?.();
 		this.unsubscribe = null;
 		this.contentEl.empty();
@@ -49,6 +51,7 @@ export class ArchiveProgressModal extends Modal {
 		buttons
 			.createEl("button", { text: "Start", cls: "mod-cta" })
 			.addEventListener("click", () => {
+				this.hasStarted = true;
 				this.showProgress();
 				void this.options.onStart();
 			});

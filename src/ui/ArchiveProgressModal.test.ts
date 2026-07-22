@@ -25,6 +25,11 @@ class FakeElement {
 		this.listeners.set(event, listener);
 	}
 
+	findByText(text: string): FakeElement | undefined {
+		if (this.textContent === text) return this;
+		return this.children.map((child) => child.findByText(text)).find(Boolean);
+	}
+
 	get allText(): string {
 		return [this.textContent, ...this.children.map((child) => child.allText)].join(" ");
 	}
@@ -72,5 +77,51 @@ describe("ArchiveProgressModal", () => {
 		modal.showProgress();
 		run.updateItem("a", "success", "Captured");
 		expect(content.allText).toContain("Captured");
+	});
+
+	it("cancels the run when the confirmation closes before start", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+		]);
+		const cancel = vi.spyOn(run, "cancel");
+		const modal = new ArchiveProgressModal({} as never, {
+			summary: {
+				noteCount: 1,
+				linkCount: 1,
+				uniqueUrlCount: 1,
+				items: [],
+			},
+			run,
+			onStart: vi.fn(),
+		});
+
+		modal.open();
+		modal.close();
+
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it("keeps a started run active when only the progress modal closes", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+		]);
+		const cancel = vi.spyOn(run, "cancel");
+		const modal = new ArchiveProgressModal({} as never, {
+			summary: {
+				noteCount: 1,
+				linkCount: 1,
+				uniqueUrlCount: 1,
+				items: [],
+			},
+			run,
+			onStart: vi.fn(async () => undefined),
+		});
+
+		modal.open();
+		const content = modal.contentEl as unknown as FakeElement;
+		content.findByText("Start")?.listeners.get("click")?.();
+		modal.close();
+
+		expect(cancel).not.toHaveBeenCalled();
 	});
 });
