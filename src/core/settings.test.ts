@@ -1,12 +1,39 @@
 import { describe, it, expect } from "vitest";
 import {
 	appendFailedArchiveEntry,
+	DEFAULT_SETTINGS,
 	FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
 	FailedArchiveEntry,
 	getSpnCredentials,
 	migrateSecretStorage,
+	normalizeProfileSettings,
 	purgePlaintextCredentials,
 } from "./settings";
+
+describe("normalizeProfileSettings", () => {
+	it("adds safe defaults without changing legacy ignore patterns or unknown fields", () => {
+		const legacy = {
+			...DEFAULT_SETTINGS,
+			ignorePatterns: ["youtube\\.com", "internal-wiki"],
+			futureSetting: "preserve-me",
+		} as Partial<typeof DEFAULT_SETTINGS> & { futureSetting: string };
+		delete legacy.ignoredDomains;
+		delete legacy.archiveBareUrls;
+
+		const migrated = normalizeProfileSettings(legacy);
+
+		expect(migrated.ignorePatterns).toEqual(["youtube\\.com", "internal-wiki"]);
+		expect(migrated.ignoredDomains).toEqual([]);
+		expect(migrated.archiveBareUrls).toBe(true);
+		expect(migrated.fallbackToLatestSnapshot).toBe(true);
+		expect(migrated.maxFreshCaptureWaitSeconds).toBe(120);
+		expect(migrated.throttleRetryDelayMs).toBe(30_000);
+		expect(migrated.maxThrottleRetries).toBe(3);
+		expect((migrated as typeof migrated & { futureSetting: string }).futureSetting).toBe(
+			"preserve-me",
+		);
+	});
+});
 
 describe("appendFailedArchiveEntry", () => {
 	it("adds a failed archive entry to an empty list", () => {
@@ -317,6 +344,5 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 		expect(data.spnCredentialStorageMode).toBe("plaintext");
 	});
 });
-
 
 

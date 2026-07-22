@@ -39,10 +39,16 @@ export interface WaybackArchiverSettings {
 	 */
 	archiveLinkText: string;
 	ignorePatterns: string[];
+	ignoredDomains: string[];
+	archiveBareUrls: boolean;
 	substitutionRules: { find: string; replace: string; regex: boolean }[];
 	apiDelay: number;
 	maxRetries: number;
 	archiveFreshnessDays: number;
+	fallbackToLatestSnapshot: boolean;
+	maxFreshCaptureWaitSeconds: number;
+	throttleRetryDelayMs: number;
+	maxThrottleRetries: number;
 	pathPatterns: string[];
 	urlPatterns: string[];
 	wordPatterns: string[];
@@ -76,10 +82,16 @@ export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 		"archive.is/",
 		"megalodon.jp/",
 	],
+	ignoredDomains: [],
+	archiveBareUrls: true,
 	substitutionRules: [],
 	apiDelay: 2000, // Default 2 seconds delay
 	maxRetries: 3,
 	archiveFreshnessDays: 0, // 0 means always archive if not present
+	fallbackToLatestSnapshot: true,
+	maxFreshCaptureWaitSeconds: 120,
+	throttleRetryDelayMs: 30_000,
+	maxThrottleRetries: 3,
 	pathPatterns: [],
 	urlPatterns: [],
 	wordPatterns: [],
@@ -101,6 +113,22 @@ export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 	defaultArchiveProviders: ["wayback"],
 	archivePolicies: [],
 };
+
+function cloneSettingsValue<T>(value: T): T {
+	if (typeof structuredClone === "function") return structuredClone(value);
+	return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function normalizeProfileSettings(
+	profile: Partial<WaybackArchiverSettings> | undefined,
+): WaybackArchiverSettings {
+	return {
+		...cloneSettingsValue(DEFAULT_SETTINGS),
+		...cloneSettingsValue(profile ?? {}),
+		ignorePatterns: [...(profile?.ignorePatterns ?? DEFAULT_SETTINGS.ignorePatterns)],
+		ignoredDomains: [...(profile?.ignoredDomains ?? [])],
+	};
+}
 
 export const getFreshnessThresholdMs = (settings: WaybackArchiverSettings) =>
 	settings.archiveFreshnessDays * 24 * 60 * 60 * 1000; // Convert days to ms
