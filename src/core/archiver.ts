@@ -8,6 +8,7 @@ import {
 	extractArchiveTimestamp,
 	getUrlFromMatch,
 	isBareUrlMatch,
+	isArchiveTimestampFresh,
 	isHostnameIgnored,
 	isFollowedByArchiveLink,
 	LINK_REGEX,
@@ -48,6 +49,7 @@ import {
 	ArchiveWorkItem,
 	summarizeArchiveWork,
 } from "./vaultScan";
+import { BatchCanceledError, BatchRunController, waitForBatchDelay } from "./batchRun";
 
 export type ArchiveMode = "selection" | "file" | "vault";
 
@@ -94,6 +96,11 @@ export type ArchiveTodaySubmitQueueResult =
 interface EffectiveArchivePolicy {
 	providers: ArchiveServiceId[];
 	archiveTodayExperimentalSubmit: boolean;
+}
+
+interface LatestSnapshot {
+	url: string;
+	timestamp: string;
 }
 
 const ARCHIVE_TODAY_CANONICAL_HOST = "archive.md";
@@ -581,7 +588,11 @@ export class ArchiverService {
 		}
 	}
 
-	async archiveUrl(url: string): Promise<ArchiveUrlResult> {
+	async archiveUrl(
+		url: string,
+		run?: BatchRunController,
+		itemId?: string,
+	): Promise<ArchiveUrlResult> {
 		const substitutedUrl = applySubstitutionRules(url, this.activeSettings.substitutionRules);
 		const policy = this.getArchivePolicy(substitutedUrl);
 
@@ -618,7 +629,11 @@ export class ArchiverService {
 
 		// Enforce fixed delay before initial archive request to avoid 429 rate limits
 		// console.log(`Waiting ${this.activeSettings.apiDelay}ms before archiving to respect SPN2 rate limits...`);
-		await new Promise((resolve) => window.setTimeout(resolve, this.activeSettings.apiDelay));
+		if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run);
+		else
+			await new Promise((resolve) =>
+				window.setTimeout(resolve, this.activeSettings.apiDelay),
+			);
 		// console.log('Proceeding with archive request...');
 
 		try {
@@ -640,7 +655,7 @@ export class ArchiverService {
 			}
 
 			// console.log(`Initiating capture for ${substitutedUrl} via requestUrl...`);
-			const initResponse = await requestUrl({
+			const initResponse = await this.initiateCapture({
 				method: "POST",
 				url: "https://web.archive.org/save",
 				headers: {
@@ -649,26 +664,27 @@ export class ArchiverService {
 					"Content-Type": "application/x-www-form-urlencoded",
 				},
 				body: new URLSearchParams(params).toString(),
-			});
+			}, run, itemId);
+			run?.assertActive();
 
 			// console.log(`Capture initiation response status: ${initResponse.status}`);
 			// console.log(`Capture initiation response JSON:`, initResponse.json);
 
 			if (initResponse.status === 429) {
 				// console.warn(`Rate limit hit (429) when initiating capture for ${substitutedUrl}.`);
-				const latestSnapshotUrl = await this.getLatestSnapshotUrl(substitutedUrl);
+				const latestSnapshotUrl = await this.getLatestFreshSnapshotUrl(substitutedUrl);
 				if (latestSnapshotUrl) {
 					new Notice(
 						`Daily capture limit likely reached. Using latest snapshot for ${substitutedUrl}.`,
 					);
 					return { status: "too_many_captures", url: latestSnapshotUrl };
-				} else {
-					const fallbackUrl = `https://web.archive.org/web/*/${substitutedUrl}`;
-					new Notice(
-						`Daily capture limit likely reached. No recent snapshot found, using wildcard URL.`,
-					);
-					return { status: "too_many_captures", url: fallbackUrl };
 				}
+				return {
+					status: "failed",
+					status_ext: "Capture throttled and no fresh snapshot was found",
+					stage: "wayback-initiation-failed",
+					targetUrl: substitutedUrl,
+				};
 			}
 
 			if (initResponse.status !== 200 || !initResponse.json?.job_id) {
@@ -677,12 +693,15 @@ export class ArchiverService {
 					initResponse.json?.message?.includes("The same snapshot had been made")
 				) {
 					// console.warn(`Recent snapshot exists for ${substitutedUrl}. Trying to get latest specific snapshot URL.`);
-					const latestSnapshotUrl = await this.getLatestSnapshotUrl(substitutedUrl);
+					const latestSnapshotUrl = await this.getLatestFreshSnapshotUrl(substitutedUrl);
 					if (latestSnapshotUrl) {
 						return { status: "too_many_captures", url: latestSnapshotUrl };
-					} else {
-						const fallbackUrl = `https://web.archive.org/web/*/${substitutedUrl}`;
-						return { status: "too_many_captures", url: fallbackUrl };
+					}
+				}
+				if (!policy.providers.some((provider) => provider !== "wayback")) {
+					const latestSnapshotUrl = await this.getLatestFreshSnapshotUrl(substitutedUrl);
+					if (latestSnapshotUrl) {
+						return { status: "too_many_captures", url: latestSnapshotUrl };
 					}
 				}
 				// console.error(`Failed to initiate capture for ${substitutedUrl}. Status: ${initResponse.status}`, initResponse.text);
@@ -698,10 +717,14 @@ export class ArchiverService {
 			// console.log(`Capture initiated. Job ID: ${jobId}`);
 
 			let retries = 0;
-			while (retries < this.activeSettings.maxRetries) {
-				await new Promise((resolve) =>
-					window.setTimeout(resolve, this.activeSettings.apiDelay),
-				);
+			const captureDeadline =
+				Date.now() + this.activeSettings.maxFreshCaptureWaitSeconds * 1000;
+			while (retries < this.activeSettings.maxRetries && Date.now() < captureDeadline) {
+				if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run);
+				else
+					await new Promise((resolve) =>
+						window.setTimeout(resolve, this.activeSettings.apiDelay),
+					);
 
 				try {
 					// console.log(`Checking status for Job ID: ${jobId} (Attempt ${retries + 1}/${this.activeSettings.maxRetries})`);
@@ -713,6 +736,7 @@ export class ArchiverService {
 							Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
 						},
 					});
+					run?.assertActive();
 
 					// console.log(`Status check response status: ${statusResponse.status}`);
 					// console.log(`Status check response JSON:`, statusResponse.json);
@@ -763,6 +787,7 @@ export class ArchiverService {
 				"wayback-timeout",
 			);
 		} catch (error: unknown) {
+			if (error instanceof BatchCanceledError) throw error;
 			// console.error(`Unexpected error during archiving process for ${substitutedUrl}:`, error);
 			return await this.resolveFallbackArchive(
 				substitutedUrl,
@@ -1427,8 +1452,44 @@ export class ArchiverService {
 		return this.getArchivePolicy(targetUrl).providers.includes(providerId);
 	}
 
+	private isThrottleResponse(status: number, message: unknown): boolean {
+		return (
+			status === 429 ||
+			(typeof message === "string" && /active[- ]session|rate limit|too many/iu.test(message))
+		);
+	}
+
+	private async initiateCapture(
+		request: Parameters<typeof requestUrl>[0],
+		run?: BatchRunController,
+		itemId?: string,
+	): Promise<Awaited<ReturnType<typeof requestUrl>>> {
+		for (let attempt = 0; attempt <= this.activeSettings.maxThrottleRetries; attempt++) {
+			run?.assertActive();
+			const response = await requestUrl(request);
+			run?.assertActive();
+			if (!this.isThrottleResponse(response.status, response.json?.message)) return response;
+			if (attempt === this.activeSettings.maxThrottleRetries) return response;
+			if (run && itemId) {
+				run.updateItem(
+					itemId,
+					"throttled",
+					`Retrying throttle ${attempt + 1}/${this.activeSettings.maxThrottleRetries}`,
+				);
+			}
+			if (run) {
+				await waitForBatchDelay(this.activeSettings.throttleRetryDelayMs, run);
+			} else {
+				await new Promise((resolve) =>
+					window.setTimeout(resolve, this.activeSettings.throttleRetryDelayMs),
+				);
+			}
+		}
+		throw new Error("Unreachable throttle retry state");
+	}
+
 	// Query Wayback Machine CDX API for the latest snapshot timestamp. See https://archive.org/developers/wayback-cdx-server.html
-	async getLatestSnapshotUrl(targetUrl: string): Promise<string | null> {
+	private async getLatestSnapshot(targetUrl: string): Promise<LatestSnapshot | null> {
 		try {
 			const apiUrl = `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(targetUrl)}&output=json&fl=timestamp&filter=statuscode:200&limit=1&sort=reverse`;
 			const response = await requestUrl({ url: apiUrl, method: "GET" });
@@ -1449,15 +1510,34 @@ export class ArchiverService {
 				return null;
 			}
 
-			const latestTimestamp = jsonData[1][0];
-			if (!latestTimestamp) {
+			const latestTimestamp = jsonData[1]?.[0];
+			if (typeof latestTimestamp !== "string" || !/^\d{14}$/u.test(latestTimestamp)) {
 				return null;
 			}
 
-			return `https://web.archive.org/web/${latestTimestamp}/${targetUrl}`;
+			return {
+				timestamp: latestTimestamp,
+				url: `https://web.archive.org/web/${latestTimestamp}/${targetUrl}`,
+			};
 		} catch {
 			return null;
 		}
+	}
+
+	async getLatestSnapshotUrl(targetUrl: string): Promise<string | null> {
+		return (await this.getLatestSnapshot(targetUrl))?.url ?? null;
+	}
+
+	private async getLatestFreshSnapshotUrl(targetUrl: string): Promise<string | null> {
+		if (!this.activeSettings.fallbackToLatestSnapshot) return null;
+		const snapshot = await this.getLatestSnapshot(targetUrl);
+		if (!snapshot) return null;
+		return isArchiveTimestampFresh(
+			snapshot.timestamp,
+			this.activeSettings.archiveFreshnessDays,
+		)
+			? snapshot.url
+			: null;
 	}
 
 	archiveLinksAction = async (

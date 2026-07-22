@@ -8,6 +8,7 @@ import {
 import { App, PluginManifest, Editor, MarkdownView, TFile } from "obsidian";
 import WaybackArchiverPlugin from "../main";
 import { getUrlFromMatch, LINK_REGEX } from "../utils/LinkUtils";
+import { BatchCanceledError, BatchRunController } from "./batchRun";
 
 import {
 	serializeFailedArchiveEntriesToCsv,
@@ -326,15 +327,96 @@ describe("ArchiverService.archiveUrl", () => {
 	it("uses the latest snapshot when capture is rate-limited", async () => {
 		requestUrlMock.mockResolvedValueOnce({ status: 429, json: {} }).mockResolvedValueOnce({
 			status: 200,
-			json: [["timestamp"], ["20260416000000"]],
-			text: '[["timestamp"],["20260416000000"]]',
+			json: [["timestamp"], ["20260722110000"]],
+			text: '[["timestamp"],["20260722110000"]]',
 		});
-		const service = createService();
+		const service = createService({}, { maxThrottleRetries: 0, archiveFreshnessDays: 1 });
 
 		await expect(service.archiveUrl("https://example.com")).resolves.toEqual({
 			status: "too_many_captures",
-			url: "https://web.archive.org/web/20260416000000/https://example.com",
+			url: "https://web.archive.org/web/20260722110000/https://example.com",
 		});
+	});
+
+	it("does not append an old CDX fallback after capture failure", async () => {
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 500, json: {}, text: "failed" })
+			.mockResolvedValueOnce({
+				status: 200,
+				json: [["timestamp"], ["20200101000000"]],
+			});
+		const service = createService({}, {
+			archiveFreshnessDays: 30,
+			fallbackToLatestSnapshot: true,
+			defaultArchiveProviders: ["wayback"],
+		});
+
+		await expect(service.archiveUrl("https://example.com")).resolves.toMatchObject({
+			status: "failed",
+		});
+	});
+
+	it("returns a fresh fixed CDX fallback after capture failure", async () => {
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 500, json: {}, text: "failed" })
+			.mockResolvedValueOnce({
+				status: 200,
+				json: [["timestamp"], ["20260722110000"]],
+			});
+		const service = createService({}, {
+			archiveFreshnessDays: 1,
+			fallbackToLatestSnapshot: true,
+			defaultArchiveProviders: ["wayback"],
+		});
+
+		await expect(service.archiveUrl("https://example.com")).resolves.toEqual({
+			status: "too_many_captures",
+			url: "https://web.archive.org/web/20260722110000/https://example.com",
+		});
+	});
+
+	it("retries active-session throttles before using a fresh fallback", async () => {
+		const run = new BatchRunController([
+			{ id: "item", url: "https://example.com", filePath: "a.md" },
+		]);
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 429, json: { message: "active sessions limit" } })
+			.mockResolvedValueOnce({ status: 429, json: { message: "active sessions limit" } })
+			.mockResolvedValueOnce({ status: 200, json: { job_id: "job" } })
+			.mockResolvedValueOnce({
+				status: 200,
+				json: {
+					status: "success",
+					timestamp: "20260722120000",
+					original_url: "https://example.com",
+				},
+			});
+		const service = createService({}, {
+			apiDelay: 0,
+			throttleRetryDelayMs: 0,
+			maxThrottleRetries: 2,
+		});
+
+		const result = await service.archiveUrl("https://example.com", run, "item");
+
+		expect(result.status).toBe("success");
+		expect(requestUrlMock).toHaveBeenCalledTimes(4);
+	});
+
+	it("does not look up or apply a fallback after in-flight cancellation", async () => {
+		const run = new BatchRunController([
+			{ id: "item", url: "https://example.com", filePath: "a.md" },
+		]);
+		requestUrlMock.mockImplementationOnce(async () => {
+			run.cancel();
+			return { status: 500, json: {}, text: "failed" };
+		});
+		const service = createService({}, { apiDelay: 0 });
+
+		await expect(service.archiveUrl("https://example.com", run, "item")).rejects.toBeInstanceOf(
+			BatchCanceledError,
+		);
+		expect(requestUrlMock).toHaveBeenCalledOnce();
 	});
 
 	it("falls back to archive.today latest snapshot when Wayback capture fails", async () => {
@@ -528,9 +610,11 @@ describe("ArchiverService.archiveUrl", () => {
 			stage: "wayback-initiation-failed",
 			targetUrl: "https://cdn.imgchest.com/files/xxxxxxxxxxxxx.png",
 		});
-		expect(requestUrlMock.mock.calls.map((call) => call[0].url)).toEqual([
-			"https://web.archive.org/save",
-		]);
+		const requestedUrls = requestUrlMock.mock.calls.map((call) => call[0].url);
+		expect(requestedUrls).toContain("https://web.archive.org/save");
+		expect(requestedUrls).not.toContain(
+			"https://archive.md/latest/https%3A%2F%2Fcdn.imgchest.com%2Ffiles%2Fxxxxxxxxxxxxx.png",
+		);
 	});
 
 	it("archiveUrl returns failed when archive.today experimental submit-only request returns 429", async () => {

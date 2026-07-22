@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { getFreshnessThresholdMs, WaybackArchiverSettings } from "../core/settings";
+import { WaybackArchiverSettings } from "../core/settings";
 
 /**
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
@@ -136,6 +136,24 @@ export function extractArchiveTimestamp(archiveUrlOrText: string): string | unde
 	return undefined;
 }
 
+export function isArchiveTimestampFresh(
+	timestamp: string,
+	freshnessDays: number,
+	now: number = Date.now(),
+): boolean {
+	if (freshnessDays <= 0 || !/^\d{14}$/u.test(timestamp)) return false;
+	const capturedAt = Date.UTC(
+		Number(timestamp.slice(0, 4)),
+		Number(timestamp.slice(4, 6)) - 1,
+		Number(timestamp.slice(6, 8)),
+		Number(timestamp.slice(8, 10)),
+		Number(timestamp.slice(10, 12)),
+		Number(timestamp.slice(12, 14)),
+	);
+	const age = now - capturedAt;
+	return Number.isFinite(capturedAt) && age >= 0 && age < freshnessDays * 86_400_000;
+}
+
 /**
  * Checks if a string matches any of the provided patterns using case-insensitive regex
  * with a fallback to string inclusion if the pattern is invalid regex.
@@ -263,17 +281,11 @@ export const checkAdjacentLinkFreshness = (
 
 	if (adjacentTimestamp) {
 		try {
-			const adjacentDate = new Date(
-				parseInt(adjacentTimestamp.substring(0, 4)), // Year
-				parseInt(adjacentTimestamp.substring(4, 6)) - 1, // Month (0-indexed)
-				parseInt(adjacentTimestamp.substring(6, 8)), // Day
-				parseInt(adjacentTimestamp.substring(8, 10)), // Hour
-				parseInt(adjacentTimestamp.substring(10, 12)), // Minute
-				parseInt(adjacentTimestamp.substring(12, 14)), // Second
-			);
-			if (!isNaN(adjacentDate.getTime())) {
-				const isFresh =
-					Date.now() - adjacentDate.getTime() < getFreshnessThresholdMs(settings);
+			if (/^\d{14}$/u.test(adjacentTimestamp)) {
+				const isFresh = isArchiveTimestampFresh(
+					adjacentTimestamp,
+					settings.archiveFreshnessDays,
+				);
 				if (isFresh) {
 					// Adjacent link exists and is fresh, skip.
 					shouldProcess = false;

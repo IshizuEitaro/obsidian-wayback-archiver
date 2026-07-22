@@ -11,6 +11,7 @@ import {
 	LINK_REGEX,
 	getUrlFromMatch,
 	isFollowedByArchiveLink,
+	isArchiveTimestampFresh,
 	isBareUrlMatch,
 	isHostnameIgnored,
 	matchesAnyPattern,
@@ -23,6 +24,13 @@ import {
 } from "./LinkUtils";
 
 describe("safe URL filtering helpers", () => {
+	it("accepts only fallback timestamps inside the configured freshness window", () => {
+		const now = new Date("2026-07-22T12:00:00Z").getTime();
+		expect(isArchiveTimestampFresh("20260721120001", 1, now)).toBe(true);
+		expect(isArchiveTimestampFresh("20260721115959", 1, now)).toBe(false);
+		expect(isArchiveTimestampFresh("20260722115959", 0, now)).toBe(false);
+		expect(isArchiveTimestampFresh("invalid", 30, now)).toBe(false);
+	});
 	it("distinguishes bare URLs while retaining image URLs", () => {
 		const matches = Array.from(
 			"[page](https://page.example) ![image](https://img.example/a.png) <https://auto.example> https://bare.example".matchAll(

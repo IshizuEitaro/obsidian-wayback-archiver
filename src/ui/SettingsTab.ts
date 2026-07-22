@@ -446,7 +446,61 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					});
 			});
 
+		new Setting(containerEl)
+			.setName("Maximum wait for fresh captures (seconds)")
+			.addText((text) =>
+				text
+					.setValue(String(activeSettings.maxFreshCaptureWaitSeconds))
+					.onChange(async (value) => {
+						activeSettings.maxFreshCaptureWaitSeconds = Math.max(
+							1,
+							Number.parseInt(value, 10) || 120,
+						);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Throttle retry delay (ms)")
+			.addText((text) =>
+				text
+					.setValue(String(activeSettings.throttleRetryDelayMs))
+					.onChange(async (value) => {
+						activeSettings.throttleRetryDelayMs = Math.max(
+							0,
+							Number.parseInt(value, 10) || 0,
+						);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Maximum throttle retries")
+			.addText((text) =>
+				text
+					.setValue(String(activeSettings.maxThrottleRetries))
+					.onChange(async (value) => {
+						activeSettings.maxThrottleRetries = Math.max(
+							0,
+							Number.parseInt(value, 10) || 0,
+						);
+						await this.plugin.saveSettings();
+					}),
+			);
+
 		new Setting(containerEl).setName("Fallback archive providers").setHeading();
+
+		new Setting(containerEl)
+			.setName("Fall back to latest existing snapshot")
+			.setDesc(
+				"After capture failure, use the latest snapshot only when it is inside Archive freshness.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(activeSettings.fallbackToLatestSnapshot).onChange(async (value) => {
+					activeSettings.fallbackToLatestSnapshot = value;
+					await this.plugin.saveSettings();
+				}),
+			);
 
 		new Setting(containerEl)
 			.setName("Use archive.today fallback")
