@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Delayed pending archive queue polling until the workspace layout is ready.
+- Stopped retaining an idle polling timer when the pending queue is empty; newly queued entries wake the scheduler.
+- Minified the production plugin bundle without changing features, settings, or persisted data.
+
 ## [2.0.0](https://github.com/IshizuEitaro/obsidian-wayback-archiver/tree/2.0.0) (2026-05-10)
 
 [Full Changelog](https://github.com/IshizuEitaro/obsidian-wayback-archiver/compare/1.1.5...2.0.0)
