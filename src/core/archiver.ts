@@ -972,6 +972,7 @@ export class ArchiverService {
 		};
 		this.data.pendingArchives.push(entry);
 		await this.saveSettings();
+		this.wakePendingQueueScheduler(0);
 		return id;
 	}
 
@@ -1212,30 +1213,33 @@ export class ArchiverService {
 	startPendingQueueScheduler(): void {
 		if (this._schedulerStarted) return;
 		this._schedulerStarted = true;
+		if (this.data.pendingArchives?.length) {
+			this.wakePendingQueueScheduler(0);
+		}
+	}
 
-		const scheduleNext = () => {
-			if (!this._schedulerStarted) return;
-
-			const intervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
-			this._pendingQueueTimer = window.setTimeout(() => {
+	wakePendingQueueScheduler(delayMs?: number): void {
+		if (!this._schedulerStarted || !this.data.pendingArchives?.length) return;
+		if (this._pendingQueueTimer !== null) return;
+		const waitMs =
+			delayMs ?? this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60_000;
+		this._pendingQueueTimer = window.setTimeout(
+			() => {
+				this._pendingQueueTimer = null;
 				runAsyncAction(
 					() => this.runPendingQueueCycle(),
 					(error: unknown) => {
 						console.error("Error checking pending archive.today snapshots:", error);
 						new Notice("Could not check pending archive.today snapshots.");
 					},
-					scheduleNext,
+					() => {
+						if (this.data.pendingArchives?.length) {
+							this.wakePendingQueueScheduler();
+						}
+					},
 				);
-			}, intervalMs);
-		};
-
-		runAsyncAction(
-			() => this.runPendingQueueCycle(),
-			(error: unknown) => {
-				console.error("Error checking pending archive.today snapshots:", error);
-				new Notice("Could not check pending archive.today snapshots.");
 			},
-			scheduleNext,
+			Math.max(0, waitMs),
 		);
 	}
 

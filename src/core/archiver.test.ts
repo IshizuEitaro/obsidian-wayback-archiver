@@ -660,6 +660,58 @@ describe("archive.today pending queue", () => {
 		noticeMock.mockReset();
 	});
 
+	it("does not retain a timer when the pending queue is empty", async () => {
+		vi.useFakeTimers();
+		const { service } = createPendingService("", []);
+		service.startPendingQueueScheduler();
+		await Promise.resolve();
+
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("wakes the scheduler when a pending entry is registered", async () => {
+		vi.useFakeTimers();
+		const { service } = createPendingService("", []);
+		service.startPendingQueueScheduler();
+		await (
+			service as unknown as {
+				registerPendingArchive: (
+					url: string,
+					targetUrl: string,
+					filePath: string,
+				) => Promise<string>;
+			}
+		).registerPendingArchive("https://example.com", "https://example.com", "test.md");
+
+		expect(vi.getTimerCount()).toBe(1);
+	});
+
+	it("keeps scheduler start, wake, and stop idempotent", () => {
+		vi.useFakeTimers();
+		const entry: PendingArchiveEntry = {
+			id: "pending",
+			providerId: "archiveToday",
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			filePath: "test.md",
+			createdAt: Date.now(),
+			checkCount: 0,
+			maxWaitMs: 600_000,
+			status: "submitted",
+		};
+		const { service } = createPendingService("", [entry]);
+		const scheduler = service as InstanceType<typeof ArchiverService> & {
+			wakePendingQueueScheduler(delayMs?: number): void;
+		};
+		scheduler.startPendingQueueScheduler();
+		scheduler.startPendingQueueScheduler();
+		scheduler.wakePendingQueueScheduler(0);
+		scheduler.wakePendingQueueScheduler(0);
+		expect(vi.getTimerCount()).toBe(1);
+		scheduler.stopPendingQueueScheduler();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	afterEach(() => {
 		vi.useRealTimers();
 	});
