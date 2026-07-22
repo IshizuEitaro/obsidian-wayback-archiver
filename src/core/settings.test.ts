@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
 	appendFailedArchiveEntry,
+	CredentialStorageData,
 	DEFAULT_SETTINGS,
 	FAILED_ARCHIVE_DUPLICATE_WINDOW_MS,
 	FailedArchiveEntry,
@@ -241,9 +242,9 @@ describe("getSpnCredentials", () => {
 					return null;
 				},
 			},
-		} as any;
+		};
 
-		const data: any = {
+		const data: CredentialStorageData = {
 			spnAccessKeySecretName: "acc_secret",
 			spnSecretKeySecretName: "sec_secret",
 			spnAccessKey: "legacy_access",
@@ -260,9 +261,9 @@ describe("getSpnCredentials", () => {
 			secretStorage: {
 				getSecret: () => null,
 			},
-		} as any;
+		};
 
-		const data: any = {
+		const data: CredentialStorageData = {
 			spnAccessKeySecretName: "acc_secret",
 			spnAccessKey: "legacy_access",
 			spnSecretKey: "legacy_secret",
@@ -274,9 +275,9 @@ describe("getSpnCredentials", () => {
 	});
 
 	it("falls back to legacy fields if app.secretStorage is undefined", () => {
-		const mockApp = {} as any;
+		const mockApp = {};
 
-		const data: any = {
+		const data: CredentialStorageData = {
 			spnAccessKey: "legacy_access",
 			spnSecretKey: "legacy_secret",
 		};
@@ -296,9 +297,9 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 					savedSecrets[name] = value;
 				},
 			},
-		} as any;
+		};
 
-		const data: any = {
+		const data: CredentialStorageData = {
 			spnAccessKey: "my_access_key",
 			spnSecretKey: "my_secret_key",
 		};
@@ -315,7 +316,7 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 	});
 
 	it("purges plaintext credentials from data", () => {
-		const data: any = {
+		const data: CredentialStorageData = {
 			spnAccessKeySecretName: "WaybackArchiver_spnAccessKey",
 			spnAccessKey: "my_access_key",
 			spnSecretKey: "my_secret_key",
@@ -332,9 +333,9 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 			secretStorage: {
 				getSecret: () => "secretStorage_value",
 			},
-		} as any;
+		};
 
-		const data: any = {
+		const data: CredentialStorageData = {
 			spnCredentialStorageMode: "plaintext",
 			spnAccessKeySecretName: "WaybackArchiver_spnAccessKey",
 			spnSecretKeySecretName: "WaybackArchiver_spnSecretKey",
@@ -352,16 +353,16 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 			secretStorage: {
 				setSecret: () => {},
 			},
-		} as any;
+		};
 
-		const data: any = {};
+		const data: CredentialStorageData = {};
 		await migrateSecretStorage(mockApp, data);
 		expect(data.spnCredentialStorageMode).toBe("secretStorage");
 	});
 
 	it("sets default spnCredentialStorageMode to plaintext if app.secretStorage does not exist during migration", async () => {
-		const mockApp = {} as any;
-		const data: any = {};
+		const mockApp = {};
+		const data: CredentialStorageData = {};
 		await migrateSecretStorage(mockApp, data);
 		expect(data.spnCredentialStorageMode).toBe("plaintext");
 	});

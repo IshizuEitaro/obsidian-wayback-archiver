@@ -248,13 +248,32 @@ export interface WaybackArchiverData {
 	spnSecretKey?: string;
 }
 
+export interface CredentialStorageData {
+	spnCredentialStorageMode?: "secretStorage" | "plaintext";
+	spnAccessKeySecretName?: string;
+	spnSecretKeySecretName?: string;
+	spnAccessKey?: string;
+	spnSecretKey?: string;
+}
+
+interface SecretStorageLike {
+	getSecret?(name: string): string | null | undefined;
+	setSecret?(name: string, value: string): void;
+}
+
+function getSecretStorage(app: unknown): SecretStorageLike | undefined {
+	if (!app || typeof app !== "object" || !("secretStorage" in app)) return undefined;
+	const storage = (app as { secretStorage?: unknown }).secretStorage;
+	return storage && typeof storage === "object" ? (storage as SecretStorageLike) : undefined;
+}
+
 /**
  * Safely resolves SPN credentials using Obsidian SecretStorage if available and configured,
  * falling back to legacy plaintext fields in data.json.
  */
 export function getSpnCredentials(
-	app: any,
-	data: WaybackArchiverData,
+	app: unknown,
+	data: CredentialStorageData,
 ): { spnAccessKey: string; spnSecretKey: string } {
 	let spnAccessKey = "";
 	let spnSecretKey = "";
@@ -266,15 +285,16 @@ export function getSpnCredentials(
 		};
 	}
 
-	if (app && app.secretStorage && typeof app.secretStorage.getSecret === "function") {
+	const secretStorage = getSecretStorage(app);
+	if (typeof secretStorage?.getSecret === "function") {
 		if (data.spnAccessKeySecretName) {
-			const secretVal = app.secretStorage.getSecret(data.spnAccessKeySecretName);
+			const secretVal = secretStorage.getSecret(data.spnAccessKeySecretName);
 			if (secretVal) {
 				spnAccessKey = secretVal;
 			}
 		}
 		if (data.spnSecretKeySecretName) {
-			const secretVal = app.secretStorage.getSecret(data.spnSecretKeySecretName);
+			const secretVal = secretStorage.getSecret(data.spnSecretKeySecretName);
 			if (secretVal) {
 				spnSecretKey = secretVal;
 			}
@@ -295,10 +315,12 @@ export function getSpnCredentials(
  * Automatically imports legacy plaintext credentials from data.json into Obsidian SecretStorage.
  * Crucially, leaves legacy plaintext credentials in data.json so other synced devices can also auto-import.
  */
-export async function migrateSecretStorage(app: any, data: WaybackArchiverData): Promise<boolean> {
-	const hasSecretStorage = Boolean(
-		app && app.secretStorage && typeof app.secretStorage.setSecret === "function",
-	);
+export async function migrateSecretStorage(
+	app: unknown,
+	data: CredentialStorageData,
+): Promise<boolean> {
+	const secretStorage = getSecretStorage(app);
+	const hasSecretStorage = typeof secretStorage?.setSecret === "function";
 
 	let modified = false;
 
@@ -314,14 +336,14 @@ export async function migrateSecretStorage(app: any, data: WaybackArchiverData):
 	if (data.spnCredentialStorageMode === "secretStorage") {
 		if (!data.spnAccessKeySecretName && data.spnAccessKey) {
 			const name = "WaybackArchiver_spnAccessKey";
-			app.secretStorage.setSecret(name, data.spnAccessKey);
+			secretStorage?.setSecret?.(name, data.spnAccessKey);
 			data.spnAccessKeySecretName = name;
 			modified = true;
 		}
 
 		if (!data.spnSecretKeySecretName && data.spnSecretKey) {
 			const name = "WaybackArchiver_spnSecretKey";
-			app.secretStorage.setSecret(name, data.spnSecretKey);
+			secretStorage?.setSecret?.(name, data.spnSecretKey);
 			data.spnSecretKeySecretName = name;
 			modified = true;
 		}
@@ -333,7 +355,7 @@ export async function migrateSecretStorage(app: any, data: WaybackArchiverData):
 /**
  * Explicitly removes legacy plaintext credentials from data.json (e.g. when user clicks purge button in settings UI).
  */
-export function purgePlaintextCredentials(data: WaybackArchiverData): boolean {
+export function purgePlaintextCredentials(data: CredentialStorageData): boolean {
 	let purged = false;
 	if (data.spnAccessKey !== undefined) {
 		delete data.spnAccessKey;

@@ -1,4 +1,3 @@
-import * as obsidian from "obsidian";
 import {
 	App,
 	ButtonComponent,
@@ -6,6 +5,7 @@ import {
 	Notice,
 	Setting,
 	SettingDefinitionItem,
+	SecretComponent,
 } from "obsidian";
 import { ConfirmationModal, ProfileNameModal } from "./modals";
 import { runAsyncAction } from "../utils/async";
@@ -25,9 +25,7 @@ import {
 	purgePlaintextCredentials,
 } from "../core/settings";
 
-export function supportsDeclarativeSettings(
-	tab: PluginSettingTab,
-): boolean {
+export function supportsDeclarativeSettings(tab: PluginSettingTab): boolean {
 	return typeof (tab as { update?: unknown }).update === "function";
 }
 
@@ -92,8 +90,8 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			href: "https://archive.org/account/s3.php",
 		});
 
-		const SecretComponentClass = (obsidian as any).SecretComponent;
-		const hasSecretStorage = Boolean("secretStorage" in this.app && SecretComponentClass);
+		const SecretComponentClass = SecretComponent;
+		const hasSecretStorage = Boolean(this.app.secretStorage && SecretComponentClass);
 		const currentMode =
 			this.plugin.data.spnCredentialStorageMode ||
 			(hasSecretStorage ? "secretStorage" : "plaintext");
@@ -123,7 +121,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									!this.plugin.data.spnAccessKeySecretName
 								) {
 									const name = "WaybackArchiver_spnAccessKey";
-									(this.app as any).secretStorage.setSecret(
+									this.app.secretStorage.setSecret(
 										name,
 										this.plugin.data.spnAccessKey,
 									);
@@ -134,7 +132,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									!this.plugin.data.spnSecretKeySecretName
 								) {
 									const name = "WaybackArchiver_spnSecretKey";
-									(this.app as any).secretStorage.setSecret(
+									this.app.secretStorage.setSecret(
 										name,
 										this.plugin.data.spnSecretKey,
 									);
@@ -142,7 +140,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 								}
 							} else if (newMode === "plaintext") {
 								if (this.plugin.data.spnAccessKeySecretName) {
-									const val = (this.app as any).secretStorage.getSecret(
+									const val = this.app.secretStorage.getSecret(
 										this.plugin.data.spnAccessKeySecretName,
 									);
 									if (val && !this.plugin.data.spnAccessKey) {
@@ -150,7 +148,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									}
 								}
 								if (this.plugin.data.spnSecretKeySecretName) {
-									const val = (this.app as any).secretStorage.getSecret(
+									const val = this.app.secretStorage.getSecret(
 										this.plugin.data.spnSecretKeySecretName,
 									);
 									if (val && !this.plugin.data.spnSecretKey) {
