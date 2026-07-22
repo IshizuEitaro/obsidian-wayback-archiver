@@ -1,6 +1,9 @@
 Taskfile.yml
 docs/
 
+# local worktrees
+.worktrees/
+
 # pnpm
 node_modules
 
