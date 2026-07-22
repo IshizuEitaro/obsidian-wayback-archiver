@@ -55,6 +55,26 @@ export class BatchRunController {
 		return this.canceled;
 	}
 
+	addItems(items: Array<Pick<BatchItemState, "id" | "url" | "filePath">>): boolean {
+		if (this.canceled) return false;
+		if (items.length === 0) return true;
+		const ids = new Set(this.items.map((item) => item.id));
+		for (const item of items) {
+			if (ids.has(item.id)) throw new Error(`Duplicate archive batch item: ${item.id}`);
+			ids.add(item.id);
+		}
+		this.items.push(
+			...items.map((item) => ({
+				...item,
+				status: "pending" as const,
+				detail: "Waiting",
+			})),
+		);
+		this.finished = false;
+		this.emit();
+		return true;
+	}
+
 	updateItem(id: string, status: BatchItemStatus, detail: string): void {
 		const item = this.items.find((candidate) => candidate.id === id);
 		if (!item || (this.canceled && status !== "canceled")) return;

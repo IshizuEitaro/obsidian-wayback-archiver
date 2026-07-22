@@ -43,4 +43,45 @@ describe("BatchRunController", () => {
 		await expect(waiting).rejects.toBeInstanceOf(BatchCanceledError);
 		expect(vi.getTimerCount()).toBe(0);
 	});
+
+	it("appends pending items and reopens a finished run", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+		]);
+		run.updateItem("a", "success", "Captured");
+		run.finish();
+
+		const added = run.addItems([
+			{ id: "b", url: "https://b.example", filePath: "b.md" },
+		]);
+
+		expect(added).toBe(true);
+		expect(run.snapshot()).toMatchObject({ total: 2, completed: 1, finished: false });
+		expect(run.snapshot().items[1]).toMatchObject({ id: "b", status: "pending" });
+	});
+
+	it("rejects appended items after cancellation", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+		]);
+		run.cancel();
+
+		const added = run.addItems([
+			{ id: "b", url: "https://b.example", filePath: "b.md" },
+		]);
+
+		expect(added).toBe(false);
+		expect(run.snapshot().total).toBe(1);
+	});
+
+	it("rejects duplicate item IDs", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+		]);
+
+		expect(() =>
+			run.addItems([{ id: "a", url: "https://other.example", filePath: "other.md" }]),
+		).toThrow("Duplicate archive batch item: a");
+		expect(run.snapshot().total).toBe(1);
+	});
 });
