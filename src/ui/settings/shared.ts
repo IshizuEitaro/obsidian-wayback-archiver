@@ -21,12 +21,10 @@ export async function switchCredentialStorageMode(
 		}
 	} else {
 		if (!plugin.data.spnAccessKey && plugin.data.spnAccessKeySecretName) {
-			plugin.data.spnAccessKey =
-				storage.getSecret(plugin.data.spnAccessKeySecretName) ?? "";
+			plugin.data.spnAccessKey = storage.getSecret(plugin.data.spnAccessKeySecretName) ?? "";
 		}
 		if (!plugin.data.spnSecretKey && plugin.data.spnSecretKeySecretName) {
-			plugin.data.spnSecretKey =
-				storage.getSecret(plugin.data.spnSecretKeySecretName) ?? "";
+			plugin.data.spnSecretKey = storage.getSecret(plugin.data.spnSecretKeySecretName) ?? "";
 		}
 	}
 	plugin.data.spnCredentialStorageMode = mode;

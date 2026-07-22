@@ -25,19 +25,19 @@ describe("declarative settings bindings", () => {
 		expect(getDeclarativeSettingValue(plugin as never, "profile.dateFormat")).toBe(
 			"yyyy-MM-dd",
 		);
-		expect(
-			getDeclarativeSettingValue(plugin as never, "profile.ignorePatternsText"),
-		).toBe("archive\\.org\ninternal");
-		expect(
-			getDeclarativeSettingValue(plugin as never, "profile.provider.archiveToday"),
-		).toBe(true);
+		expect(getDeclarativeSettingValue(plugin as never, "profile.ignorePatternsText")).toBe(
+			"archive\\.org\ninternal",
+		);
+		expect(getDeclarativeSettingValue(plugin as never, "profile.provider.archiveToday")).toBe(
+			true,
+		);
 	});
 
 	it("writes profile, array, domain, and provider values through saveSettings", async () => {
 		const plugin = createPluginData();
-		expect(
-			await setDeclarativeSettingValue(plugin as never, "profile.apiDelay", 2500),
-		).toBe("none");
+		expect(await setDeclarativeSettingValue(plugin as never, "profile.apiDelay", 2500)).toBe(
+			"none",
+		);
 		await setDeclarativeSettingValue(
 			plugin as never,
 			"profile.ignorePatternsText",
@@ -48,11 +48,7 @@ describe("declarative settings bindings", () => {
 			"profile.ignoredDomainsText",
 			"Example.com, api.example.org\nnews.example.net",
 		);
-		await setDeclarativeSettingValue(
-			plugin as never,
-			"profile.provider.megalodon",
-			true,
-		);
+		await setDeclarativeSettingValue(plugin as never, "profile.provider.megalodon", true);
 
 		expect(plugin.activeSettings.apiDelay).toBe(2500);
 		expect(plugin.activeSettings.ignorePatterns).toEqual(["one", "two"]);

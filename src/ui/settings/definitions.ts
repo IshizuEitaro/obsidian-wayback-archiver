@@ -118,7 +118,8 @@ function buildCredentialGroup(
 				desc: "Credential used by the SPN API v2.",
 				render: (setting) => {
 					if (isSecretMode()) {
-						const name = plugin.data.spnAccessKeySecretName ?? "WaybackArchiver_spnAccessKey";
+						const name =
+							plugin.data.spnAccessKeySecretName ?? "WaybackArchiver_spnAccessKey";
 						new SecretComponent(plugin.app, setting.controlEl)
 							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
 							.onChange(async (value) => {
@@ -129,10 +130,12 @@ function buildCredentialGroup(
 					} else {
 						setting.addText((text) => {
 							text.inputEl.type = "password";
-							text.setValue(plugin.data.spnAccessKey ?? "").onChange(async (value) => {
-								plugin.data.spnAccessKey = value;
-								await plugin.saveSettings();
-							});
+							text.setValue(plugin.data.spnAccessKey ?? "").onChange(
+								async (value) => {
+									plugin.data.spnAccessKey = value;
+									await plugin.saveSettings();
+								},
+							);
 						});
 					}
 				},
@@ -142,7 +145,8 @@ function buildCredentialGroup(
 				desc: "Secret credential used by the SPN API v2.",
 				render: (setting) => {
 					if (isSecretMode()) {
-						const name = plugin.data.spnSecretKeySecretName ?? "WaybackArchiver_spnSecretKey";
+						const name =
+							plugin.data.spnSecretKeySecretName ?? "WaybackArchiver_spnSecretKey";
 						new SecretComponent(plugin.app, setting.controlEl)
 							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
 							.onChange(async (value) => {
@@ -153,10 +157,12 @@ function buildCredentialGroup(
 					} else {
 						setting.addText((text) => {
 							text.inputEl.type = "password";
-							text.setValue(plugin.data.spnSecretKey ?? "").onChange(async (value) => {
-								plugin.data.spnSecretKey = value;
-								await plugin.saveSettings();
-							});
+							text.setValue(plugin.data.spnSecretKey ?? "").onChange(
+								async (value) => {
+									plugin.data.spnSecretKey = value;
+									await plugin.saveSettings();
+								},
+							);
 						});
 					}
 				},
@@ -241,19 +247,25 @@ function buildSubstitutionList(
 			desc: rule.regex ? "Regular expression" : "Plain text",
 			render: (setting) => {
 				setting.addText((text) =>
-					text.setPlaceholder("Find").setValue(rule.find).onChange((value) =>
-						updateSubstitutionRule(plugin, rule, { find: value }),
-					),
+					text
+						.setPlaceholder("Find")
+						.setValue(rule.find)
+						.onChange((value) => updateSubstitutionRule(plugin, rule, { find: value })),
 				);
 				setting.addText((text) =>
-					text.setPlaceholder("Replace").setValue(rule.replace).onChange((value) =>
-						updateSubstitutionRule(plugin, rule, { replace: value }),
-					),
+					text
+						.setPlaceholder("Replace")
+						.setValue(rule.replace)
+						.onChange((value) =>
+							updateSubstitutionRule(plugin, rule, { replace: value }),
+						),
 				);
 				setting.addToggle((toggle) =>
-					toggle.setValue(rule.regex).onChange((value) =>
-						updateSubstitutionRule(plugin, rule, { regex: value }),
-					),
+					toggle
+						.setValue(rule.regex)
+						.onChange((value) =>
+							updateSubstitutionRule(plugin, rule, { regex: value }),
+						),
 				);
 			},
 		})),
@@ -290,8 +302,16 @@ function buildFilteringPage(): SettingDefinitionPage<DeclarativeSettingKey> {
 				"Archive pasted URLs that are not wrapped in Markdown or HTML links.",
 				{ type: "toggle", key: "profile.archiveBareUrls" },
 			),
-			profileControl("Path patterns", "Eligible note paths.", textArea("profile.pathPatternsText")),
-			profileControl("URL patterns", "Eligible link URLs.", textArea("profile.urlPatternsText")),
+			profileControl(
+				"Path patterns",
+				"Eligible note paths.",
+				textArea("profile.pathPatternsText"),
+			),
+			profileControl(
+				"URL patterns",
+				"Eligible link URLs.",
+				textArea("profile.urlPatternsText"),
+			),
 			profileControl(
 				"Word/phrase patterns",
 				"Required note content.",
@@ -381,41 +401,66 @@ function buildFallbackPage(
 				type: "toggle",
 				key: "profile.archiveTodayExperimentalSubmit",
 			}),
-			profileControl("archive.today submit delay", "Delay between submissions.", {
-				type: "slider",
-				key: "profile.archiveTodaySubmitDelayMs",
-				min: 1_000,
-				max: 10_000,
-				step: 500,
-			}, { visible }),
-			profileControl("archive.today pending poll interval", "Pending poll interval.", {
-				type: "slider",
-				key: "profile.archiveTodayPendingPollIntervalMs",
-				min: 15_000,
-				max: 300_000,
-				step: 5_000,
-			}, { visible }),
-			profileControl("archive.today pending poll batch size", "Pending poll batch size.", {
-				type: "slider",
-				key: "profile.archiveTodayPendingPollBatchSize",
-				min: 1,
-				max: 10,
-				step: 1,
-			}, { visible }),
-			profileControl("archive.today pending queue capacity", "Maximum pending entries.", {
-				type: "slider",
-				key: "profile.archiveTodayMaxPendingCount",
-				min: 1,
-				max: 100,
-				step: 1,
-			}, { visible }),
-			profileControl("archive.today pending max wait", "Maximum pending time.", {
-				type: "slider",
-				key: "profile.archiveTodayPendingMaxWaitMs",
-				min: 60_000,
-				max: 1_200_000,
-				step: 60_000,
-			}, { visible }),
+			profileControl(
+				"archive.today submit delay",
+				"Delay between submissions.",
+				{
+					type: "slider",
+					key: "profile.archiveTodaySubmitDelayMs",
+					min: 1_000,
+					max: 10_000,
+					step: 500,
+				},
+				{ visible },
+			),
+			profileControl(
+				"archive.today pending poll interval",
+				"Pending poll interval.",
+				{
+					type: "slider",
+					key: "profile.archiveTodayPendingPollIntervalMs",
+					min: 15_000,
+					max: 300_000,
+					step: 5_000,
+				},
+				{ visible },
+			),
+			profileControl(
+				"archive.today pending poll batch size",
+				"Pending poll batch size.",
+				{
+					type: "slider",
+					key: "profile.archiveTodayPendingPollBatchSize",
+					min: 1,
+					max: 10,
+					step: 1,
+				},
+				{ visible },
+			),
+			profileControl(
+				"archive.today pending queue capacity",
+				"Maximum pending entries.",
+				{
+					type: "slider",
+					key: "profile.archiveTodayMaxPendingCount",
+					min: 1,
+					max: 100,
+					step: 1,
+				},
+				{ visible },
+			),
+			profileControl(
+				"archive.today pending max wait",
+				"Maximum pending time.",
+				{
+					type: "slider",
+					key: "profile.archiveTodayPendingMaxWaitMs",
+					min: 60_000,
+					max: 1_200_000,
+					step: 60_000,
+				},
+				{ visible },
+			),
 			profileControl("Manual save batch size", "URLs opened per manual batch.", {
 				type: "slider",
 				key: "profile.manualSaveBatchSize",
@@ -423,7 +468,11 @@ function buildFallbackPage(
 				max: 5,
 				step: 1,
 			}),
-			profileControl("Per-URL archive policies", "One policy per line.", textArea("profile.archivePoliciesText")),
+			profileControl(
+				"Per-URL archive policies",
+				"One policy per line.",
+				textArea("profile.archivePoliciesText"),
+			),
 		],
 	};
 }

@@ -61,23 +61,18 @@ describe("declarative setting definitions", () => {
 		const delay = flatten(definitions).find(
 			(item) => item.name === "archive.today submit delay",
 		);
+		expect(delay).toBeDefined();
 		expect(typeof delay?.visible).toBe("function");
-		expect((delay?.visible as () => boolean)()).toBe(false);
+		expect((delay!.visible as () => boolean)()).toBe(false);
 	});
 
 	it("defines credential, profile, and substitution-rule controls", () => {
 		const definitions = buildSettingDefinitions(createContext());
 		const flat = flatten(definitions);
 		expect(flat.map((item) => item.heading)).toEqual(
-			expect.arrayContaining([
-				"Archive.org API keys",
-				"Profiles",
-				"URL substitution rules",
-			]),
+			expect.arrayContaining(["Archive.org API keys", "Profiles", "URL substitution rules"]),
 		);
-		const substitutions = flat.find(
-			(item) => item.heading === "URL substitution rules",
-		);
+		const substitutions = flat.find((item) => item.heading === "URL substitution rules");
 		expect(substitutions?.type).toBe("list");
 		expect(substitutions?.addItem).toBeDefined();
 	});

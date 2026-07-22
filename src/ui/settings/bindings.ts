@@ -1,10 +1,6 @@
 import { format } from "date-fns";
 import type WaybackArchiverPlugin from "../../main";
-import {
-	ArchivePolicyRule,
-	ArchiveServiceId,
-	WaybackArchiverSettings,
-} from "../../core/settings";
+import { ArchivePolicyRule, ArchiveServiceId, WaybackArchiverSettings } from "../../core/settings";
 import { parseIgnoredDomains } from "../../utils/LinkUtils";
 
 export type DeclarativeSettingKey =
@@ -74,9 +70,7 @@ export function parseArchivePolicies(value: string): ArchivePolicyRule[] {
 				.filter(Boolean);
 			const archiveTodayExperimentalSubmit = rawProviders.includes("archiveToday:auto");
 			const providers = rawProviders
-				.map((provider) =>
-					provider === "archiveToday:auto" ? "archiveToday" : provider,
-				)
+				.map((provider) => (provider === "archiveToday:auto" ? "archiveToday" : provider))
 				.filter((provider): provider is ArchiveServiceId =>
 					validProviders.has(provider as ArchiveServiceId),
 				);
@@ -147,9 +141,7 @@ export async function setDeclarativeSettingValue(
 }
 
 export const validateNonNegativeInteger = (value: number): string | undefined =>
-	Number.isInteger(value) && value >= 0
-		? undefined
-		: "Enter a whole number of 0 or greater.";
+	Number.isInteger(value) && value >= 0 ? undefined : "Enter a whole number of 0 or greater.";
 
 export const validateIntegerRange =
 	(min: number, max: number) =>
