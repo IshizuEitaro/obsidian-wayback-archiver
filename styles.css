@@ -64,3 +64,39 @@
 .wayback-status-clickable {
 	cursor: pointer;
 }
+
+.wayback-progress-chip {
+	align-items: center;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+	display: flex;
+	gap: 0.5rem;
+	max-width: min(28rem, calc(100vw - 1.5rem));
+	padding: 0.4rem;
+	position: fixed;
+	right: max(0.75rem, env(safe-area-inset-right));
+	top: calc(var(--header-height, 40px) + max(0.5rem, env(safe-area-inset-top)));
+	z-index: var(--layer-popover, 30);
+}
+
+.wayback-progress-chip-details {
+	background: transparent;
+	border: 0;
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	min-width: 0;
+	overflow: hidden;
+	padding: 0.25rem 0.4rem;
+	text-align: left;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.wayback-progress-chip-cancel {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	padding: 0.25rem 0.5rem;
+}
