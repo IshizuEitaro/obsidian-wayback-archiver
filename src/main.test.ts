@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const lifecycle = vi.hoisted(() => ({
 	layoutReadyCallback: null as null | (() => void),
@@ -8,8 +8,12 @@ const lifecycle = vi.hoisted(() => ({
 	registerContextMenus: vi.fn(),
 	modalOpen: vi.fn(),
 	modalShowProgress: vi.fn(),
+	modalClose: vi.fn(),
+	chipOpen: vi.fn(),
+	chipDestroy: vi.fn(),
 	confirmationOpen: vi.fn(),
 	confirmationOnStart: null as null | (() => void),
+	archiveItemAction: vi.fn(),
 }));
 
 vi.mock("obsidian", () => ({
@@ -45,6 +49,7 @@ vi.mock("./core/archiver", () => ({
 		runPendingQueueCycle = vi.fn();
 		scanVaultForArchiving = vi.fn();
 		archiveScannedLinksAction = vi.fn();
+		archiveScannedItemAction = lifecycle.archiveItemAction;
 	},
 }));
 
@@ -64,6 +69,14 @@ vi.mock("./ui/ArchiveProgressModal", () => ({
 	ArchiveProgressModal: class ArchiveProgressModal {
 		open = lifecycle.modalOpen;
 		showProgress = lifecycle.modalShowProgress;
+		close = lifecycle.modalClose;
+	},
+}));
+
+vi.mock("./ui/ArchiveProgressChip", () => ({
+	ArchiveProgressChip: class ArchiveProgressChip {
+		open = lifecycle.chipOpen;
+		destroy = lifecycle.chipDestroy;
 	},
 }));
 
@@ -88,7 +101,7 @@ const createManifest = () =>
 		author: "ISHIZUE",
 	}) as never;
 
-const createArchiveSummary = (id: string) => ({
+const createArchiveSummary = (id: string, url = "https://example.com") => ({
 	noteCount: 1,
 	linkCount: 1,
 	uniqueUrlCount: 1,
@@ -96,7 +109,7 @@ const createArchiveSummary = (id: string) => ({
 		{
 			id,
 			filePath: "a.md",
-			url: "https://example.com",
+			url,
 			approximateIndex: 0,
 			isForce: false,
 		},
@@ -106,8 +119,18 @@ const createArchiveSummary = (id: string) => ({
 describe("plugin startup lifecycle", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.useRealTimers();
+		vi.stubGlobal("window", globalThis);
 		lifecycle.layoutReadyCallback = null;
 		lifecycle.confirmationOnStart = null;
+		lifecycle.archiveItemAction.mockImplementation((_item, run, itemId) => {
+			run.updateItem(itemId, "success", "Captured");
+		});
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
 	});
 
 	it("registers the plugin during onload but defers the pending scheduler", async () => {
@@ -144,22 +167,112 @@ describe("plugin startup lifecycle", () => {
 		expect(lifecycle.confirmationOpen).toHaveBeenCalledOnce();
 		lifecycle.confirmationOnStart?.();
 		expect(plugin.activeArchiveRun).not.toBeNull();
-		expect(lifecycle.modalOpen).toHaveBeenCalledOnce();
+		expect(lifecycle.chipOpen).toHaveBeenCalledOnce();
+		expect(lifecycle.modalOpen).not.toHaveBeenCalled();
 	});
 
-	it("cancels a superseded archive run before starting another", async () => {
+	it("appends later archive submissions to the same run", async () => {
 		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
 		await plugin.onload();
-		plugin.startArchiveRun(createArchiveSummary("first"), "First run");
-		lifecycle.confirmationOnStart?.();
+		plugin.enqueueArchiveRun(createArchiveSummary("first"));
+		await vi.waitFor(() => expect(plugin.activeArchiveRun?.snapshot().finished).toBe(true));
 		const firstRun = plugin.activeArchiveRun;
-		expect(firstRun).not.toBeNull();
+
+		plugin.enqueueArchiveRun(createArchiveSummary("second"));
+		await vi.waitFor(() => expect(plugin.activeArchiveRun?.snapshot().finished).toBe(true));
+
+		expect(plugin.activeArchiveRun).toBe(firstRun);
+		expect(plugin.activeArchiveRun?.snapshot().total).toBe(2);
+		expect(lifecycle.chipOpen).toHaveBeenCalledOnce();
+	});
+
+	it("deduplicates only when both occurrence and URL match", async () => {
+		const gate = new Promise<void>(() => undefined);
+		lifecycle.archiveItemAction.mockImplementationOnce(() => gate);
+		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
+		await plugin.onload();
+		plugin.enqueueArchiveRun(createArchiveSummary("same", "https://a.example"));
+
+		plugin.enqueueArchiveRun(createArchiveSummary("same", "https://a.example"));
+		plugin.enqueueArchiveRun(createArchiveSummary("same", "https://b.example"));
+
+		expect(plugin.activeArchiveRun?.snapshot().total).toBe(2);
+	});
+
+	it("cancels pending cleanup when more work arrives", async () => {
+		vi.useFakeTimers();
+		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
+		await plugin.onload();
+		plugin.enqueueArchiveRun(createArchiveSummary("first"));
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(plugin.activeArchiveRun?.snapshot().finished).toBe(true);
+		const firstRun = plugin.activeArchiveRun;
+		vi.advanceTimersByTime(4_000);
+
+		plugin.enqueueArchiveRun(createArchiveSummary("second"));
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(plugin.activeArchiveRun?.snapshot().finished).toBe(true);
+		vi.advanceTimersByTime(1_000);
+
+		expect(plugin.activeArchiveRun).toBe(firstRun);
+		expect(lifecycle.chipDestroy).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(4_000);
+		expect(plugin.activeArchiveRun).toBeNull();
+		expect(lifecycle.chipDestroy).toHaveBeenCalledOnce();
+	});
+
+	it("starts a new session after the previous queue was canceled", async () => {
+		const gate = new Promise<void>(() => undefined);
+		lifecycle.archiveItemAction.mockImplementationOnce(() => gate);
+		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
+		await plugin.onload();
+		plugin.enqueueArchiveRun(createArchiveSummary("first"));
+		const firstRun = plugin.activeArchiveRun;
+		firstRun?.cancel();
+
+		plugin.enqueueArchiveRun(createArchiveSummary("second"));
+
+		expect(plugin.activeArchiveRun).not.toBe(firstRun);
+		expect(lifecycle.chipDestroy).toHaveBeenCalledOnce();
+		expect(lifecycle.chipOpen).toHaveBeenCalledTimes(2);
+	});
+
+	it("keeps active work running while Vault confirmation is open and appends on Start", async () => {
+		const gate = new Promise<void>(() => undefined);
+		lifecycle.archiveItemAction.mockImplementationOnce(() => gate);
+		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
+		await plugin.onload();
+		plugin.enqueueArchiveRun(createArchiveSummary("first"));
+		const firstRun = plugin.activeArchiveRun;
 		const cancel = vi.spyOn(firstRun!, "cancel");
 
-		plugin.startArchiveRun(createArchiveSummary("second"), "Second run");
+		plugin.startArchiveRun(createArchiveSummary("second"), "Archive all links in vault?");
+
+		expect(plugin.activeArchiveRun).toBe(firstRun);
+		expect(cancel).not.toHaveBeenCalled();
+		expect(firstRun?.snapshot().total).toBe(1);
 		lifecycle.confirmationOnStart?.();
+		expect(plugin.activeArchiveRun).toBe(firstRun);
+		expect(firstRun?.snapshot().total).toBe(2);
+	});
+
+	it("cancels and destroys the shared queue on unload", async () => {
+		const gate = new Promise<void>(() => undefined);
+		lifecycle.archiveItemAction.mockImplementationOnce(() => gate);
+		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
+		await plugin.onload();
+		plugin.enqueueArchiveRun(createArchiveSummary("first"));
+		const run = plugin.activeArchiveRun;
+		const cancel = vi.spyOn(run!, "cancel");
+
+		plugin.onunload();
 
 		expect(cancel).toHaveBeenCalledOnce();
-		expect(plugin.activeArchiveRun).not.toBe(firstRun);
+		expect(lifecycle.chipDestroy).toHaveBeenCalledOnce();
+		expect(plugin.activeArchiveRun).toBeNull();
 	});
 });

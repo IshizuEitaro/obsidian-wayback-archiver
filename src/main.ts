@@ -13,6 +13,8 @@ import { ArchiveScanSummary } from "./core/vaultScan";
 import { BatchRunController } from "./core/batchRun";
 import { ArchiveProgressModal } from "./ui/ArchiveProgressModal";
 import { ArchiveConfirmationModal } from "./ui/ArchiveConfirmationModal";
+import { ArchiveProgressChip } from "./ui/ArchiveProgressChip";
+import { ArchiveQueueController } from "./core/archiveQueue";
 import { registerContextMenus } from "./core/contextMenus";
 import { TFile } from "obsidian";
 
@@ -52,7 +54,6 @@ export default class WaybackArchiverPlugin extends Plugin {
 		run: BatchRunController,
 	) => Promise<void>;
 	archiveScannedItemAction!: ArchiverService["archiveScannedItemAction"];
-	enqueueArchiveRun!: (summary: ArchiveScanSummary) => void;
 	archiveFilesAction!: (files: TFile[], isForce: boolean) => Promise<void>;
 	archiveUrlScopeAction!: (file: TFile, sourceUrl: string, isForce: boolean) => Promise<void>;
 
@@ -60,8 +61,11 @@ export default class WaybackArchiverPlugin extends Plugin {
 	private archiverService!: ArchiverService;
 	private isUnloaded = false;
 	activeArchiveRun: BatchRunController | null = null;
+	private activeArchiveQueue: ArchiveQueueController | null = null;
+	private activeArchiveProgressChip: ArchiveProgressChip | null = null;
 	private activeArchiveProgressModal: ArchiveProgressModal | null = null;
 	private activeRunUnsubscribe: (() => void) | null = null;
+	private activeRunCleanupTimer: number | null = null;
 
 	data: WaybackArchiverData = {
 		activeProfileId: "default",
@@ -90,7 +94,6 @@ export default class WaybackArchiverPlugin extends Plugin {
 		this.statusBarItem.addEventListener("click", () => {
 			if (!this.activeArchiveRun || !this.activeArchiveProgressModal) return;
 			this.activeArchiveProgressModal.open();
-			this.activeArchiveProgressModal.showProgress();
 		});
 
 		this.archiverService = new ArchiverService(this);
@@ -147,23 +150,45 @@ export default class WaybackArchiverPlugin extends Plugin {
 			summary,
 			title,
 			additionalCounts,
-			onStart: () => this.beginArchiveRun(summary),
+			onStart: () => this.enqueueArchiveRun(summary),
 		}).open();
 	}
 
-	private beginArchiveRun(summary: ArchiveScanSummary): void {
-		this.activeArchiveRun?.cancel();
-		this.activeRunUnsubscribe?.();
-		const run = new BatchRunController(
-			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
+	enqueueArchiveRun(summary: ArchiveScanSummary): void {
+		if (summary.items.length === 0) return;
+		if (this.activeArchiveRun?.isCanceled()) this.disposeArchiveQueue();
+		if (this.activeRunCleanupTimer !== null) {
+			window.clearTimeout(this.activeRunCleanupTimer);
+			this.activeRunCleanupTimer = null;
+		}
+		const queue = this.activeArchiveQueue ?? this.createArchiveQueue();
+		queue.enqueue(
+			summary.items.map((item) => ({
+				dedupeKey: JSON.stringify([item.id, item.url]),
+				url: item.url,
+				filePath: item.filePath,
+				execute: (run, itemId) => this.archiveScannedItemAction(item, run, itemId),
+			})),
 		);
+	}
+
+	private createArchiveQueue(): ArchiveQueueController {
+		const queue = new ArchiveQueueController();
+		const run = queue.run;
 		const modal = new ArchiveProgressModal(this.app, { run });
+		const chip = new ArchiveProgressChip(run, () => modal.open());
+		this.activeArchiveQueue = queue;
 		this.activeArchiveRun = run;
 		this.activeArchiveProgressModal = modal;
+		this.activeArchiveProgressChip = chip;
 		this.activeRunUnsubscribe = run.subscribe((snapshot) => {
 			if (snapshot.canceled) {
 				this.setStatusBarText(
 					`Canceled · ${snapshot.completed}/${snapshot.total} complete`,
+				);
+			} else if (snapshot.finished) {
+				this.setStatusBarText(
+					`Complete · ${snapshot.completed}/${snapshot.total} · ${snapshot.succeeded} saved · ${snapshot.failed} failed`,
 				);
 			} else {
 				this.setStatusBarText(
@@ -171,18 +196,33 @@ export default class WaybackArchiverPlugin extends Plugin {
 				);
 			}
 			if (snapshot.finished) {
-				window.setTimeout(() => {
-					if (this.activeArchiveRun !== run) return;
-					this.activeRunUnsubscribe?.();
-					this.activeRunUnsubscribe = null;
-					this.activeArchiveRun = null;
-					this.activeArchiveProgressModal = null;
-					this.setStatusBarText("");
+				if (this.activeRunCleanupTimer !== null) {
+					window.clearTimeout(this.activeRunCleanupTimer);
+				}
+				this.activeRunCleanupTimer = window.setTimeout(() => {
+					if (this.activeArchiveQueue === queue) this.disposeArchiveQueue();
 				}, 5000);
 			}
 		});
-		modal.open();
-		void this.archiveScannedLinksAction(summary, run);
+		chip.open();
+		return queue;
+	}
+
+	private disposeArchiveQueue(cancel = false): void {
+		if (this.activeRunCleanupTimer !== null) {
+			window.clearTimeout(this.activeRunCleanupTimer);
+			this.activeRunCleanupTimer = null;
+		}
+		if (cancel) this.activeArchiveQueue?.cancel();
+		this.activeRunUnsubscribe?.();
+		this.activeRunUnsubscribe = null;
+		this.activeArchiveProgressModal?.close();
+		this.activeArchiveProgressChip?.destroy();
+		this.activeArchiveQueue = null;
+		this.activeArchiveRun = null;
+		this.activeArchiveProgressModal = null;
+		this.activeArchiveProgressChip = null;
+		this.setStatusBarText("");
 	}
 
 	setStatusBarText(text: string) {
@@ -194,8 +234,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 	onunload() {
 		// console.log('Unloading Wayback Archiver Plugin');
 		this.isUnloaded = true;
-		this.activeArchiveRun?.cancel();
-		this.activeRunUnsubscribe?.();
+		this.disposeArchiveQueue(true);
 		this.archiverService?.stopPendingQueueScheduler();
 	}
 
