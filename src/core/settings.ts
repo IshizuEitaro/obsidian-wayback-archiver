@@ -122,11 +122,87 @@ function cloneSettingsValue<T>(value: T): T {
 export function normalizeProfileSettings(
 	profile: Partial<WaybackArchiverSettings> | undefined,
 ): WaybackArchiverSettings {
-	return {
+	const clampInteger = (value: unknown, min: number, max: number, fallback: number): number => {
+		if (typeof value !== "number" || !Number.isInteger(value)) return fallback;
+		return Math.min(max, Math.max(min, value));
+	};
+	const merged = {
 		...cloneSettingsValue(DEFAULT_SETTINGS),
 		...cloneSettingsValue(profile ?? {}),
+	};
+	return {
+		...merged,
 		ignorePatterns: [...(profile?.ignorePatterns ?? DEFAULT_SETTINGS.ignorePatterns)],
 		ignoredDomains: [...(profile?.ignoredDomains ?? [])],
+		apiDelay:
+			typeof profile?.apiDelay === "number" &&
+			Number.isInteger(profile.apiDelay) &&
+			profile.apiDelay >= 500 &&
+			profile.apiDelay <= 10_000
+				? profile.apiDelay
+				: DEFAULT_SETTINGS.apiDelay,
+		maxRetries: clampInteger(profile?.maxRetries, 1, 10, DEFAULT_SETTINGS.maxRetries),
+		archiveFreshnessDays: clampInteger(
+			profile?.archiveFreshnessDays,
+			0,
+			36_500,
+			DEFAULT_SETTINGS.archiveFreshnessDays,
+		),
+		maxFreshCaptureWaitSeconds: clampInteger(
+			profile?.maxFreshCaptureWaitSeconds,
+			1,
+			86_400,
+			DEFAULT_SETTINGS.maxFreshCaptureWaitSeconds,
+		),
+		throttleRetryDelayMs: clampInteger(
+			profile?.throttleRetryDelayMs,
+			0,
+			86_400_000,
+			DEFAULT_SETTINGS.throttleRetryDelayMs,
+		),
+		maxThrottleRetries: clampInteger(
+			profile?.maxThrottleRetries,
+			0,
+			100,
+			DEFAULT_SETTINGS.maxThrottleRetries,
+		),
+		archiveTodaySubmitDelayMs: clampInteger(
+			profile?.archiveTodaySubmitDelayMs,
+			1_000,
+			10_000,
+			DEFAULT_SETTINGS.archiveTodaySubmitDelayMs,
+		),
+		archiveTodayPendingPollIntervalMs: clampInteger(
+			profile?.archiveTodayPendingPollIntervalMs,
+			15_000,
+			300_000,
+			DEFAULT_SETTINGS.archiveTodayPendingPollIntervalMs,
+		),
+		archiveTodayPendingPollBatchSize: clampInteger(
+			profile?.archiveTodayPendingPollBatchSize,
+			1,
+			10,
+			DEFAULT_SETTINGS.archiveTodayPendingPollBatchSize,
+		),
+		archiveTodayMaxPendingCount: clampInteger(
+			profile?.archiveTodayMaxPendingCount,
+			1,
+			100,
+			DEFAULT_SETTINGS.archiveTodayMaxPendingCount,
+		),
+		archiveTodayPendingMaxWaitMs: clampInteger(
+			profile?.archiveTodayPendingMaxWaitMs,
+			60_000,
+			1_200_000,
+			DEFAULT_SETTINGS.archiveTodayPendingMaxWaitMs,
+		),
+		manualSaveBatchSize: clampInteger(
+			profile?.manualSaveBatchSize,
+			1,
+			5,
+			DEFAULT_SETTINGS.manualSaveBatchSize,
+		),
+		jsBehaviorTimeout: Math.max(0, Number(profile?.jsBehaviorTimeout) || 0),
 	};
 }
 

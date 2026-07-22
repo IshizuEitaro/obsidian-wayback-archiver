@@ -33,6 +33,28 @@ describe("normalizeProfileSettings", () => {
 			"preserve-me",
 		);
 	});
+
+	it("repairs stored values that declarative validation would reject", () => {
+		const result = normalizeProfileSettings({
+			...DEFAULT_SETTINGS,
+			apiDelay: -1,
+			maxRetries: 0,
+			archiveFreshnessDays: -5,
+			archiveTodayPendingPollBatchSize: 99,
+			manualSaveBatchSize: 0,
+			maxFreshCaptureWaitSeconds: 0,
+			throttleRetryDelayMs: -1,
+			maxThrottleRetries: -1,
+		});
+		expect(result.apiDelay).toBe(DEFAULT_SETTINGS.apiDelay);
+		expect(result.maxRetries).toBe(1);
+		expect(result.archiveFreshnessDays).toBe(0);
+		expect(result.archiveTodayPendingPollBatchSize).toBe(10);
+		expect(result.manualSaveBatchSize).toBe(1);
+		expect(result.maxFreshCaptureWaitSeconds).toBe(1);
+		expect(result.throttleRetryDelayMs).toBe(0);
+		expect(result.maxThrottleRetries).toBe(0);
+	});
 });
 
 describe("appendFailedArchiveEntry", () => {
