@@ -7,6 +7,7 @@ import {
 } from "./settings";
 import { App, PluginManifest, Editor, MarkdownView, TFile } from "obsidian";
 import WaybackArchiverPlugin from "../main";
+import { getUrlFromMatch, LINK_REGEX } from "../utils/LinkUtils";
 
 import {
 	serializeFailedArchiveEntriesToCsv,
@@ -2126,6 +2127,45 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			plugin as unknown as ConstructorParameters<typeof ArchiverService>[0],
 		);
 	};
+
+	it("filters disabled bare URLs while retaining Markdown and image URLs", () => {
+		const service = createTddService({}, { archiveBareUrls: false });
+		const content =
+			"[page](https://page.example) ![image](https://img.example/a.png) https://bare.example";
+		const result = (
+			service as unknown as {
+				filterLinksForArchiving: (
+					matches: RegExpMatchArray[],
+					content: string,
+					force: boolean,
+				) => { linksToProcess: RegExpMatchArray[] };
+			}
+		).filterLinksForArchiving(Array.from(content.matchAll(LINK_REGEX)), content, false);
+
+		expect(result.linksToProcess.map(getUrlFromMatch)).toEqual([
+			"https://page.example",
+			"https://img.example/a.png",
+		]);
+	});
+
+	it("filters ignored domains at hostname boundaries", () => {
+		const service = createTddService({}, { ignoredDomains: ["skip.example"] });
+		const content =
+			"[ignored](https://sub.skip.example/a) [kept](https://evil-skip.example/a)";
+		const result = (
+			service as unknown as {
+				filterLinksForArchiving: (
+					matches: RegExpMatchArray[],
+					content: string,
+					force: boolean,
+				) => { linksToProcess: RegExpMatchArray[] };
+			}
+		).filterLinksForArchiving(Array.from(content.matchAll(LINK_REGEX)), content, false);
+
+		expect(result.linksToProcess.map(getUrlFromMatch)).toEqual([
+			"https://evil-skip.example/a",
+		]);
+	});
 
 	it("logs targetUrl for selection-mode failures", async () => {
 		const service = createTddService();

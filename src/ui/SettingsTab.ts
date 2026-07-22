@@ -2,6 +2,7 @@ import * as obsidian from "obsidian";
 import { App, ButtonComponent, PluginSettingTab, Notice, Setting } from "obsidian";
 import { ConfirmationModal, ProfileNameModal } from "./modals";
 import { runAsyncAction } from "../utils/async";
+import { parseIgnoredDomains } from "../utils/LinkUtils";
 import { WaybackArchiverPlugin } from "../main";
 import {
 	ArchivePolicyRule,
@@ -264,7 +265,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Filtering rules (optional)").setHeading();
 
 		new Setting(containerEl)
-			.setName("Ignore URL patterns")
+			.setName("Legacy ignore URL patterns")
 			.setDesc(
 				"URLs matching these patterns (one per line, regex or simple text) will be ignored. Example: youtube\\.com or internal-wiki",
 			)
@@ -279,6 +280,29 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 							.filter((p) => p.length > 0);
 						await this.plugin.saveSettings();
 					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Ignored domains")
+			.setDesc("Skip these domains and all subdomains. Separate entries with commas or new lines.")
+			.addTextArea((text) =>
+				text
+					.setPlaceholder("example.com\nnews.example.org")
+					.setValue(activeSettings.ignoredDomains.join("\n"))
+					.onChange(async (value) => {
+						activeSettings.ignoredDomains = parseIgnoredDomains(value);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Archive bare URLs")
+			.setDesc("Also archive pasted URLs that are not wrapped in Markdown or HTML links.")
+			.addToggle((toggle) =>
+				toggle.setValue(activeSettings.archiveBareUrls).onChange(async (value) => {
+					activeSettings.archiveBareUrls = value;
+					await this.plugin.saveSettings();
+				}),
 			);
 
 		containerEl.createEl("p", {

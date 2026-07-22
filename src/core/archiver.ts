@@ -7,6 +7,8 @@ import {
 	checkAdjacentLinkFreshness,
 	extractArchiveTimestamp,
 	getUrlFromMatch,
+	isBareUrlMatch,
+	isHostnameIgnored,
 	isFollowedByArchiveLink,
 	LINK_REGEX,
 	matchesAnyPattern,
@@ -167,6 +169,10 @@ export class ArchiverService {
 				localSkippedCount++;
 				return false;
 			}
+			if (!this.activeSettings.archiveBareUrls && isBareUrlMatch(match)) {
+				localSkippedCount++;
+				return false;
+			}
 
 			// --- Adjacent Check ---
 			let checkStartIndex = matchIndex + match[0].length;
@@ -241,6 +247,7 @@ export class ArchiverService {
 				return true;
 			}
 		}
+		if (isHostnameIgnored(url, this.activeSettings.ignoredDomains)) return true;
 		return matchesAnyPattern(url, this.activeSettings.ignorePatterns);
 	}
 

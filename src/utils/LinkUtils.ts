@@ -37,6 +37,32 @@ export const LINK_REGEX = new RegExp(
 export const getUrlFromMatch = (match: RegExpMatchArray) =>
 	match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || "";
 
+export const isBareUrlMatch = (match: RegExpMatchArray): boolean => Boolean(match[6]);
+
+export function parseIgnoredDomains(value: string): string[] {
+	return Array.from(
+		new Set(
+			value
+				.split(/[\n,]/u)
+				.map((domain) => domain.trim().toLowerCase().replace(/\.$/u, ""))
+				.filter((domain) =>
+					/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(
+						domain,
+					),
+				),
+		),
+	);
+}
+
+export function isHostnameIgnored(url: string, domains: string[]): boolean {
+	try {
+		const hostname = new URL(url).hostname.toLowerCase().replace(/\.$/u, "");
+		return domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+	} catch {
+		return false;
+	}
+}
+
 export const ARCHIVE_TODAY_HOSTS = [
 	"archive.today",
 	"archive.is",
