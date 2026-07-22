@@ -8,6 +8,8 @@ const lifecycle = vi.hoisted(() => ({
 	registerContextMenus: vi.fn(),
 	modalOpen: vi.fn(),
 	modalShowProgress: vi.fn(),
+	confirmationOpen: vi.fn(),
+	confirmationOnStart: null as null | (() => void),
 }));
 
 vi.mock("obsidian", () => ({
@@ -65,6 +67,15 @@ vi.mock("./ui/ArchiveProgressModal", () => ({
 	},
 }));
 
+vi.mock("./ui/ArchiveConfirmationModal", () => ({
+	ArchiveConfirmationModal: class ArchiveConfirmationModal {
+		constructor(_app: unknown, options: { onStart: () => void }) {
+			lifecycle.confirmationOnStart = options.onStart;
+		}
+		open = lifecycle.confirmationOpen;
+	},
+}));
+
 import WaybackArchiverPlugin from "./main";
 
 const createManifest = () =>
@@ -96,6 +107,7 @@ describe("plugin startup lifecycle", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		lifecycle.layoutReadyCallback = null;
+		lifecycle.confirmationOnStart = null;
 	});
 
 	it("registers the plugin during onload but defers the pending scheduler", async () => {
@@ -122,12 +134,15 @@ describe("plugin startup lifecycle", () => {
 		expect(lifecycle.stopScheduler).toHaveBeenCalledOnce();
 	});
 
-	it("opens a shared archive run and exposes progress through the status bar", async () => {
+	it("starts a shared archive run only after confirmation", async () => {
 		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
 		await plugin.onload();
 
 		plugin.startArchiveRun(createArchiveSummary("a.md:0"), "Archive selected links?");
 
+		expect(plugin.activeArchiveRun).toBeNull();
+		expect(lifecycle.confirmationOpen).toHaveBeenCalledOnce();
+		lifecycle.confirmationOnStart?.();
 		expect(plugin.activeArchiveRun).not.toBeNull();
 		expect(lifecycle.modalOpen).toHaveBeenCalledOnce();
 	});
@@ -136,11 +151,13 @@ describe("plugin startup lifecycle", () => {
 		const plugin = new WaybackArchiverPlugin({} as never, createManifest());
 		await plugin.onload();
 		plugin.startArchiveRun(createArchiveSummary("first"), "First run");
+		lifecycle.confirmationOnStart?.();
 		const firstRun = plugin.activeArchiveRun;
 		expect(firstRun).not.toBeNull();
 		const cancel = vi.spyOn(firstRun!, "cancel");
 
 		plugin.startArchiveRun(createArchiveSummary("second"), "Second run");
+		lifecycle.confirmationOnStart?.();
 
 		expect(cancel).toHaveBeenCalledOnce();
 		expect(plugin.activeArchiveRun).not.toBe(firstRun);

@@ -1,18 +1,12 @@
 import { App, Modal } from "obsidian";
 import { BatchRunController, BatchRunSnapshot } from "../core/batchRun";
-import { ArchiveScanSummary } from "../core/vaultScan";
 
 export interface ArchiveProgressModalOptions {
-	summary: ArchiveScanSummary;
 	run: BatchRunController;
-	onStart: () => Promise<void>;
-	title?: string;
-	additionalCounts?: Array<{ label: string; value: number }>;
 }
 
 export class ArchiveProgressModal extends Modal {
 	private unsubscribe: (() => void) | null = null;
-	private hasStarted = false;
 
 	constructor(
 		app: App,
@@ -22,11 +16,10 @@ export class ArchiveProgressModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.renderConfirmation();
+		this.showProgress();
 	}
 
 	onClose(): void {
-		if (!this.hasStarted) this.options.run.cancel();
 		this.unsubscribe?.();
 		this.unsubscribe = null;
 		this.contentEl.empty();
@@ -35,29 +28,6 @@ export class ArchiveProgressModal extends Modal {
 	showProgress(): void {
 		this.unsubscribe?.();
 		this.unsubscribe = this.options.run.subscribe((snapshot) => this.renderProgress(snapshot));
-	}
-
-	private renderConfirmation(): void {
-		this.contentEl.empty();
-		this.contentEl.createEl("h2", { text: this.options.title ?? "Archive links?" });
-		const { noteCount, linkCount, uniqueUrlCount } = this.options.summary;
-		this.contentEl.createEl("p", {
-			text: `${noteCount} note${noteCount === 1 ? "" : "s"}, ${linkCount} link${linkCount === 1 ? "" : "s"}, ${uniqueUrlCount} unique URL${uniqueUrlCount === 1 ? "" : "s"} will be processed.`,
-		});
-		for (const count of this.options.additionalCounts ?? []) {
-			this.contentEl.createEl("p", { text: `${count.label}: ${count.value}` });
-		}
-		const buttons = this.contentEl.createDiv({ cls: "modal-button-container" });
-		buttons
-			.createEl("button", { text: "Start", cls: "mod-cta" })
-			.addEventListener("click", () => {
-				this.hasStarted = true;
-				this.showProgress();
-				void this.options.onStart();
-			});
-		buttons
-			.createEl("button", { text: "Cancel" })
-			.addEventListener("click", () => this.close());
 	}
 
 	private renderProgress(snapshot: BatchRunSnapshot): void {

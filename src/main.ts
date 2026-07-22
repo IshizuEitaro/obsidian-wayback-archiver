@@ -12,6 +12,7 @@ import {
 import { ArchiveScanSummary } from "./core/vaultScan";
 import { BatchRunController } from "./core/batchRun";
 import { ArchiveProgressModal } from "./ui/ArchiveProgressModal";
+import { ArchiveConfirmationModal } from "./ui/ArchiveConfirmationModal";
 import { registerContextMenus } from "./core/contextMenus";
 import { TFile } from "obsidian";
 
@@ -142,18 +143,21 @@ export default class WaybackArchiverPlugin extends Plugin {
 		title: string,
 		additionalCounts: Array<{ label: string; value: number }> = [],
 	): void {
+		new ArchiveConfirmationModal(this.app, {
+			summary,
+			title,
+			additionalCounts,
+			onStart: () => this.beginArchiveRun(summary),
+		}).open();
+	}
+
+	private beginArchiveRun(summary: ArchiveScanSummary): void {
 		this.activeArchiveRun?.cancel();
 		this.activeRunUnsubscribe?.();
 		const run = new BatchRunController(
 			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
 		);
-		const modal = new ArchiveProgressModal(this.app, {
-			summary,
-			run,
-			title,
-			additionalCounts,
-			onStart: () => this.archiveScannedLinksAction(summary, run),
-		});
+		const modal = new ArchiveProgressModal(this.app, { run });
 		this.activeArchiveRun = run;
 		this.activeArchiveProgressModal = modal;
 		this.activeRunUnsubscribe = run.subscribe((snapshot) => {
@@ -178,6 +182,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 			}
 		});
 		modal.open();
+		void this.archiveScannedLinksAction(summary, run);
 	}
 
 	setStatusBarText(text: string) {

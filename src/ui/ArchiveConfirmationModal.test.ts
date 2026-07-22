@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 class FakeElement {
 	textContent = "";
@@ -48,51 +48,47 @@ vi.mock("obsidian", () => ({
 	},
 }));
 
-import { BatchRunController } from "../core/batchRun";
-import { ArchiveProgressModal } from "./ArchiveProgressModal";
+import { ArchiveConfirmationModal } from "./ArchiveConfirmationModal";
 
-describe("ArchiveProgressModal", () => {
-	beforeEach(() => vi.clearAllMocks());
+const summary = {
+	noteCount: 2,
+	linkCount: 3,
+	uniqueUrlCount: 2,
+	items: [],
+};
 
-	it("opens directly into live URL details", () => {
-		const run = new BatchRunController([
-			{ id: "a", url: "https://a.example", filePath: "a.md" },
-		]);
-		const modal = new ArchiveProgressModal({} as never, { run });
+describe("ArchiveConfirmationModal", () => {
+	it("shows Vault-wide counts and starts only after closing", () => {
+		const events: string[] = [];
+		const modal = new ArchiveConfirmationModal({} as never, {
+			summary,
+			title: "Archive all links in vault?",
+			onStart: () => events.push("start"),
+		});
+		vi.spyOn(modal, "close").mockImplementation(() => {
+			events.push("close");
+			modal.onClose();
+		});
 
 		modal.open();
-		run.updateItem("a", "success", "Captured");
-
 		const content = modal.contentEl as unknown as FakeElement;
-		expect(content.allText).toContain("Captured");
-		expect(content.findByText("Start")).toBeUndefined();
+		expect(content.allText).toContain("2 notes");
+		expect(content.allText).toContain("3 links");
+		content.findByText("Start")?.listeners.get("click")?.();
+
+		expect(events).toEqual(["close", "start"]);
 	});
 
-	it("keeps the shared run active when details close", () => {
-		const run = new BatchRunController([
-			{ id: "a", url: "https://a.example", filePath: "a.md" },
-		]);
-		const cancel = vi.spyOn(run, "cancel");
-		const modal = new ArchiveProgressModal({} as never, { run });
-
+	it("dismisses without starting or canceling unrelated work", () => {
+		const onStart = vi.fn();
+		const modal = new ArchiveConfirmationModal({} as never, { summary, onStart });
 		modal.open();
-		modal.close();
 
-		expect(cancel).not.toHaveBeenCalled();
-	});
-
-	it("cancels the shared run from the details action", () => {
-		const run = new BatchRunController([
-			{ id: "a", url: "https://a.example", filePath: "a.md" },
-		]);
-		const cancel = vi.spyOn(run, "cancel");
-		const modal = new ArchiveProgressModal({} as never, { run });
-
-		modal.open();
 		(modal.contentEl as unknown as FakeElement)
 			.findByText("Cancel")
 			?.listeners.get("click")?.();
 
-		expect(cancel).toHaveBeenCalledOnce();
+		expect(onStart).not.toHaveBeenCalled();
+		expect((modal.contentEl as unknown as FakeElement).allText.trim()).toBe("");
 	});
 });
