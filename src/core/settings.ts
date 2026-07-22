@@ -137,8 +137,112 @@ export interface WaybackArchiverData {
 	profiles: Record<string, WaybackArchiverSettings>;
 	failedArchives?: FailedArchiveEntry[];
 	pendingArchives?: PendingArchiveEntry[];
-	spnAccessKey: string;
-	spnSecretKey: string;
+	spnCredentialStorageMode?: "secretStorage" | "plaintext";
+	spnAccessKeySecretName?: string;
+	spnSecretKeySecretName?: string;
+	spnAccessKey?: string;
+	spnSecretKey?: string;
+}
+
+/**
+ * Safely resolves SPN credentials using Obsidian SecretStorage if available and configured,
+ * falling back to legacy plaintext fields in data.json.
+ */
+export function getSpnCredentials(
+	app: any,
+	data: WaybackArchiverData,
+): { spnAccessKey: string; spnSecretKey: string } {
+	let spnAccessKey = "";
+	let spnSecretKey = "";
+
+	if (data.spnCredentialStorageMode === "plaintext") {
+		return {
+			spnAccessKey: data.spnAccessKey || "",
+			spnSecretKey: data.spnSecretKey || "",
+		};
+	}
+
+	if (app && app.secretStorage && typeof app.secretStorage.getSecret === "function") {
+		if (data.spnAccessKeySecretName) {
+			const secretVal = app.secretStorage.getSecret(data.spnAccessKeySecretName);
+			if (secretVal) {
+				spnAccessKey = secretVal;
+			}
+		}
+		if (data.spnSecretKeySecretName) {
+			const secretVal = app.secretStorage.getSecret(data.spnSecretKeySecretName);
+			if (secretVal) {
+				spnSecretKey = secretVal;
+			}
+		}
+	}
+
+	if (!spnAccessKey) {
+		spnAccessKey = data.spnAccessKey || "";
+	}
+	if (!spnSecretKey) {
+		spnSecretKey = data.spnSecretKey || "";
+	}
+
+	return { spnAccessKey, spnSecretKey };
+}
+
+/**
+ * Automatically imports legacy plaintext credentials from data.json into Obsidian SecretStorage.
+ * Crucially, leaves legacy plaintext credentials in data.json so other synced devices can also auto-import.
+ */
+export async function migrateSecretStorage(
+	app: any,
+	data: WaybackArchiverData,
+): Promise<boolean> {
+	const hasSecretStorage = Boolean(
+		app && app.secretStorage && typeof app.secretStorage.setSecret === "function",
+	);
+
+	let modified = false;
+
+	if (!data.spnCredentialStorageMode) {
+		data.spnCredentialStorageMode = hasSecretStorage ? "secretStorage" : "plaintext";
+		modified = true;
+	}
+
+	if (!hasSecretStorage) {
+		return modified;
+	}
+
+	if (data.spnCredentialStorageMode === "secretStorage") {
+		if (!data.spnAccessKeySecretName && data.spnAccessKey) {
+			const name = "WaybackArchiver_spnAccessKey";
+			app.secretStorage.setSecret(name, data.spnAccessKey);
+			data.spnAccessKeySecretName = name;
+			modified = true;
+		}
+
+		if (!data.spnSecretKeySecretName && data.spnSecretKey) {
+			const name = "WaybackArchiver_spnSecretKey";
+			app.secretStorage.setSecret(name, data.spnSecretKey);
+			data.spnSecretKeySecretName = name;
+			modified = true;
+		}
+	}
+
+	return modified;
+}
+
+/**
+ * Explicitly removes legacy plaintext credentials from data.json (e.g. when user clicks purge button in settings UI).
+ */
+export function purgePlaintextCredentials(data: WaybackArchiverData): boolean {
+	let purged = false;
+	if (data.spnAccessKey !== undefined) {
+		delete data.spnAccessKey;
+		purged = true;
+	}
+	if (data.spnSecretKey !== undefined) {
+		delete data.spnSecretKey;
+		purged = true;
+	}
+	return purged;
 }
 
 /**

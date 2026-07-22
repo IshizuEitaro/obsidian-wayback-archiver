@@ -28,6 +28,7 @@ import {
 	WaybackArchiverData,
 	WaybackArchiverSettings,
 	appendFailedArchiveEntry,
+	getSpnCredentials,
 } from "./settings";
 import {
 	serializeFailedArchiveEntriesToCsv,
@@ -510,7 +511,9 @@ export class ArchiverService {
 			);
 		}
 
-		if (!this.data.spnAccessKey || !this.data.spnSecretKey) {
+		const { spnAccessKey, spnSecretKey } = getSpnCredentials(this.app, this.data);
+
+		if (!spnAccessKey || !spnSecretKey) {
 			if (policy.providers.some((p) => p !== "wayback")) {
 				return await this.resolveFallbackArchive(
 					substitutedUrl,
@@ -560,7 +563,7 @@ export class ArchiverService {
 				url: "https://web.archive.org/save",
 				headers: {
 					Accept: "application/json",
-					Authorization: `LOW ${this.data.spnAccessKey}:${this.data.spnSecretKey}`,
+					Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
 					"Content-Type": "application/x-www-form-urlencoded",
 				},
 				body: new URLSearchParams(params).toString(),
@@ -625,7 +628,7 @@ export class ArchiverService {
 						url: `https://web.archive.org/save/status/${jobId}`,
 						headers: {
 							Accept: "application/json",
-							Authorization: `LOW ${this.data.spnAccessKey}:${this.data.spnSecretKey}`,
+							Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
 						},
 					});
 
