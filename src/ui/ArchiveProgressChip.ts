@@ -43,11 +43,7 @@ export class ArchiveProgressChip {
 
 	private render(snapshot: BatchRunSnapshot): void {
 		if (!this.detailsButton || !this.cancelButton) return;
-		const state = snapshot.canceled
-			? "Canceled"
-			: snapshot.finished
-				? "Complete"
-				: "Archiving";
+		const state = snapshot.canceled ? "Canceled" : snapshot.finished ? "Complete" : "Archiving";
 		this.detailsButton.textContent = `${state} ${snapshot.completed}/${snapshot.total} · ${snapshot.succeeded} saved · ${snapshot.failed} failed`;
 		this.cancelButton.hidden = snapshot.finished || snapshot.canceled;
 	}

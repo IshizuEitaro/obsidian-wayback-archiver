@@ -514,11 +514,7 @@ export class ArchiverService {
 		let modified = false;
 		await this.app.vault.process(file, (latestContent) => {
 			if (run.isCanceled()) return latestContent;
-			const latestIndex = findLatestLinkIndex(
-				latestContent,
-				item.url,
-				item.approximateIndex,
-			);
+			const latestIndex = findLatestLinkIndex(latestContent, item.url, item.approximateIndex);
 			if (latestIndex === null) return latestContent;
 			const latestMatch = Array.from(latestContent.matchAll(LINK_REGEX)).find(
 				(match) => match.index === latestIndex,
@@ -1725,9 +1721,7 @@ export class ArchiverService {
 		if (!isSelection && !this.fileMatchesActiveFilters(file, content)) {
 			return summarizeArchiveWork([]);
 		}
-		const selectionStart = isSelection
-			? editor.posToOffset(editor.getCursor("from"))
-			: 0;
+		const selectionStart = isSelection ? editor.posToOffset(editor.getCursor("from")) : 0;
 		const selectionEnd = isSelection
 			? editor.posToOffset(editor.getCursor("to"))
 			: content.length;

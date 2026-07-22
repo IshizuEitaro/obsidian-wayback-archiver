@@ -2451,9 +2451,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 		);
-		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<
-			typeof vi.fn
-		>;
+		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<typeof vi.fn>;
 		const summary = enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
 		const run = new BatchRunController(
 			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
@@ -2496,9 +2494,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 		);
-		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<
-			typeof vi.fn
-		>;
+		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<typeof vi.fn>;
 		const summary = enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
 		const run = new BatchRunController(
 			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),

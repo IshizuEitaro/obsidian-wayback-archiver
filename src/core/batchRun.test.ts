@@ -51,9 +51,7 @@ describe("BatchRunController", () => {
 		run.updateItem("a", "success", "Captured");
 		run.finish();
 
-		const added = run.addItems([
-			{ id: "b", url: "https://b.example", filePath: "b.md" },
-		]);
+		const added = run.addItems([{ id: "b", url: "https://b.example", filePath: "b.md" }]);
 
 		expect(added).toBe(true);
 		expect(run.snapshot()).toMatchObject({ total: 2, completed: 1, finished: false });
@@ -66,9 +64,7 @@ describe("BatchRunController", () => {
 		]);
 		run.cancel();
 
-		const added = run.addItems([
-			{ id: "b", url: "https://b.example", filePath: "b.md" },
-		]);
+		const added = run.addItems([{ id: "b", url: "https://b.example", filePath: "b.md" }]);
 
 		expect(added).toBe(false);
 		expect(run.snapshot().total).toBe(1);

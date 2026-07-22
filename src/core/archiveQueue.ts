@@ -28,9 +28,7 @@ export class ArchiveQueueController {
 		}
 		if (accepted.length === 0) return 0;
 		this.pending.push(...accepted);
-		this.run.addItems(
-			accepted.map(({ itemId: id, url, filePath }) => ({ id, url, filePath })),
-		);
+		this.run.addItems(accepted.map(({ itemId: id, url, filePath }) => ({ id, url, filePath })));
 		void this.processPending();
 		return accepted.length;
 	}

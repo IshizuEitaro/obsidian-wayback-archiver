@@ -9,10 +9,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 	return { promise, resolve };
 }
 
-function item(
-	dedupeKey: string,
-	execute: ArchiveQueueItem["execute"],
-): ArchiveQueueItem {
+function item(dedupeKey: string, execute: ArchiveQueueItem["execute"]): ArchiveQueueItem {
 	return {
 		dedupeKey,
 		url: `https://${dedupeKey}.example`,
@@ -93,13 +90,8 @@ describe("ArchiveQueueController", () => {
 		const queue = new ArchiveQueueController();
 		const gate = deferred();
 		const second = vi.fn();
-		queue.enqueue([
-			item("first", async () => gate.promise),
-			item("second", second),
-		]);
-		await vi.waitFor(() =>
-			expect(queue.run.snapshot().items[0].status).toBe("capturing"),
-		);
+		queue.enqueue([item("first", async () => gate.promise), item("second", second)]);
+		await vi.waitFor(() => expect(queue.run.snapshot().items[0].status).toBe("capturing"));
 
 		queue.cancel();
 		gate.resolve();
