@@ -155,9 +155,7 @@ describe("context menus", () => {
 		menu.items[0].callback?.();
 		await Promise.resolve();
 
-		expect(noticeMock).toHaveBeenCalledWith(
-			"Open a Markdown note before archiving this URL.",
-		);
+		expect(noticeMock).toHaveBeenCalledWith("Open a Markdown note before archiving this URL.");
 	});
 
 	it("deduplicates selected Markdown notes without doing archival work on open", async () => {

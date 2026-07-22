@@ -51,11 +51,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 		run: BatchRunController,
 	) => Promise<void>;
 	archiveFilesAction!: (files: TFile[], isForce: boolean) => Promise<void>;
-	archiveUrlScopeAction!: (
-		file: TFile,
-		sourceUrl: string,
-		isForce: boolean,
-	) => Promise<void>;
+	archiveUrlScopeAction!: (file: TFile, sourceUrl: string, isForce: boolean) => Promise<void>;
 
 	statusBarItem: HTMLElement | null = null;
 	private archiverService!: ArchiverService;

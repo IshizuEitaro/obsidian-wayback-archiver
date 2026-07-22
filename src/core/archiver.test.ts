@@ -195,9 +195,7 @@ describe("archiveUrlScopeAction", () => {
 		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", false);
 
 		expect(capture).toHaveBeenCalledOnce();
-		expect(setup.getContent().match(/web\.archive\.org\/web\/20260722120000/g)).toHaveLength(
-			4,
-		);
+		expect(setup.getContent().match(/web\.archive\.org\/web\/20260722120000/g)).toHaveLength(4);
 	});
 
 	it("does not capture when every occurrence has a fresh adjacent archive", async () => {
@@ -223,9 +221,11 @@ describe("archiveUrlScopeAction", () => {
 			status: "success",
 			url: "https://web.archive.org/web/20260722120000/https://e.example",
 		});
-		vi.spyOn(ConfirmationModal.prototype, "open").mockImplementation(function () {
-			void this.onSubmit(true);
-		});
+		vi.spyOn(ConfirmationModal.prototype, "open").mockImplementation(
+			function (this: InstanceType<typeof ConfirmationModal>) {
+				void this.onSubmit(true);
+			},
+		);
 
 		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", true);
 

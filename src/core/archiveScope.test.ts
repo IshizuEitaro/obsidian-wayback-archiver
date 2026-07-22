@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "./settings";
-import {
-	areSameSourceUrl,
-	collectUrlOccurrences,
-	reconcileOccurrences,
-} from "./archiveScope";
+import { areSameSourceUrl, collectUrlOccurrences, reconcileOccurrences } from "./archiveScope";
 
 const settings = { ...DEFAULT_SETTINGS, archiveBareUrls: true };
 
@@ -52,9 +48,7 @@ describe("archive URL scope", () => {
 		const resolved = reconcileOccurrences(original, latest, settings);
 
 		expect(resolved).toHaveLength(2);
-		expect(resolved.every((item) => item.matchText !== "[new](https://e.example)")).toBe(
-			true,
-		);
+		expect(resolved.every((item) => item.matchText !== "[new](https://e.example)")).toBe(true);
 	});
 
 	it("does not retarget a changed or deleted occurrence", () => {

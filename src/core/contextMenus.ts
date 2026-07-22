@@ -108,9 +108,7 @@ export function registerContextMenus(plugin: ContextMenuPlugin): void {
 	plugin.registerEvent(
 		plugin.app.workspace.on("files-menu", (menu, files) => {
 			const markdownFiles = Array.from(
-				new Map(
-					files.filter(isMarkdownFile).map((file) => [file.path, file]),
-				).values(),
+				new Map(files.filter(isMarkdownFile).map((file) => [file.path, file])).values(),
 			);
 			if (markdownFiles.length === 0) return;
 			addArchiveItems(

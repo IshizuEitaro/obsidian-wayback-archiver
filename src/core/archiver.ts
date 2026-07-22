@@ -196,10 +196,8 @@ export class ArchiverService {
 		);
 		const adjacent = getAdjacentArchiveLinkMatch(following);
 		if (!adjacent) return true;
-		return checkAdjacentLinkFreshness(
-			extractArchiveTimestamp(adjacent[0]),
-			this.activeSettings,
-		).shouldProcess;
+		return checkAdjacentLinkFreshness(extractArchiveTimestamp(adjacent[0]), this.activeSettings)
+			.shouldProcess;
 	}
 
 	archiveUrlScopeAction = async (
@@ -270,15 +268,11 @@ export class ArchiverService {
 
 		let appliedCount = 0;
 		await this.app.vault.process(file, (latestContent) => {
-			const resolved = reconcileOccurrences(
-				occurrences,
-				latestContent,
-				this.activeSettings,
-			)
+			const resolved = reconcileOccurrences(occurrences, latestContent, this.activeSettings)
+				.filter((occurrence) => areSameSourceUrl(occurrence.url, captureUrl))
 				.filter((occurrence) =>
-					areSameSourceUrl(occurrence.url, captureUrl),
+					this.isOccurrenceEligible(latestContent, occurrence, isForce),
 				)
-				.filter((occurrence) => this.isOccurrenceEligible(latestContent, occurrence, isForce))
 				.sort((left, right) => right.index - left.index);
 			let content = latestContent;
 			for (const occurrence of resolved) {

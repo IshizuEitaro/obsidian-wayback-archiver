@@ -38,9 +38,7 @@ export function areSameSourceUrl(left: string, right: string): boolean {
 	return canonicalLeft !== null && canonicalLeft === canonicalizeSourceUrl(right);
 }
 
-function getOccurrenceFormat(
-	match: RegExpMatchArray,
-): SourceOccurrence["format"] {
+function getOccurrenceFormat(match: RegExpMatchArray): SourceOccurrence["format"] {
 	if (match[1]) return match[0].startsWith("!") ? "markdown-image" : "markdown";
 	if (match[2] || match[3]) return "html";
 	if (match[4] || match[5]) return "html-image";
