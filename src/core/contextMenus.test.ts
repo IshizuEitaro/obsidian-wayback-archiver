@@ -122,4 +122,76 @@ describe("context menus", () => {
 		const { plugin } = createPlugin();
 		expect(plugin.registerEvent).toHaveBeenCalledTimes(4);
 	});
+
+	it("defers URL work until click and uses the active Markdown note", async () => {
+		const { listeners, plugin } = createPlugin();
+		const menu = new TestMenu();
+		const file = markdownFile("active.md");
+		plugin.app.workspace.getActiveFile.mockReturnValue(file);
+
+		listeners.get("url-menu")?.(menu, "https://example.com");
+
+		expect(menu.items.map((item) => item.title)).toEqual([
+			"Archive all occurrences of this URL",
+			"Force re-archive all occurrences of this URL",
+		]);
+		expect(plugin.app.workspace.getActiveFile).not.toHaveBeenCalled();
+		expect(plugin.archiveUrlScopeAction).not.toHaveBeenCalled();
+
+		menu.items[0].callback?.();
+		await Promise.resolve();
+		expect(plugin.archiveUrlScopeAction).toHaveBeenCalledWith(
+			file,
+			"https://example.com",
+			false,
+		);
+	});
+
+	it("notifies after URL click when there is no active Markdown note", async () => {
+		const { listeners } = createPlugin();
+		const menu = new TestMenu();
+		listeners.get("url-menu")?.(menu, "https://example.com");
+
+		menu.items[0].callback?.();
+		await Promise.resolve();
+
+		expect(noticeMock).toHaveBeenCalledWith(
+			"Open a Markdown note before archiving this URL.",
+		);
+	});
+
+	it("deduplicates selected Markdown notes without doing archival work on open", async () => {
+		const { listeners, plugin } = createPlugin();
+		const menu = new TestMenu();
+		const first = markdownFile("one.md");
+		const duplicate = markdownFile("one.md");
+		const second = markdownFile("two.md");
+		const png = Object.assign(Object.create(TFile.prototype), {
+			path: "image.png",
+			extension: "png",
+		});
+
+		listeners.get("files-menu")?.(menu, [first, duplicate, png, second]);
+
+		expect(plugin.archiveFilesAction).not.toHaveBeenCalled();
+		expect(menu.items.map((item) => item.title)).toEqual([
+			"Archive links in selected notes",
+			"Force re-archive links in selected notes",
+		]);
+		menu.items[1].callback?.();
+		await Promise.resolve();
+		expect(plugin.archiveFilesAction).toHaveBeenCalledWith([duplicate, second], true);
+	});
+
+	it("hides the selected-notes actions when no Markdown file is selected", () => {
+		const { listeners } = createPlugin();
+		const menu = new TestMenu();
+		listeners.get("files-menu")?.(menu, [
+			Object.assign(Object.create(TFile.prototype), {
+				path: "image.png",
+				extension: "png",
+			}),
+		]);
+		expect(menu.items).toHaveLength(0);
+	});
 });
