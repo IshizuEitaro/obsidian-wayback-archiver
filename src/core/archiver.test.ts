@@ -128,6 +128,7 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 		data,
 		activeSettings: { ...settings, apiDelay: 0 },
 		saveSettings: vi.fn(),
+		enqueueArchiveRun: vi.fn(),
 	};
 	const service = new ArchiverService(
 		plugin as unknown as ConstructorParameters<typeof ArchiverService>[0],
@@ -178,7 +179,7 @@ describe("archive preflight scan", () => {
 });
 
 describe("archiveUrlScopeAction", () => {
-	it("captures once and applies the result to every eligible occurrence", async () => {
+	it("queues every eligible occurrence without capturing immediately", async () => {
 		const setup = createFileService(
 			[
 				"[a](https://e.example)",
@@ -187,15 +188,17 @@ describe("archiveUrlScopeAction", () => {
 				'<img src="https://e.example">',
 			].join("\n"),
 		);
-		const capture = vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
-			status: "success",
-			url: "https://web.archive.org/web/20260722120000/https://e.example",
-		});
+		const capture = vi.spyOn(setup.service, "archiveUrl");
 
 		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", false);
 
-		expect(capture).toHaveBeenCalledOnce();
-		expect(setup.getContent().match(/web\.archive\.org\/web\/20260722120000/g)).toHaveLength(4);
+		expect(capture).not.toHaveBeenCalled();
+		expect(setup.plugin.enqueueArchiveRun).toHaveBeenCalledOnce();
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0]).toMatchObject({
+			noteCount: 1,
+			linkCount: 4,
+			uniqueUrlCount: 1,
+		});
 	});
 
 	it("does not capture when every occurrence has a fresh adjacent archive", async () => {
@@ -210,29 +213,60 @@ describe("archiveUrlScopeAction", () => {
 		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", false);
 
 		expect(capture).not.toHaveBeenCalled();
+		expect(setup.plugin.enqueueArchiveRun).not.toHaveBeenCalled();
 		vi.useRealTimers();
 	});
 
-	it("uses force replacement semantics for all occurrences", async () => {
+	it("queues force replacement for every occurrence without another confirmation", async () => {
 		const setup = createFileService(
 			"[a](https://e.example) [(Archived)](https://web.archive.org/web/20200101000000/https://e.example)\n[b](https://e.example)",
 		);
-		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
-			status: "success",
-			url: "https://web.archive.org/web/20260722120000/https://e.example",
-		});
-		vi.spyOn(ConfirmationModal.prototype, "open").mockImplementation(
-			function (this: InstanceType<typeof ConfirmationModal>) {
-				void this.onSubmit(true);
-			},
-		);
+		const confirmation = vi.spyOn(ConfirmationModal.prototype, "open");
 
 		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", true);
 
-		await vi.waitFor(() => {
-			expect(setup.getContent()).not.toContain("20200101000000");
-			expect(setup.getContent().match(/20260722120000/g)).toHaveLength(2);
+		expect(confirmation).not.toHaveBeenCalled();
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0].items).toHaveLength(2);
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0].items).toEqual(
+			expect.arrayContaining([expect.objectContaining({ isForce: true })]),
+		);
+	});
+});
+
+describe("current editor archive submission", () => {
+	const createEditor = (content: string, selectionStart: number, selectionEnd: number) => ({
+		getSelection: () => content.slice(selectionStart, selectionEnd),
+		getValue: () => content,
+		getCursor: (fromTo?: string) => ({
+			line: 0,
+			ch: fromTo === "from" ? selectionStart : selectionEnd,
+		}),
+		posToOffset: (position: { ch: number }) => position.ch,
+	});
+
+	it("queues all eligible links in the current note", async () => {
+		const setup = createFileService("[a](https://a.example)\n[b](https://b.example)");
+		const editor = createEditor(setup.getContent(), 0, 0);
+
+		await setup.service.archiveLinksAction(editor as never, { file: setup.file } as never);
+
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0]).toMatchObject({
+			noteCount: 1,
+			linkCount: 2,
 		});
+	});
+
+	it("queues only links fully contained in the selection", async () => {
+		const content = "[a](https://a.example)\n[b](https://b.example)";
+		const setup = createFileService(content);
+		const selectionEnd = content.indexOf("\n");
+		const editor = createEditor(content, 0, selectionEnd);
+
+		await setup.service.archiveLinksAction(editor as never, { file: setup.file } as never);
+
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0].items).toEqual([
+			expect.objectContaining({ url: "https://a.example", approximateIndex: 0 }),
+		]);
 	});
 });
 
@@ -2343,6 +2377,7 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 				...settingsOverrides,
 			},
 			saveSettings: vi.fn(),
+			enqueueArchiveRun: vi.fn(),
 		};
 
 		return new ArchiverService(
@@ -2416,6 +2451,14 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 		);
+		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<
+			typeof vi.fn
+		>;
+		const summary = enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
+		const run = new BatchRunController(
+			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
+		);
+		await service.archiveScannedItemAction(summary.items[0], run, summary.items[0].id);
 
 		const failedList = service["plugin"].data.failedArchives ?? [];
 		expect(failedList).toHaveLength(1);
@@ -2453,6 +2496,14 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 		);
+		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<
+			typeof vi.fn
+		>;
+		const summary = enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
+		const run = new BatchRunController(
+			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
+		);
+		await service.archiveScannedItemAction(summary.items[0], run, summary.items[0].id);
 
 		const failedList = service["plugin"].data.failedArchives ?? [];
 		expect(failedList).toHaveLength(1);

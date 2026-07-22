@@ -50,6 +50,8 @@ export default class WaybackArchiverPlugin extends Plugin {
 		summary: ArchiveScanSummary,
 		run: BatchRunController,
 	) => Promise<void>;
+	archiveScannedItemAction!: ArchiverService["archiveScannedItemAction"];
+	enqueueArchiveRun!: (summary: ArchiveScanSummary) => void;
 	archiveFilesAction!: (files: TFile[], isForce: boolean) => Promise<void>;
 	archiveUrlScopeAction!: (file: TFile, sourceUrl: string, isForce: boolean) => Promise<void>;
 
@@ -127,6 +129,8 @@ export default class WaybackArchiverPlugin extends Plugin {
 			this.archiverService.scanVaultForArchiving(isForce);
 		this.archiveScannedLinksAction = (summary, run) =>
 			this.archiverService.archiveScannedLinksAction(summary, run);
+		this.archiveScannedItemAction = (item, run, itemId) =>
+			this.archiverService.archiveScannedItemAction(item, run, itemId);
 		this.archiveFilesAction = (files, isForce) =>
 			this.archiverService.archiveFilesAction(files, isForce);
 		this.archiveUrlScopeAction = (file, sourceUrl, isForce) =>
