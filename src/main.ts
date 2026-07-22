@@ -58,6 +58,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 
 	statusBarItem: HTMLElement | null = null;
 	private archiverService!: ArchiverService;
+	private isUnloaded = false;
 
 	data: WaybackArchiverData = {
 		activeProfileId: "default",
@@ -73,6 +74,7 @@ export default class WaybackArchiverPlugin extends Plugin {
 	}
 
 	async onload() {
+		this.isUnloaded = false;
 		// console.log("Wayback Archiver plugin loaded - version 1.0.0");
 
 		addIcon("wayback-ribbon", RIBBON_ICON);
@@ -83,10 +85,21 @@ export default class WaybackArchiverPlugin extends Plugin {
 		this.setStatusBarText("");
 
 		this.archiverService = new ArchiverService(this);
-		this.archiverService.startPendingQueueScheduler();
+		this.bindArchiverActions();
 
-		// Assign action handlers from the service
-		// These assignments ensure the methods are called with the correct 'this' context (the archiverService instance)
+		this.app.workspace.onLayoutReady(() => {
+			if (this.isUnloaded) return;
+			this.archiverService.startPendingQueueScheduler();
+		});
+
+		registerCommands(this);
+
+		// console.log('Loading Wayback Archiver Plugin');
+
+		this.addSettingTab(new WaybackArchiverSettingTab(this.app, this));
+	}
+
+	private bindArchiverActions(): void {
 		this.archiveLinksAction = this.archiverService.archiveLinksAction;
 		this.archiveAllLinksVaultAction = this.archiverService.archiveAllLinksVaultAction;
 		this.submitAllLinksVaultToArchiveTodayAction =
@@ -103,12 +116,6 @@ export default class WaybackArchiverPlugin extends Plugin {
 		this.insertLatestFallbackSnapshotAction =
 			this.archiverService.insertLatestFallbackSnapshotAction;
 		this.runPendingQueueCycle = () => this.archiverService.runPendingQueueCycle();
-
-		registerCommands(this);
-
-		// console.log('Loading Wayback Archiver Plugin');
-
-		this.addSettingTab(new WaybackArchiverSettingTab(this.app, this));
 	}
 
 	setStatusBarText(text: string) {
@@ -119,7 +126,8 @@ export default class WaybackArchiverPlugin extends Plugin {
 
 	onunload() {
 		// console.log('Unloading Wayback Archiver Plugin');
-		this.archiverService.stopPendingQueueScheduler();
+		this.isUnloaded = true;
+		this.archiverService?.stopPendingQueueScheduler();
 	}
 
 	async loadSettings() {
