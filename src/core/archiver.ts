@@ -43,6 +43,11 @@ import {
 	selectFullyContainedLinkMatches,
 } from "../utils/contentManipulator";
 import { runAsyncAction } from "../utils/async";
+import {
+	ArchiveScanSummary,
+	ArchiveWorkItem,
+	summarizeArchiveWork,
+} from "./vaultScan";
 
 export type ArchiveMode = "selection" | "file" | "vault";
 
@@ -147,6 +152,76 @@ export class ArchiverService {
 
 	private async saveSettings(): Promise<void> {
 		await this.plugin.saveSettings();
+	}
+
+	async scanFilesForArchiving(files: TFile[], isForce: boolean): Promise<ArchiveScanSummary> {
+		const uniqueFiles = Array.from(
+			new Map(
+				files
+					.filter((file) => file.path.toLowerCase().endsWith(".md"))
+					.map((file) => [file.path, file]),
+			).values(),
+		);
+		const items: ArchiveWorkItem[] = [];
+
+		for (const file of uniqueFiles) {
+			let content: string;
+			try {
+				content = await this.app.vault.read(file);
+			} catch {
+				new Notice(`Error reading file: ${file.path}`);
+				continue;
+			}
+			if (
+				this.activeSettings.pathPatterns.length > 0 &&
+				!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)
+			) {
+				continue;
+			}
+			if (
+				this.activeSettings.wordPatterns.length > 0 &&
+				!this.activeSettings.wordPatterns.some((pattern) => content.includes(pattern))
+			) {
+				continue;
+			}
+
+			const { linksToProcess } = this.filterLinksForArchiving(
+				Array.from(content.matchAll(LINK_REGEX)),
+				content,
+				isForce,
+			);
+			for (const match of linksToProcess) {
+				const approximateIndex = match.index;
+				if (approximateIndex === undefined) continue;
+				if (!isForce) {
+					const following = content.slice(
+						approximateIndex + match[0].length,
+						approximateIndex + match[0].length + ADJACENT_LINK_SEARCH_LIMIT,
+					);
+					const adjacent = getAdjacentArchiveLinkMatch(following);
+					if (adjacent) {
+						const freshness = checkAdjacentLinkFreshness(
+							extractArchiveTimestamp(adjacent[0]),
+							this.activeSettings,
+						);
+						if (!freshness.shouldProcess) continue;
+					}
+				}
+				items.push({
+					id: `${file.path}:${approximateIndex}`,
+					filePath: file.path,
+					url: getUrlFromMatch(match),
+					approximateIndex,
+					isForce,
+				});
+			}
+		}
+
+		return summarizeArchiveWork(items);
+	}
+
+	scanVaultForArchiving(isForce: boolean): Promise<ArchiveScanSummary> {
+		return this.scanFilesForArchiving(this.app.vault.getMarkdownFiles(), isForce);
 	}
 
 	private filterLinksForArchiving(

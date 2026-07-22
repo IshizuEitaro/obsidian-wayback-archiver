@@ -149,6 +149,31 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 	};
 };
 
+describe("archive preflight scan", () => {
+	it("excludes fresh adjacent archives, ignored domains, and disabled bare URLs", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-22T12:00:00Z"));
+		const content = [
+			"[kept](https://kept.example)",
+			"https://bare.example",
+			"[ignored](https://sub.skip.example)",
+			"[fresh](https://fresh.example) [(Archived)](https://web.archive.org/web/20260722110000/https://fresh.example)",
+		].join("\n");
+		const { file, service } = createFileService(content, {
+			...DEFAULT_SETTINGS,
+			archiveBareUrls: false,
+			ignoredDomains: ["skip.example"],
+			archiveFreshnessDays: 1,
+		});
+
+		const summary = await service.scanFilesForArchiving([file], false);
+
+		expect(summary).toMatchObject({ noteCount: 1, linkCount: 1, uniqueUrlCount: 1 });
+		expect(summary.items[0].url).toBe("https://kept.example");
+		vi.useRealTimers();
+	});
+});
+
 describe("ArchiverService.archiveUrl", () => {
 	const createService = (
 		overrides: Partial<WaybackArchiverData> = {},
