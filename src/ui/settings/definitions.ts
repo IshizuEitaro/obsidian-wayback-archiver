@@ -4,6 +4,7 @@ import type {
 	SettingDefinitionItem,
 	SettingDefinitionPage,
 } from "obsidian";
+import { SecretComponent } from "obsidian";
 import type WaybackArchiverPlugin from "../../main";
 import {
 	DeclarativeSettingKey,
@@ -11,6 +12,14 @@ import {
 	validateIntegerRange,
 	validateNonNegativeInteger,
 } from "./bindings";
+import {
+	addSubstitutionRule,
+	deleteSubstitutionRule,
+	purgeStoredPlaintextCredentials,
+	reorderSubstitutionRule,
+	switchCredentialStorageMode,
+	updateSubstitutionRule,
+} from "./shared";
 
 export interface SettingDefinitionContext {
 	plugin: WaybackArchiverPlugin;
@@ -32,6 +41,191 @@ const textArea = (key: DeclarativeSettingKey): SettingControl<DeclarativeSetting
 	key,
 	rows: 5,
 });
+
+function buildCredentialGroup(
+	context: SettingDefinitionContext,
+): SettingDefinitionItem<DeclarativeSettingKey> {
+	const { plugin } = context;
+	const isSecretMode = () => plugin.data.spnCredentialStorageMode === "secretStorage";
+	return {
+		type: "group",
+		heading: "Archive.org API keys",
+		items: [
+			{
+				name: "API key storage method",
+				desc: "Choose SecretStorage or plaintext data.json storage.",
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						dropdown
+							.addOption("secretStorage", "SecretStorage")
+							.addOption("plaintext", "Plaintext data.json")
+							.setValue(plugin.data.spnCredentialStorageMode ?? "plaintext")
+							.onChange(async (mode) => {
+								await switchCredentialStorageMode(
+									plugin,
+									mode as "secretStorage" | "plaintext",
+								);
+								context.refresh(true);
+							});
+					});
+				},
+			},
+			{
+				name: "Archive.org SPN access key",
+				desc: "Credential used by the SPN API v2.",
+				render: (setting) => {
+					if (isSecretMode()) {
+						const name = plugin.data.spnAccessKeySecretName ?? "WaybackArchiver_spnAccessKey";
+						new SecretComponent(plugin.app, setting.controlEl)
+							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
+							.onChange(async (value) => {
+								plugin.app.secretStorage.setSecret(name, value);
+								plugin.data.spnAccessKeySecretName = name;
+								await plugin.saveSettings();
+							});
+					} else {
+						setting.addText((text) => {
+							text.inputEl.type = "password";
+							text.setValue(plugin.data.spnAccessKey ?? "").onChange(async (value) => {
+								plugin.data.spnAccessKey = value;
+								await plugin.saveSettings();
+							});
+						});
+					}
+				},
+			},
+			{
+				name: "Archive.org SPN secret key",
+				desc: "Secret credential used by the SPN API v2.",
+				render: (setting) => {
+					if (isSecretMode()) {
+						const name = plugin.data.spnSecretKeySecretName ?? "WaybackArchiver_spnSecretKey";
+						new SecretComponent(plugin.app, setting.controlEl)
+							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
+							.onChange(async (value) => {
+								plugin.app.secretStorage.setSecret(name, value);
+								plugin.data.spnSecretKeySecretName = name;
+								await plugin.saveSettings();
+							});
+					} else {
+						setting.addText((text) => {
+							text.inputEl.type = "password";
+							text.setValue(plugin.data.spnSecretKey ?? "").onChange(async (value) => {
+								plugin.data.spnSecretKey = value;
+								await plugin.saveSettings();
+							});
+						});
+					}
+				},
+			},
+			{
+				name: "Purge plaintext API keys",
+				desc: "Remove legacy plaintext credentials after synced devices import them.",
+				visible: () =>
+					isSecretMode() && Boolean(plugin.data.spnAccessKey || plugin.data.spnSecretKey),
+				render: (setting) => {
+					setting.addButton((button) =>
+						button.setButtonText("Purge plaintext keys").onClick(async () => {
+							await purgeStoredPlaintextCredentials(plugin);
+							context.refresh(true);
+						}),
+					);
+				},
+			},
+		],
+	};
+}
+
+function buildProfileGroup(
+	context: SettingDefinitionContext,
+): SettingDefinitionItem<DeclarativeSettingKey> {
+	const { plugin } = context;
+	return {
+		type: "group",
+		heading: "Profiles",
+		items: [
+			{
+				name: "Active profile",
+				desc: "Choose which settings profile is active.",
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						for (const profileId of Object.keys(plugin.data.profiles)) {
+							dropdown.addOption(profileId, profileId);
+						}
+						dropdown.setValue(plugin.data.activeProfileId).onChange(async (value) => {
+							plugin.data.activeProfileId = value;
+							await plugin.saveSettings();
+							context.refresh(true);
+						});
+					});
+				},
+			},
+			{
+				name: "Profile actions",
+				desc: "Create, rename, or delete profiles.",
+				render: (setting) => {
+					setting.addButton((button) =>
+						button.setButtonText("Create").onClick(() => void context.createProfile()),
+					);
+					setting.addButton((button) =>
+						button
+							.setButtonText("Rename")
+							.setDisabled(plugin.data.activeProfileId === "default")
+							.onClick(() => void context.renameProfile()),
+					);
+					setting.addButton((button) =>
+						button
+							.setButtonText("Delete")
+							.setDisabled(plugin.data.activeProfileId === "default")
+							.onClick(() => void context.deleteProfile()),
+					);
+				},
+			},
+		],
+	};
+}
+
+function buildSubstitutionList(
+	context: SettingDefinitionContext,
+): SettingDefinitionItem<DeclarativeSettingKey> {
+	const { plugin } = context;
+	return {
+		type: "list",
+		heading: "URL substitution rules",
+		emptyState: "No substitution rules defined.",
+		items: plugin.activeSettings.substitutionRules.map((rule) => ({
+			name: rule.find || "New substitution rule",
+			desc: rule.regex ? "Regular expression" : "Plain text",
+			render: (setting) => {
+				setting.addText((text) =>
+					text.setPlaceholder("Find").setValue(rule.find).onChange((value) =>
+						updateSubstitutionRule(plugin, rule, { find: value }),
+					),
+				);
+				setting.addText((text) =>
+					text.setPlaceholder("Replace").setValue(rule.replace).onChange((value) =>
+						updateSubstitutionRule(plugin, rule, { replace: value }),
+					),
+				);
+				setting.addToggle((toggle) =>
+					toggle.setValue(rule.regex).onChange((value) =>
+						updateSubstitutionRule(plugin, rule, { regex: value }),
+					),
+				);
+			},
+		})),
+		addItem: {
+			name: "Add substitution rule",
+			action: () => void addSubstitutionRule(plugin).then(() => context.refresh(true)),
+		},
+		onDelete: (index) =>
+			void deleteSubstitutionRule(plugin, index).then(() => context.refresh(true)),
+		onReorder: (oldIndex, newIndex) =>
+			void reorderSubstitutionRule(plugin, oldIndex, newIndex).then(() =>
+				context.refresh(true),
+			),
+	};
+}
 
 function buildFilteringPage(): SettingDefinitionPage<DeclarativeSettingKey> {
 	return {
@@ -227,6 +421,8 @@ export function buildSettingDefinitions(
 	context: SettingDefinitionContext,
 ): SettingDefinitionItem<DeclarativeSettingKey>[] {
 	return [
+		buildCredentialGroup(context),
+		buildProfileGroup(context),
 		{
 			type: "page",
 			name: "Archive link format",
@@ -245,6 +441,7 @@ export function buildSettingDefinitions(
 			],
 		},
 		buildFilteringPage(),
+		buildSubstitutionList(context),
 		buildAdvancedPage(),
 		buildFallbackPage(context),
 		buildSpnPage(),

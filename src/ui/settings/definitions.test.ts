@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("obsidian", () => ({
+	SecretComponent: class SecretComponent {},
+}));
 import type { SettingDefinitionItem } from "obsidian";
 import { DEFAULT_SETTINGS } from "../../core/settings";
 import { buildSettingDefinitions } from "./definitions";
@@ -58,5 +62,22 @@ describe("declarative setting definitions", () => {
 		);
 		expect(typeof delay?.visible).toBe("function");
 		expect((delay?.visible as () => boolean)()).toBe(false);
+	});
+
+	it("defines credential, profile, and substitution-rule controls", () => {
+		const definitions = buildSettingDefinitions(createContext());
+		const flat = flatten(definitions);
+		expect(flat.map((item) => item.heading)).toEqual(
+			expect.arrayContaining([
+				"Archive.org API keys",
+				"Profiles",
+				"URL substitution rules",
+			]),
+		);
+		const substitutions = flat.find(
+			(item) => item.heading === "URL substitution rules",
+		);
+		expect(substitutions?.type).toBe("list");
+		expect(substitutions?.addItem).toBeDefined();
 	});
 });
