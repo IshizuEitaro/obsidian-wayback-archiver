@@ -343,14 +343,22 @@ export class ArchiverService {
 				checkStartIndex,
 				checkStartIndex + ADJACENT_LINK_SEARCH_LIMIT,
 			);
-			if (
-				!isForce &&
-				isFollowedByArchiveLink(textAfter) &&
-				cached &&
-				Date.now() - cached.timestamp < getFreshnessThresholdMs(this.activeSettings)
-			) {
-				localSkippedCount++;
-				return false;
+			if (!isForce) {
+				const adjacent = getAdjacentArchiveLinkMatch(textAfter);
+				if (adjacent) {
+					const cachedArchiveIsFresh =
+						cached !== undefined &&
+						Date.now() - cached.timestamp <
+							getFreshnessThresholdMs(this.activeSettings);
+					const adjacentArchiveIsFresh = !checkAdjacentLinkFreshness(
+						extractArchiveTimestamp(adjacent[0]),
+						this.activeSettings,
+					).shouldProcess;
+					if (cachedArchiveIsFresh || adjacentArchiveIsFresh) {
+						localSkippedCount++;
+						return false;
+					}
+				}
 			}
 
 			if (this.isUrlIgnored(url)) {

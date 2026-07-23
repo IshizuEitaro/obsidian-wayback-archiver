@@ -266,6 +266,39 @@ describe("current editor archive submission", () => {
 		});
 	});
 
+	it("queues only unarchived links when the rest have fresh adjacent archives", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-22T12:00:00Z"));
+		const unarchived = Array.from(
+			{ length: 5 },
+			(_, index) => `[new-${index}](https://new-${index}.example)`,
+		);
+		const fresh = Array.from(
+			{ length: 63 },
+			(_, index) =>
+				`[fresh-${index}](https://fresh-${index}.example) [(Archived)](https://web.archive.org/web/20260722110000/https://fresh-${index}.example)`,
+		);
+		const setup = createFileService([...unarchived, ...fresh].join("\n"), {
+			...DEFAULT_SETTINGS,
+			archiveFreshnessDays: 1,
+		});
+		const editor = createEditor(setup.getContent(), 0, 0);
+
+		await setup.service.archiveLinksAction(editor as never, { file: setup.file } as never);
+
+		expect(setup.plugin.enqueueArchiveRun).toHaveBeenCalledOnce();
+		const summary = setup.plugin.enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
+		expect(summary).toMatchObject({
+			noteCount: 1,
+			linkCount: 5,
+			uniqueUrlCount: 5,
+		});
+		expect(summary.items.map(({ url }) => url)).toEqual(
+			unarchived.map((_, index) => `https://new-${index}.example`),
+		);
+		vi.useRealTimers();
+	});
+
 	it("queues only links fully contained in the selection", async () => {
 		const content = "[a](https://a.example)\n[b](https://b.example)";
 		const setup = createFileService(content);
