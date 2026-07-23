@@ -153,6 +153,14 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 			expect(extractArchiveTimestamp(megalodon)).toBe("20260507000135");
 		});
 
+		it("does not cross an intervening Markdown link to find an archive link", () => {
+			const nextText =
+				"\n[next](https://next.example) [(Archived)](https://web.archive.org/web/20260722110000/https://next.example)";
+
+			expect(getAdjacentArchiveLinkMatch(nextText)).toBeNull();
+			expect(isFollowedByArchiveLink(nextText)).toBe(false);
+		});
+
 		it("respects the adjacent link search limit of 300 characters", () => {
 			expect(ADJACENT_LINK_SEARCH_LIMIT).toBe(300);
 
