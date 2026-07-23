@@ -142,14 +142,26 @@ export function isArchiveTimestampFresh(
 	now: number = Date.now(),
 ): boolean {
 	if (freshnessDays <= 0 || !/^\d{14}$/u.test(timestamp)) return false;
-	const capturedAt = Date.UTC(
-		Number(timestamp.slice(0, 4)),
-		Number(timestamp.slice(4, 6)) - 1,
-		Number(timestamp.slice(6, 8)),
-		Number(timestamp.slice(8, 10)),
-		Number(timestamp.slice(10, 12)),
-		Number(timestamp.slice(12, 14)),
-	);
+	const year = Number(timestamp.slice(0, 4));
+	const month = Number(timestamp.slice(4, 6));
+	const day = Number(timestamp.slice(6, 8));
+	const hour = Number(timestamp.slice(8, 10));
+	const minute = Number(timestamp.slice(10, 12));
+	const second = Number(timestamp.slice(12, 14));
+	const capturedDate = new Date(0);
+	capturedDate.setUTCFullYear(year, month - 1, day);
+	capturedDate.setUTCHours(hour, minute, second, 0);
+	if (
+		capturedDate.getUTCFullYear() !== year ||
+		capturedDate.getUTCMonth() !== month - 1 ||
+		capturedDate.getUTCDate() !== day ||
+		capturedDate.getUTCHours() !== hour ||
+		capturedDate.getUTCMinutes() !== minute ||
+		capturedDate.getUTCSeconds() !== second
+	) {
+		return false;
+	}
+	const capturedAt = capturedDate.getTime();
 	const age = now - capturedAt;
 	return Number.isFinite(capturedAt) && age >= 0 && age < freshnessDays * 86_400_000;
 }

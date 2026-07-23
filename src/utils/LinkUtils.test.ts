@@ -31,6 +31,11 @@ describe("safe URL filtering helpers", () => {
 		expect(isArchiveTimestampFresh("20260722115959", 0, now)).toBe(false);
 		expect(isArchiveTimestampFresh("invalid", 30, now)).toBe(false);
 	});
+
+	it("rejects semantically invalid archive timestamps", () => {
+		const now = new Date("2026-07-22T12:00:00Z").getTime();
+		expect(isArchiveTimestampFresh("20260230120000", 365, now)).toBe(false);
+	});
 	it("distinguishes bare URLs while retaining image URLs", () => {
 		const matches = Array.from(
 			"[page](https://page.example) ![image](https://img.example/a.png) <https://auto.example> https://bare.example".matchAll(
