@@ -250,6 +250,8 @@ These settings apply only to the **currently active profile**.
 
 Control which notes and links are processed.
 
+- **Ignored domains:** Skip exact domains and all of their subdomains. Separate entries with commas or new lines. Default: empty.
+- **Archive bare URLs:** Archive pasted HTTP(S) URLs that are not wrapped in Markdown or HTML links. Markdown and HTML image URLs remain eligible regardless of this setting. Default: enabled.
 - **Ignore URL Patterns:** URLs matching these patterns (one per line, supports simple text or Regex) will be skipped during archiving. `web.archive.org` is ignored by default.
 - **URL Patterns:** (All commands) Only process links whose URL matches one of these patterns (one per line, simple text or Regex). Leave empty to process links with any URL (respecting Ignore Patterns).
 - **Path Patterns:** (Vault-wide commands and selection-free current-note commands) Only process notes whose file path matches one of these patterns (one per line, simple text or Regex). Leave empty to process notes in any path.

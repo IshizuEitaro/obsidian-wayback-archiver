@@ -279,6 +279,8 @@ Archive.org SPN API v2 の利用に必要なキーであり、全プロフィー
 
 #### フィルタリングルール (Filtering Rules)
 
+- **Ignored domains**：完全一致するドメインとそのすべてのサブドメインをスキップします。カンマまたは改行で区切って入力します。デフォルト：空欄。
+- **Archive bare URLs**：Markdown または HTML リンクで囲まれていない、貼り付けられた HTTP(S) URL もアーカイブします。この設定にかかわらず、Markdown および HTML の画像 URL は対象です。デフォルト：有効。
 - **Ignore URL Patterns**：スキップする URL パターンを 1 行に 1 つずつ入力します（テキストまたは正規表現）。デフォルトで `web.archive.org` は無視されます。
 - **URL Patterns**：（全コマンド対象）このパターンのいずれかに一致する URL のみ処理します（1 行 1 パターン）。空欄の場合はすべての URL を処理します（Ignore URL Patterns が優先）。
 - **Path Patterns**：（Vault 全体、および選択なしの現在ノート処理対象）ファイルパスがパターンに一致するノートのみ処理します（1 行 1 パターン）。空欄の場合はすべてのノートを処理します。
