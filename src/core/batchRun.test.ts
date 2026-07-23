@@ -56,10 +56,7 @@ describe("BatchRunController", () => {
 		run.updateItem("b", "success", "Captured");
 
 		expect(run.snapshot()).toMatchObject({ canceled: false, completed: 2, succeeded: 1 });
-		expect(run.snapshot().items.map(({ status }) => status)).toEqual([
-			"canceled",
-			"success",
-		]);
+		expect(run.snapshot().items.map(({ status }) => status)).toEqual(["canceled", "success"]);
 	});
 
 	it("interrupts only the canceled item's active delay", async () => {

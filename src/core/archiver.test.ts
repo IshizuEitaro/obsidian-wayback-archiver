@@ -344,9 +344,7 @@ describe("archiveScannedLinksAction", () => {
 
 		await service.archiveScannedItemAction(item, run, "queue-item").catch(() => undefined);
 
-		expect(getContent()).not.toContain(
-			"web.archive.org/web/20260722120000/https://a.example",
-		);
+		expect(getContent()).not.toContain("web.archive.org/web/20260722120000/https://a.example");
 		expect(run.snapshot().items[0].status).toBe("canceled");
 	});
 });

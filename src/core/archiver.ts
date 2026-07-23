@@ -1699,11 +1699,7 @@ export class ArchiverService {
 				);
 			}
 			if (run) {
-				await waitForBatchDelay(
-					this.activeSettings.throttleRetryDelayMs,
-					run,
-					itemId,
-				);
+				await waitForBatchDelay(this.activeSettings.throttleRetryDelayMs, run, itemId);
 			} else {
 				await new Promise((resolve) =>
 					window.setTimeout(resolve, this.activeSettings.throttleRetryDelayMs),
