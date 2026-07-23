@@ -1,6 +1,8 @@
 import { App, Modal } from "obsidian";
 import { BatchRunController, BatchRunSnapshot } from "../core/batchRun";
 
+const ITEM_CANCELABLE_STATUSES = new Set(["pending", "capturing", "throttled", "fallback"]);
+
 export interface ArchiveProgressModalOptions {
 	run: BatchRunController;
 }
@@ -41,11 +43,24 @@ export class ArchiveProgressModal extends Modal {
 		const list = this.contentEl.createDiv({ cls: "wayback-progress-list" });
 		for (const item of snapshot.items) {
 			const row = list.createDiv({ cls: "wayback-progress-row" });
-			row.createDiv({ text: item.url, cls: "wayback-progress-url" });
-			row.createDiv({
+			const content = row.createDiv({ cls: "wayback-progress-row-content" });
+			content.createDiv({ text: item.url, cls: "wayback-progress-url" });
+			content.createDiv({
 				text: `${item.filePath} · ${item.status} · ${item.detail}`,
 				cls: "wayback-progress-detail",
 			});
+			if (ITEM_CANCELABLE_STATUSES.has(item.status)) {
+				const skipButton = row.createEl("button", {
+					text: "Skip",
+					cls: "wayback-progress-skip",
+				});
+				skipButton.type = "button";
+				skipButton.title =
+					item.status === "pending"
+						? "Skip this link"
+						: "Stop processing this link. A request already sent to an archive service cannot be revoked.";
+				skipButton.addEventListener("click", () => this.options.run.cancelItem(item.id));
+			}
 		}
 		const buttons = this.contentEl.createDiv({ cls: "modal-button-container" });
 		const button = buttons.createEl("button", {

@@ -30,6 +30,13 @@ class FakeElement {
 		return this.children.map((child) => child.findByText(text)).find(Boolean);
 	}
 
+	findAllByText(text: string): FakeElement[] {
+		return [
+			...(this.textContent === text ? [this] : []),
+			...this.children.flatMap((child) => child.findAllByText(text)),
+		];
+	}
+
 	get allText(): string {
 		return [this.textContent, ...this.children.map((child) => child.allText)].join(" ");
 	}
@@ -94,5 +101,25 @@ describe("ArchiveProgressModal", () => {
 			?.listeners.get("click")?.();
 
 		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it("shows Skip only for unfinished rows and cancels that item", () => {
+		const run = new BatchRunController([
+			{ id: "pending", url: "https://pending.example", filePath: "pending.md" },
+			{ id: "done", url: "https://done.example", filePath: "done.md" },
+		]);
+		run.updateItem("done", "success", "Captured");
+		const cancelItem = vi.spyOn(run, "cancelItem");
+		const modal = new ArchiveProgressModal({} as never, { run });
+
+		modal.open();
+		const content = modal.contentEl as unknown as FakeElement;
+		const skipButtons = content.findAllByText("Skip");
+		skipButtons[0]?.listeners.get("click")?.();
+
+		expect(skipButtons).toHaveLength(1);
+		expect(cancelItem).toHaveBeenCalledWith("pending");
+		expect(run.snapshot().items[0].status).toBe("canceled");
+		expect(run.isCanceled()).toBe(false);
 	});
 });

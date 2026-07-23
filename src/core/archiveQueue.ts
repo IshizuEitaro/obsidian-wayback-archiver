@@ -47,6 +47,10 @@ export class ArchiveQueueController {
 			while (!this.run.isCanceled()) {
 				const item = this.pending.shift();
 				if (!item) break;
+				if (this.run.isItemCanceled(item.itemId)) {
+					this.activeKeys.delete(item.dedupeKey);
+					continue;
+				}
 				this.run.updateItem(item.itemId, "capturing", "Processing");
 				try {
 					await item.execute(this.run, item.itemId);

@@ -47,8 +47,16 @@
 }
 
 .wayback-progress-row {
+	align-items: center;
 	padding: 0.5rem 0.75rem;
 	border-bottom: 1px solid var(--background-modifier-border);
+	display: flex;
+	gap: 0.75rem;
+}
+
+.wayback-progress-row-content {
+	flex: 1 1 auto;
+	min-width: 0;
 }
 
 .wayback-progress-url {
@@ -59,6 +67,13 @@
 .wayback-progress-detail {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
+}
+
+.wayback-progress-skip {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	min-height: 2rem;
+	padding: 0.25rem 0.5rem;
 }
 
 .wayback-status-clickable {

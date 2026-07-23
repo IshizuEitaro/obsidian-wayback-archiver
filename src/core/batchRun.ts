@@ -51,8 +51,17 @@ export class BatchRunController {
 		if (this.canceled) throw new BatchCanceledError();
 	}
 
+	assertItemActive(id: string): void {
+		this.assertActive();
+		if (this.isItemCanceled(id)) throw new BatchCanceledError();
+	}
+
 	isCanceled(): boolean {
 		return this.canceled;
+	}
+
+	isItemCanceled(id: string): boolean {
+		return this.items.some((item) => item.id === id && item.status === "canceled");
 	}
 
 	addItems(items: Array<Pick<BatchItemState, "id" | "url" | "filePath">>): boolean {
@@ -77,10 +86,34 @@ export class BatchRunController {
 
 	updateItem(id: string, status: BatchItemStatus, detail: string): void {
 		const item = this.items.find((candidate) => candidate.id === id);
-		if (!item || (this.canceled && status !== "canceled")) return;
+		if (
+			!item ||
+			(this.canceled && status !== "canceled") ||
+			(item.status === "canceled" && status !== "canceled")
+		) {
+			return;
+		}
 		item.status = status;
 		item.detail = detail;
 		this.emit();
+	}
+
+	cancelItem(id: string): boolean {
+		if (this.finished || this.canceled) return false;
+		const item = this.items.find((candidate) => candidate.id === id);
+		if (
+			!item ||
+			item.status === "success" ||
+			item.status === "failed" ||
+			item.status === "skipped" ||
+			item.status === "canceled"
+		) {
+			return false;
+		}
+		item.status = "canceled";
+		item.detail = "Canceled";
+		this.emit();
+		return true;
 	}
 
 	cancel(): void {
@@ -136,8 +169,13 @@ export class BatchRunController {
 	}
 }
 
-export async function waitForBatchDelay(ms: number, run: BatchRunController): Promise<void> {
-	run.assertActive();
+export async function waitForBatchDelay(
+	ms: number,
+	run: BatchRunController,
+	itemId?: string,
+): Promise<void> {
+	if (itemId) run.assertItemActive(itemId);
+	else run.assertActive();
 	await new Promise<void>((resolve, reject) => {
 		let unsubscribe: () => void = () => undefined;
 		const timer = globalThis.setTimeout(
@@ -148,7 +186,10 @@ export async function waitForBatchDelay(ms: number, run: BatchRunController): Pr
 			Math.max(0, ms),
 		);
 		unsubscribe = run.subscribe((snapshot) => {
-			if (!snapshot.canceled) return;
+			const itemCanceled =
+				itemId !== undefined &&
+				snapshot.items.some((item) => item.id === itemId && item.status === "canceled");
+			if (!snapshot.canceled && !itemCanceled) return;
 			globalThis.clearTimeout(timer);
 			unsubscribe();
 			reject(new BatchCanceledError());

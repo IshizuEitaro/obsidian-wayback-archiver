@@ -104,6 +104,62 @@ describe("ArchiveQueueController", () => {
 		]);
 	});
 
+	it("skips one pending item and continues with later work", async () => {
+		const queue = new ArchiveQueueController();
+		const first = deferred();
+		const second = vi.fn();
+		const third = vi.fn((run, itemId) => {
+			run.updateItem(itemId, "success", "Captured");
+		});
+		queue.enqueue([
+			item("first", async (run, itemId) => {
+				await first.promise;
+				run.updateItem(itemId, "success", "Captured");
+			}),
+			item("second", second),
+			item("third", third),
+		]);
+		await vi.waitFor(() => expect(queue.run.snapshot().items[0].status).toBe("capturing"));
+
+		queue.run.cancelItem("archive-queue-1");
+		first.resolve();
+		await vi.waitFor(() => expect(queue.run.snapshot().finished).toBe(true));
+
+		expect(second).not.toHaveBeenCalled();
+		expect(third).toHaveBeenCalledOnce();
+		expect(queue.run.snapshot().items.map(({ status }) => status)).toEqual([
+			"success",
+			"canceled",
+			"success",
+		]);
+	});
+
+	it("keeps later work active when the current item is canceled", async () => {
+		const queue = new ArchiveQueueController();
+		const first = deferred();
+		const second = vi.fn((run, itemId) => {
+			run.updateItem(itemId, "success", "Captured");
+		});
+		queue.enqueue([
+			item("first", async (run, itemId) => {
+				await first.promise;
+				run.updateItem(itemId, "success", "Captured");
+			}),
+			item("second", second),
+		]);
+		await vi.waitFor(() => expect(queue.run.snapshot().items[0].status).toBe("capturing"));
+
+		queue.run.cancelItem("archive-queue-0");
+		first.resolve();
+		await vi.waitFor(() => expect(queue.run.snapshot().finished).toBe(true));
+
+		expect(second).toHaveBeenCalledOnce();
+		expect(queue.run.snapshot().items.map(({ status }) => status)).toEqual([
+			"canceled",
+			"success",
+		]);
+	});
+
 	it("restarts the same run when work arrives after idle", async () => {
 		const queue = new ArchiveQueueController();
 		queue.enqueue([

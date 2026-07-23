@@ -469,7 +469,7 @@ export class ArchiverService {
 		run: BatchRunController,
 		itemId: string,
 	): Promise<void> => {
-		run.assertActive();
+		run.assertItemActive(itemId);
 		run.updateItem(itemId, "capturing", "Requesting Save Page Now");
 		const outcome = await this.processSingleUrlArchival(
 			item.url,
@@ -479,7 +479,7 @@ export class ArchiverService {
 			run,
 			itemId,
 		);
-		run.assertActive();
+		run.assertItemActive(itemId);
 		if (outcome.status === "submitted") {
 			run.updateItem(itemId, "success", "Submitted to archive.today");
 			return;
@@ -513,7 +513,7 @@ export class ArchiverService {
 		}
 		let modified = false;
 		await this.app.vault.process(file, (latestContent) => {
-			if (run.isCanceled()) return latestContent;
+			if (run.isCanceled() || run.isItemCanceled(itemId)) return latestContent;
 			const latestIndex = findLatestLinkIndex(latestContent, item.url, item.approximateIndex);
 			if (latestIndex === null) return latestContent;
 			const latestMatch = Array.from(latestContent.matchAll(LINK_REGEX)).find(
@@ -538,7 +538,7 @@ export class ArchiverService {
 			modified = change.modified;
 			return change.content;
 		});
-		run.assertActive();
+		run.assertItemActive(itemId);
 		run.updateItem(
 			itemId,
 			modified ? "success" : "skipped",
@@ -763,6 +763,12 @@ export class ArchiverService {
 		run?: BatchRunController,
 		itemId?: string,
 	): Promise<ArchiveUrlResult> {
+		const assertActive = () => {
+			if (!run) return;
+			if (itemId) run.assertItemActive(itemId);
+			else run.assertActive();
+		};
+		assertActive();
 		const substitutedUrl = applySubstitutionRules(url, this.activeSettings.substitutionRules);
 		const policy = this.getArchivePolicy(substitutedUrl);
 
@@ -771,6 +777,9 @@ export class ArchiverService {
 				substitutedUrl,
 				policy,
 				"Wayback skipped by policy",
+				undefined,
+				run,
+				itemId,
 			);
 		}
 
@@ -783,6 +792,8 @@ export class ArchiverService {
 					"Archive.org SPN API keys are not configured",
 					policy,
 					"wayback-initiation-failed",
+					run,
+					itemId,
 				);
 			}
 
@@ -799,7 +810,7 @@ export class ArchiverService {
 
 		// Enforce fixed delay before initial archive request to avoid 429 rate limits
 		// console.log(`Waiting ${this.activeSettings.apiDelay}ms before archiving to respect SPN2 rate limits...`);
-		if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run);
+		if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run, itemId);
 		else
 			await new Promise((resolve) =>
 				window.setTimeout(resolve, this.activeSettings.apiDelay),
@@ -839,7 +850,7 @@ export class ArchiverService {
 				run,
 				itemId,
 			);
-			run?.assertActive();
+			assertActive();
 
 			// console.log(`Capture initiation response status: ${initResponse.status}`);
 			// console.log(`Capture initiation response JSON:`, initResponse.json);
@@ -884,6 +895,8 @@ export class ArchiverService {
 					`Initiation failed (${initResponse.status})`,
 					policy,
 					"wayback-initiation-failed",
+					run,
+					itemId,
 				);
 			}
 
@@ -894,7 +907,7 @@ export class ArchiverService {
 			const captureDeadline =
 				Date.now() + this.activeSettings.maxFreshCaptureWaitSeconds * 1000;
 			while (retries < this.activeSettings.maxRetries && Date.now() < captureDeadline) {
-				if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run);
+				if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run, itemId);
 				else
 					await new Promise((resolve) =>
 						window.setTimeout(resolve, this.activeSettings.apiDelay),
@@ -910,7 +923,7 @@ export class ArchiverService {
 							Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
 						},
 					});
-					run?.assertActive();
+					assertActive();
 
 					// console.log(`Status check response status: ${statusResponse.status}`);
 					// console.log(`Status check response JSON:`, statusResponse.json);
@@ -935,6 +948,8 @@ export class ArchiverService {
 							`Wayback job error: ${statusData.status_ext || "Unknown error"}`,
 							policy,
 							"wayback-job-error",
+							run,
+							itemId,
 						);
 					} else {
 						// console.log(`Job ${jobId} is still pending...`);
@@ -944,7 +959,8 @@ export class ArchiverService {
 							break;
 						}
 					}
-				} catch {
+				} catch (error: unknown) {
+					if (error instanceof BatchCanceledError) throw error;
 					// console.error(`Error during status check for Job ID ${jobId}:`, statusError);
 					retries++;
 					if (retries >= this.activeSettings.maxRetries) {
@@ -959,6 +975,8 @@ export class ArchiverService {
 				"Wayback job check timeout",
 				policy,
 				"wayback-timeout",
+				run,
+				itemId,
 			);
 		} catch (error: unknown) {
 			if (error instanceof BatchCanceledError) throw error;
@@ -968,6 +986,8 @@ export class ArchiverService {
 				`Unexpected Error: ${error instanceof Error ? error.message : String(error)}`,
 				policy,
 				"wayback-initiation-failed",
+				run,
+				itemId,
 			);
 		}
 	}
@@ -1026,7 +1046,15 @@ export class ArchiverService {
 		policy: EffectiveArchivePolicy,
 		failureReason: string,
 		waybackStage?: FailedArchiveStage,
+		run?: BatchRunController,
+		itemId?: string,
 	): Promise<ArchiveUrlResult> {
+		const assertActive = () => {
+			if (!run) return;
+			if (itemId) run.assertItemActive(itemId);
+			else run.assertActive();
+		};
+		assertActive();
 		let providerHadRetryableError = false;
 
 		const fallbackProviders = policy.providers.filter(
@@ -1038,7 +1066,9 @@ export class ArchiverService {
 				continue;
 			}
 			if (providerId === "archiveToday" && policy.archiveTodayExperimentalSubmit) {
+				assertActive();
 				const resolution = await this.resolveProviderSnapshot(providerId, targetUrl);
+				assertActive();
 				if (resolution.url) {
 					const timestamp = extractArchiveTimestamp(resolution.url);
 					const freshness = checkAdjacentLinkFreshness(timestamp, this.activeSettings);
@@ -1048,10 +1078,12 @@ export class ArchiverService {
 				}
 
 				try {
+					assertActive();
 					const response = await requestUrl({
 						method: "GET",
 						url: ARCHIVE_PROVIDER_RESOLVERS.archiveToday.saveUrl(targetUrl),
 					});
+					assertActive();
 					if (!this.isSuccessfulArchiveTodaySubmitResponse(response.status)) {
 						return {
 							status: "failed",
@@ -1073,7 +1105,9 @@ export class ArchiverService {
 				}
 			}
 
+			assertActive();
 			const resolution = await this.resolveProviderSnapshot(providerId, targetUrl);
+			assertActive();
 			if (resolution.retryableError) {
 				providerHadRetryableError = true;
 			}
@@ -1150,8 +1184,17 @@ export class ArchiverService {
 		failureReason: string,
 		policy: EffectiveArchivePolicy,
 		waybackStage?: FailedArchiveStage,
+		run?: BatchRunController,
+		itemId?: string,
 	): Promise<ArchiveUrlResult> {
-		return await this.archiveWithProviderPolicy(targetUrl, policy, failureReason, waybackStage);
+		return await this.archiveWithProviderPolicy(
+			targetUrl,
+			policy,
+			failureReason,
+			waybackStage,
+			run,
+			itemId,
+		);
 	}
 
 	private async resolveProviderSnapshot(
@@ -1637,10 +1680,15 @@ export class ArchiverService {
 		run?: BatchRunController,
 		itemId?: string,
 	): Promise<Awaited<ReturnType<typeof requestUrl>>> {
+		const assertActive = () => {
+			if (!run) return;
+			if (itemId) run.assertItemActive(itemId);
+			else run.assertActive();
+		};
 		for (let attempt = 0; attempt <= this.activeSettings.maxThrottleRetries; attempt++) {
-			run?.assertActive();
+			assertActive();
 			const response = await requestUrl(request);
-			run?.assertActive();
+			assertActive();
 			if (!this.isThrottleResponse(response.status, response.json?.message)) return response;
 			if (attempt === this.activeSettings.maxThrottleRetries) return response;
 			if (run && itemId) {
@@ -1651,7 +1699,11 @@ export class ArchiverService {
 				);
 			}
 			if (run) {
-				await waitForBatchDelay(this.activeSettings.throttleRetryDelayMs, run);
+				await waitForBatchDelay(
+					this.activeSettings.throttleRetryDelayMs,
+					run,
+					itemId,
+				);
 			} else {
 				await new Promise((resolve) =>
 					window.setTimeout(resolve, this.activeSettings.throttleRetryDelayMs),

@@ -311,6 +311,34 @@ describe("archiveScannedLinksAction", () => {
 		expect(getContent()).not.toContain("web.archive.org/web/20260722120000/https://b.example");
 		expect(run.snapshot()).toMatchObject({ canceled: true, finished: true });
 	});
+
+	it("does not apply a completed request after that item is skipped", async () => {
+		const { file, getContent, service } = createFileService("[a](https://a.example)");
+		const summary = await service.scanFilesForArchiving([file], false);
+		const [item] = summary.items;
+		const run = new BatchRunController([
+			{ id: "queue-item", url: item.url, filePath: item.filePath },
+		]);
+		vi.spyOn(
+			service as unknown as {
+				processSingleUrlArchival: () => Promise<unknown>;
+			},
+			"processSingleUrlArchival",
+		).mockImplementationOnce(async () => {
+			run.cancelItem("queue-item");
+			return {
+				status: "archived_success",
+				url: "https://web.archive.org/web/20260722120000/https://a.example",
+			};
+		});
+
+		await service.archiveScannedItemAction(item, run, "queue-item").catch(() => undefined);
+
+		expect(getContent()).not.toContain(
+			"web.archive.org/web/20260722120000/https://a.example",
+		);
+		expect(run.snapshot().items[0].status).toBe("canceled");
+	});
 });
 
 describe("ArchiverService.archiveUrl", () => {
@@ -563,6 +591,25 @@ describe("ArchiverService.archiveUrl", () => {
 		await expect(service.archiveUrl("https://example.com", run, "item")).rejects.toBeInstanceOf(
 			BatchCanceledError,
 		);
+		expect(requestUrlMock).toHaveBeenCalledOnce();
+	});
+
+	it("does not look up or apply a fallback after the active item is skipped", async () => {
+		const run = new BatchRunController([
+			{ id: "item", url: "https://example.com", filePath: "a.md" },
+			{ id: "other", url: "https://other.example", filePath: "b.md" },
+		]);
+		requestUrlMock.mockImplementationOnce(async () => {
+			run.cancelItem("item");
+			return { status: 500, json: {}, text: "failed" };
+		});
+		const service = createService({}, { apiDelay: 0 });
+
+		await expect(service.archiveUrl("https://example.com", run, "item")).rejects.toBeInstanceOf(
+			BatchCanceledError,
+		);
+		expect(run.isCanceled()).toBe(false);
+		expect(run.isItemCanceled("other")).toBe(false);
 		expect(requestUrlMock).toHaveBeenCalledOnce();
 	});
 

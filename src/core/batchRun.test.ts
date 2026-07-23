@@ -44,6 +44,40 @@ describe("BatchRunController", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
+	it("cancels one unfinished item without canceling the batch", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+			{ id: "b", url: "https://b.example", filePath: "b.md" },
+		]);
+		run.updateItem("a", "capturing", "Capturing");
+
+		expect(run.cancelItem("a")).toBe(true);
+		run.updateItem("a", "success", "Captured");
+		run.updateItem("b", "success", "Captured");
+
+		expect(run.snapshot()).toMatchObject({ canceled: false, completed: 2, succeeded: 1 });
+		expect(run.snapshot().items.map(({ status }) => status)).toEqual([
+			"canceled",
+			"success",
+		]);
+	});
+
+	it("interrupts only the canceled item's active delay", async () => {
+		vi.useFakeTimers();
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+			{ id: "b", url: "https://b.example", filePath: "b.md" },
+		]);
+		const waiting = waitForBatchDelay(10_000, run, "a");
+
+		run.cancelItem("a");
+
+		await expect(waiting).rejects.toBeInstanceOf(BatchCanceledError);
+		expect(run.isCanceled()).toBe(false);
+		expect(run.isItemCanceled("b")).toBe(false);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("appends pending items and reopens a finished run", () => {
 		const run = new BatchRunController([
 			{ id: "a", url: "https://a.example", filePath: "a.md" },
