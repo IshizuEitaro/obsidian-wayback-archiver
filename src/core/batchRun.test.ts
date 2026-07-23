@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BatchCanceledError, BatchRunController, waitForBatchDelay } from "./batchRun";
+import { BatchCanceledError, BatchRunController, formatBatchProgressDetails, waitForBatchDelay } from "./batchRun";
 
 describe("BatchRunController", () => {
 	afterEach(() => vi.useRealTimers());
@@ -55,7 +55,7 @@ describe("BatchRunController", () => {
 		run.updateItem("a", "success", "Captured");
 		run.updateItem("b", "success", "Captured");
 
-		expect(run.snapshot()).toMatchObject({ canceled: false, completed: 2, succeeded: 1 });
+		expect(run.snapshot()).toMatchObject({ canceled: false, completed: 2, succeeded: 1, skipped: 1 });
 		expect(run.snapshot().items.map(({ status }) => status)).toEqual(["canceled", "success"]);
 	});
 
@@ -110,5 +110,47 @@ describe("BatchRunController", () => {
 			run.addItems([{ id: "a", url: "https://other.example", filePath: "other.md" }]),
 		).toThrow("Duplicate archive batch item: a");
 		expect(run.snapshot().total).toBe(1);
+	});
+
+	describe("formatBatchProgressDetails", () => {
+		it("formats details omitting zero counts when skipped or failed exist", () => {
+			const run = new BatchRunController([
+				{ id: "a", url: "https://a.example", filePath: "a.md" },
+				{ id: "b", url: "https://b.example", filePath: "b.md" },
+				{ id: "c", url: "https://c.example", filePath: "c.md" },
+			]);
+			run.updateItem("a", "success", "Saved");
+			run.updateItem("b", "failed", "Error");
+			run.cancelItem("c");
+
+			const snapshot = run.snapshot();
+			expect(formatBatchProgressDetails(snapshot, { savedWord: "saved" })).toBe(
+				"1 saved · 1 failed · 1 skipped",
+			);
+			expect(formatBatchProgressDetails(snapshot, { savedWord: "succeeded" })).toBe(
+				"1 succeeded · 1 failed · 1 skipped",
+			);
+		});
+
+		it("shows only saved and skipped when no failures exist", () => {
+			const run = new BatchRunController([
+				{ id: "a", url: "https://a.example", filePath: "a.md" },
+				{ id: "b", url: "https://b.example", filePath: "b.md" },
+			]);
+			run.updateItem("a", "success", "Saved");
+			run.cancelItem("b");
+
+			const snapshot = run.snapshot();
+			expect(formatBatchProgressDetails(snapshot)).toBe("1 saved · 1 skipped");
+		});
+
+		it("shows 0 saved when all counts are 0", () => {
+			const run = new BatchRunController([
+				{ id: "a", url: "https://a.example", filePath: "a.md" },
+			]);
+
+			const snapshot = run.snapshot();
+			expect(formatBatchProgressDetails(snapshot)).toBe("0 saved");
+		});
 	});
 });

@@ -21,6 +21,7 @@ export interface BatchRunSnapshot {
 	completed: number;
 	succeeded: number;
 	failed: number;
+	skipped: number;
 	canceled: boolean;
 	finished: boolean;
 	items: BatchItemState[];
@@ -157,6 +158,9 @@ export class BatchRunController {
 			completed: this.items.filter((item) => completedStatuses.has(item.status)).length,
 			succeeded: this.items.filter((item) => item.status === "success").length,
 			failed: this.items.filter((item) => item.status === "failed").length,
+			skipped: this.items.filter(
+				(item) => item.status === "skipped" || item.status === "canceled",
+			).length,
 			canceled: this.canceled,
 			finished: this.finished,
 			items: this.items.map((item) => ({ ...item })),
@@ -167,6 +171,26 @@ export class BatchRunController {
 		const snapshot = this.snapshot();
 		for (const listener of this.listeners) listener(snapshot);
 	}
+}
+
+export function formatBatchProgressDetails(
+	snapshot: BatchRunSnapshot,
+	options: { savedWord?: "saved" | "succeeded" } = {},
+): string {
+	const savedWord = options.savedWord ?? "saved";
+	const parts: string[] = [];
+
+	if (snapshot.succeeded > 0 || (snapshot.failed === 0 && snapshot.skipped === 0)) {
+		parts.push(`${snapshot.succeeded} ${savedWord}`);
+	}
+	if (snapshot.failed > 0) {
+		parts.push(`${snapshot.failed} failed`);
+	}
+	if (snapshot.skipped > 0) {
+		parts.push(`${snapshot.skipped} skipped`);
+	}
+
+	return parts.join(" · ");
 }
 
 export async function waitForBatchDelay(
