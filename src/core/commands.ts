@@ -13,12 +13,36 @@ const runCommandAction = (action: () => Promise<void>): void => {
 	});
 };
 
+function resolveCurrentMarkdownEditor(
+	app: App,
+): { editor: Editor; context: MarkdownView | MarkdownFileInfo } | null {
+	const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+	if (activeView?.file) {
+		return { editor: activeView.editor, context: activeView };
+	}
+
+	const activeEditor = app.workspace.activeEditor;
+	if (activeEditor?.editor && activeEditor.file) {
+		return { editor: activeEditor.editor, context: activeEditor };
+	}
+
+	const activeFile = app.workspace.getActiveFile();
+	if (!activeFile) return null;
+	for (const leaf of app.workspace.getLeavesOfType("markdown")) {
+		const view = leaf.view;
+		if (view instanceof MarkdownView && view.file?.path === activeFile.path) {
+			return { editor: view.editor, context: view };
+		}
+	}
+	return null;
+}
+
 export function registerCommands(plugin: WaybackArchiverPlugin) {
 	// This creates an icon in the left ribbon.
 	plugin.addRibbonIcon("wayback-ribbon", "Archive links in current note", async () => {
-		const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		if (view) {
-			await plugin.archiveLinksAction(view.editor, view);
+		const current = resolveCurrentMarkdownEditor(plugin.app);
+		if (current) {
+			await plugin.archiveLinksAction(current.editor, current.context);
 		} else {
 			new Notice("Please open a markdown file first.");
 		}

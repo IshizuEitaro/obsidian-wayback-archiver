@@ -93,7 +93,7 @@ vi.mock("../ui/modals", () => ({
 
 import { registerCommands } from "./commands";
 import { DEFAULT_SETTINGS, FailedArchiveEntry } from "./settings";
-import { Command, Editor, MarkdownFileInfo } from "obsidian";
+import { Command, Editor, MarkdownFileInfo, MarkdownView, TFile } from "obsidian";
 import WaybackArchiverPlugin from "../main";
 
 describe("registerCommands - Conditional Visibility", () => {
@@ -109,7 +109,7 @@ describe("registerCommands - Conditional Visibility", () => {
 				commands.push(cmd);
 			}),
 			activeSettings,
-			archiveLinksAction: { bind: vi.fn(() => vi.fn()) },
+			archiveLinksAction: vi.fn(),
 			archiveAllLinksVaultAction: vi.fn(),
 			scanVaultForArchiving: vi.fn().mockResolvedValue({
 				noteCount: 1,
@@ -131,7 +131,7 @@ describe("registerCommands - Conditional Visibility", () => {
 			archiveLinksInCurrentNoteToArchiveTodayAction: vi.fn(),
 			insertLatestFallbackSnapshotAction: vi.fn(),
 			runPendingQueueCycle: vi.fn(),
-			forceReArchiveLinksAction: { bind: vi.fn(() => vi.fn()) },
+			forceReArchiveLinksAction: vi.fn(),
 			forceReArchiveAllLinksAction: vi.fn(),
 			openManualSavePagesForFailedArchives: vi.fn(),
 			retryFailedArchives: vi.fn(),
@@ -158,6 +158,45 @@ describe("registerCommands - Conditional Visibility", () => {
 		const { plugin, commands } = createMockPlugin();
 		registerCommands(plugin as unknown as WaybackArchiverPlugin);
 		expect(commands.length).toBeGreaterThan(0);
+	});
+
+	it("archives the active editor from the ribbon when no MarkdownView is active", async () => {
+		const { plugin } = createMockPlugin();
+		const editor = {} as Editor;
+		const context = { editor, file: {} as TFile } as MarkdownFileInfo;
+		Object.assign(plugin.app.workspace, { activeEditor: context });
+		registerCommands(plugin as unknown as WaybackArchiverPlugin);
+
+		const ribbonCallback = plugin.addRibbonIcon.mock.calls[0]?.[2] as
+			| (() => Promise<void>)
+			| undefined;
+		await ribbonCallback?.();
+
+		expect(plugin.archiveLinksAction).toHaveBeenCalledWith(editor, context);
+		expect(noticeMock).not.toHaveBeenCalledWith("Please open a markdown file first.");
+	});
+
+	it("archives the most recently active open Markdown file from the ribbon", async () => {
+		const { plugin } = createMockPlugin();
+		const file = { path: "restored.md" } as TFile;
+		const view = Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
+			editor: {} as Editor,
+			file,
+		});
+		Object.assign(plugin.app.workspace, {
+			activeEditor: null,
+			getActiveFile: vi.fn(() => file),
+			getLeavesOfType: vi.fn(() => [{ view }]),
+		});
+		registerCommands(plugin as unknown as WaybackArchiverPlugin);
+
+		const ribbonCallback = plugin.addRibbonIcon.mock.calls[0]?.[2] as
+			| (() => Promise<void>)
+			| undefined;
+		await ribbonCallback?.();
+
+		expect(plugin.archiveLinksAction).toHaveBeenCalledWith(view.editor, view);
+		expect(noticeMock).not.toHaveBeenCalledWith("Please open a markdown file first.");
 	});
 
 	it("preflights vault archival before opening shared progress", async () => {
