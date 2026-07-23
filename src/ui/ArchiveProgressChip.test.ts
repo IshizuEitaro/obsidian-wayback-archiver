@@ -56,9 +56,24 @@ describe("ArchiveProgressChip", () => {
 		const details = (document.body as unknown as FakeElement).findByClass(
 			"wayback-progress-chip-details",
 		);
-		expect(details?.textContent).toContain("Complete 1/1");
-		expect(details?.textContent).toContain("1 saved");
-		expect(details?.textContent).toContain("0 failed");
+		expect(details?.textContent).toBe("Complete 1/1 · 1 saved");
+	});
+
+	it("shows skipped counts in details when items are skipped or canceled", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+			{ id: "b", url: "https://b.example", filePath: "b.md" },
+		]);
+		const chip = new ArchiveProgressChip(run, vi.fn());
+
+		chip.open();
+		run.updateItem("a", "success", "Captured");
+		run.cancelItem("b");
+
+		const details = (document.body as unknown as FakeElement).findByClass(
+			"wayback-progress-chip-details",
+		);
+		expect(details?.textContent).toBe("Archiving 2/2 · 1 saved · 1 skipped");
 	});
 
 	it("opens archive details from the progress control", () => {

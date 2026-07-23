@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { BatchRunController, BatchRunSnapshot } from "../core/batchRun";
+import { BatchRunController, BatchRunSnapshot, formatBatchProgressDetails } from "../core/batchRun";
 
 const ITEM_CANCELABLE_STATUSES = new Set(["pending", "capturing", "throttled", "fallback"]);
 
@@ -37,8 +37,9 @@ export class ArchiveProgressModal extends Modal {
 		this.contentEl.createEl("h2", {
 			text: snapshot.finished ? "Archival complete" : "Archiving links",
 		});
+		const details = formatBatchProgressDetails(snapshot, { savedWord: "succeeded" });
 		this.contentEl.createEl("p", {
-			text: `${snapshot.completed}/${snapshot.total} complete · ${snapshot.succeeded} succeeded · ${snapshot.failed} failed`,
+			text: `${snapshot.completed}/${snapshot.total} complete · ${details}`,
 		});
 		const list = this.contentEl.createDiv({ cls: "wayback-progress-list" });
 		for (const item of snapshot.items) {

@@ -1,4 +1,4 @@
-import { BatchRunController, BatchRunSnapshot } from "../core/batchRun";
+import { BatchRunController, BatchRunSnapshot, formatBatchProgressDetails } from "../core/batchRun";
 
 export class ArchiveProgressChip {
 	private root: HTMLDivElement | null = null;
@@ -44,7 +44,8 @@ export class ArchiveProgressChip {
 	private render(snapshot: BatchRunSnapshot): void {
 		if (!this.detailsButton || !this.cancelButton) return;
 		const state = snapshot.canceled ? "Canceled" : snapshot.finished ? "Complete" : "Archiving";
-		this.detailsButton.textContent = `${state} ${snapshot.completed}/${snapshot.total} · ${snapshot.succeeded} saved · ${snapshot.failed} failed`;
+		const details = formatBatchProgressDetails(snapshot, { savedWord: "saved" });
+		this.detailsButton.textContent = `${state} ${snapshot.completed}/${snapshot.total} · ${details}`;
 		this.cancelButton.hidden = snapshot.finished || snapshot.canceled;
 	}
 }

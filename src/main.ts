@@ -10,7 +10,7 @@ import {
 	WaybackArchiverSettings,
 } from "./core/settings";
 import { ArchiveScanSummary } from "./core/vaultScan";
-import { BatchRunController } from "./core/batchRun";
+import { BatchRunController, formatBatchProgressDetails } from "./core/batchRun";
 import { ArchiveProgressModal } from "./ui/ArchiveProgressModal";
 import { ArchiveConfirmationModal } from "./ui/ArchiveConfirmationModal";
 import { ArchiveProgressChip } from "./ui/ArchiveProgressChip";
@@ -182,17 +182,18 @@ export default class WaybackArchiverPlugin extends Plugin {
 		this.activeArchiveProgressModal = modal;
 		this.activeArchiveProgressChip = chip;
 		this.activeRunUnsubscribe = run.subscribe((snapshot) => {
+			const details = formatBatchProgressDetails(snapshot, { savedWord: "saved" });
 			if (snapshot.canceled) {
 				this.setStatusBarText(
 					`Canceled · ${snapshot.completed}/${snapshot.total} complete`,
 				);
 			} else if (snapshot.finished) {
 				this.setStatusBarText(
-					`Complete · ${snapshot.completed}/${snapshot.total} · ${snapshot.succeeded} saved · ${snapshot.failed} failed`,
+					`Complete · ${snapshot.completed}/${snapshot.total} · ${details}`,
 				);
 			} else {
 				this.setStatusBarText(
-					`⌛ ${snapshot.completed}/${snapshot.total} · ${snapshot.succeeded} saved · ${snapshot.failed} failed`,
+					`⌛ ${snapshot.completed}/${snapshot.total} · ${details}`,
 				);
 			}
 			if (snapshot.finished) {
