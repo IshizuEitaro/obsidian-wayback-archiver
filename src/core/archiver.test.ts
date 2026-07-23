@@ -22,6 +22,16 @@ const { noticeMock, requestUrlMock } = vi.hoisted(() => ({
 	requestUrlMock: vi.fn(),
 }));
 
+const toArchiveTimestamp = (date: Date): string =>
+	[
+		date.getUTCFullYear(),
+		String(date.getUTCMonth() + 1).padStart(2, "0"),
+		String(date.getUTCDate()).padStart(2, "0"),
+		String(date.getUTCHours()).padStart(2, "0"),
+		String(date.getUTCMinutes()).padStart(2, "0"),
+		String(date.getUTCSeconds()).padStart(2, "0"),
+	].join("");
+
 beforeEach(() => {
 	vi.stubGlobal("window", globalThis);
 });
@@ -491,16 +501,17 @@ describe("ArchiverService.archiveUrl", () => {
 	});
 
 	it("uses the latest snapshot when capture is rate-limited", async () => {
+		const freshTimestamp = toArchiveTimestamp(new Date(Date.now() - 60_000));
 		requestUrlMock.mockResolvedValueOnce({ status: 429, json: {} }).mockResolvedValueOnce({
 			status: 200,
-			json: [["timestamp"], ["20260722110000"]],
-			text: '[["timestamp"],["20260722110000"]]',
+			json: [["timestamp"], [freshTimestamp]],
+			text: JSON.stringify([["timestamp"], [freshTimestamp]]),
 		});
 		const service = createService({}, { maxThrottleRetries: 0, archiveFreshnessDays: 1 });
 
 		await expect(service.archiveUrl("https://example.com")).resolves.toEqual({
 			status: "too_many_captures",
-			url: "https://web.archive.org/web/20260722110000/https://example.com",
+			url: `https://web.archive.org/web/${freshTimestamp}/https://example.com`,
 		});
 	});
 
@@ -526,11 +537,12 @@ describe("ArchiverService.archiveUrl", () => {
 	});
 
 	it("returns a fresh fixed CDX fallback after capture failure", async () => {
+		const freshTimestamp = toArchiveTimestamp(new Date(Date.now() - 60_000));
 		requestUrlMock
 			.mockResolvedValueOnce({ status: 500, json: {}, text: "failed" })
 			.mockResolvedValueOnce({
 				status: 200,
-				json: [["timestamp"], ["20260722110000"]],
+				json: [["timestamp"], [freshTimestamp]],
 			});
 		const service = createService(
 			{},
@@ -543,7 +555,7 @@ describe("ArchiverService.archiveUrl", () => {
 
 		await expect(service.archiveUrl("https://example.com")).resolves.toEqual({
 			status: "too_many_captures",
-			url: "https://web.archive.org/web/20260722110000/https://example.com",
+			url: `https://web.archive.org/web/${freshTimestamp}/https://example.com`,
 		});
 	});
 
