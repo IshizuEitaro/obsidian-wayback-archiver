@@ -33,6 +33,8 @@ export class ArchiveProgressModal extends Modal {
 	}
 
 	private renderProgress(snapshot: BatchRunSnapshot): void {
+		const previousList = this.contentEl.querySelector<HTMLElement>(".wayback-progress-list");
+		const scrollTop = previousList?.scrollTop ?? 0;
 		this.contentEl.empty();
 		this.contentEl.createEl("h2", {
 			text: snapshot.finished ? "Archival complete" : "Archiving links",
@@ -42,6 +44,7 @@ export class ArchiveProgressModal extends Modal {
 			text: `${snapshot.completed}/${snapshot.total} complete · ${details}`,
 		});
 		const list = this.contentEl.createDiv({ cls: "wayback-progress-list" });
+		list.scrollTop = scrollTop;
 		for (const item of snapshot.items) {
 			const row = list.createDiv({ cls: "wayback-progress-row" });
 			const content = row.createDiv({ cls: "wayback-progress-row-content" });

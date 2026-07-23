@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 class FakeElement {
 	textContent = "";
+	className = "";
+	scrollTop = 0;
 	children: FakeElement[] = [];
 	listeners = new Map<string, () => void>();
 
@@ -10,14 +12,15 @@ class FakeElement {
 		this.children = [];
 	}
 
-	createEl(_tag: string, options: { text?: string } = {}): FakeElement {
+	createEl(_tag: string, options: { text?: string; cls?: string } = {}): FakeElement {
 		const child = new FakeElement();
 		child.textContent = options.text ?? "";
+		child.className = options.cls ?? "";
 		this.children.push(child);
 		return child;
 	}
 
-	createDiv(options: { text?: string } = {}): FakeElement {
+	createDiv(options: { text?: string; cls?: string } = {}): FakeElement {
 		return this.createEl("div", options);
 	}
 
@@ -35,6 +38,16 @@ class FakeElement {
 			...(this.textContent === text ? [this] : []),
 			...this.children.flatMap((child) => child.findAllByText(text)),
 		];
+	}
+
+	querySelector(selector: string): FakeElement | null {
+		const className = selector.startsWith(".") ? selector.slice(1) : "";
+		if (className && this.className === className) return this;
+		for (const child of this.children) {
+			const match = child.querySelector(selector);
+			if (match) return match;
+		}
+		return null;
 	}
 
 	get allText(): string {
@@ -73,6 +86,24 @@ describe("ArchiveProgressModal", () => {
 		const content = modal.contentEl as unknown as FakeElement;
 		expect(content.allText).toContain("Captured");
 		expect(content.findByText("Start")).toBeUndefined();
+	});
+
+	it("preserves the list scroll position across progress updates", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+			{ id: "b", url: "https://b.example", filePath: "b.md" },
+		]);
+		const modal = new ArchiveProgressModal({} as never, { run });
+
+		modal.open();
+		const content = modal.contentEl as unknown as FakeElement;
+		const initialList = content.querySelector(".wayback-progress-list");
+		if (!initialList) throw new Error("Expected progress list");
+		initialList.scrollTop = 240;
+
+		run.updateItem("a", "success", "Captured");
+
+		expect(content.querySelector(".wayback-progress-list")?.scrollTop).toBe(240);
 	});
 
 	it("keeps the shared run active when details close", () => {
