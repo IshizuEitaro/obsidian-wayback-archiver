@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
 	appendFailedArchiveEntry,
 	CredentialStorageData,
@@ -342,6 +342,31 @@ describe("migrateSecretStorage & purgePlaintextCredentials", () => {
 		// Crucial requirement: keep legacy keys for synced devices until user purges
 		expect(data.spnAccessKey).toBe("my_access_key");
 		expect(data.spnSecretKey).toBe("my_secret_key");
+	});
+
+	it("does not recreate default secrets when existing references were renamed", async () => {
+		const setSecret = vi.fn();
+		const mockApp = {
+			secretStorage: {
+				setSecret,
+			},
+		};
+		const data: CredentialStorageData = {
+			spnCredentialStorageMode: "secretStorage",
+			spnAccessKeySecretName: "renamed-access-key",
+			spnSecretKeySecretName: "renamed-secret-key",
+			spnAccessKey: "legacy_access",
+			spnSecretKey: "legacy_secret",
+		};
+
+		const migrated = await migrateSecretStorage(mockApp, data);
+
+		expect(migrated).toBe(false);
+		expect(setSecret).not.toHaveBeenCalled();
+		expect(data.spnAccessKeySecretName).toBe("renamed-access-key");
+		expect(data.spnSecretKeySecretName).toBe("renamed-secret-key");
+		expect(data.spnAccessKey).toBe("legacy_access");
+		expect(data.spnSecretKey).toBe("legacy_secret");
 	});
 
 	it("purges plaintext credentials from data", () => {

@@ -121,10 +121,9 @@ function buildCredentialGroup(
 					if (isSecretMode()) {
 						const name = plugin.data.spnAccessKeySecretName ?? SPN_ACCESS_KEY_SECRET_ID;
 						new SecretComponent(plugin.app, setting.controlEl)
-							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
-							.onChange(async (value) => {
-								plugin.app.secretStorage.setSecret(name, value);
-								plugin.data.spnAccessKeySecretName = name;
+							.setValue(name)
+							.onChange(async (selectedName) => {
+								plugin.data.spnAccessKeySecretName = selectedName;
 								await plugin.saveSettings();
 							});
 					} else {
@@ -147,10 +146,9 @@ function buildCredentialGroup(
 					if (isSecretMode()) {
 						const name = plugin.data.spnSecretKeySecretName ?? SPN_SECRET_KEY_SECRET_ID;
 						new SecretComponent(plugin.app, setting.controlEl)
-							.setValue(plugin.app.secretStorage.getSecret(name) ?? "")
-							.onChange(async (value) => {
-								plugin.app.secretStorage.setSecret(name, value);
-								plugin.data.spnSecretKeySecretName = name;
+							.setValue(name)
+							.onChange(async (selectedName) => {
+								plugin.data.spnSecretKeySecretName = selectedName;
 								await plugin.saveSettings();
 							});
 					} else {

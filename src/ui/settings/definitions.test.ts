@@ -1,7 +1,30 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { secretComponents } = vi.hoisted(() => ({
+	secretComponents: [] as Array<{
+		value: string;
+		onChangeCallback?: (value: string) => unknown;
+	}>,
+}));
 vi.mock("obsidian", () => ({
-	SecretComponent: class SecretComponent {},
+	SecretComponent: class SecretComponent {
+		value = "";
+		onChangeCallback?: (value: string) => unknown;
+
+		constructor() {
+			secretComponents.push(this);
+		}
+
+		setValue(value: string) {
+			this.value = value;
+			return this;
+		}
+
+		onChange(callback: (value: string) => unknown) {
+			this.onChangeCallback = callback;
+			return this;
+		}
+	},
 }));
 import type { SettingDefinitionItem } from "obsidian";
 import { DEFAULT_SETTINGS } from "../../core/settings";
@@ -34,6 +57,10 @@ const flatten = (items: SettingDefinitionItem[]): Array<Record<string, unknown>>
 };
 
 describe("declarative setting definitions", () => {
+	beforeEach(() => {
+		secretComponents.length = 0;
+	});
+
 	it("defines searchable pages and all simple setting controls", () => {
 		const definitions = buildSettingDefinitions(createContext());
 		const flat = flatten(definitions);
@@ -81,4 +108,59 @@ describe("declarative setting definitions", () => {
 		expect(new Set(DECLARATIVE_SETTING_IDS)).toEqual(new Set(LEGACY_SETTING_IDS));
 		expect(new Set(DECLARATIVE_SETTING_IDS).size).toBe(DECLARATIVE_SETTING_IDS.length);
 	});
+
+	it.each([
+		{
+			settingName: "Archive.org SPN access key",
+			field: "spnAccessKeySecretName",
+			savedId: "custom-access-key",
+		},
+		{
+			settingName: "Archive.org SPN secret key",
+			field: "spnSecretKeySecretName",
+			savedId: "custom-secret-key",
+		},
+	] as const)(
+		"binds $settingName to the selected SecretStorage ID",
+		async ({ settingName, field, savedId }) => {
+			const context = createContext();
+			const plugin = context.plugin as unknown as {
+				app: {
+					secretStorage: {
+						getSecret: ReturnType<typeof vi.fn>;
+						setSecret: ReturnType<typeof vi.fn>;
+					};
+				};
+				data: Record<string, unknown>;
+				saveSettings: ReturnType<typeof vi.fn>;
+			};
+			const setSecret = vi.fn();
+			Object.assign(plugin, {
+				app: {
+					secretStorage: {
+						getSecret: vi.fn(() => "credential-value"),
+						setSecret,
+					},
+				},
+			});
+			Object.assign(plugin.data, {
+				spnCredentialStorageMode: "secretStorage",
+				[field]: savedId,
+			});
+			const definition = flatten(buildSettingDefinitions(context)).find(
+				(item) => item.name === settingName,
+			);
+
+			(definition?.render as ((setting: { controlEl: object }) => void) | undefined)?.({
+				controlEl: {},
+			});
+			const component = secretComponents[0];
+			await component?.onChangeCallback?.("renamed-key");
+
+			expect(component?.value).toBe(savedId);
+			expect(plugin.data[field]).toBe("renamed-key");
+			expect(setSecret).not.toHaveBeenCalled();
+			expect(plugin.saveSettings).toHaveBeenCalledOnce();
+		},
+	);
 });
