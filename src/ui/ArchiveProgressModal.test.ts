@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 class FakeElement {
 	textContent = "";
 	className = "";
+	hidden = false;
 	scrollTop = 0;
+	dataset: Record<string, string> = {};
 	children: FakeElement[] = [];
 	listeners = new Map<string, () => void>();
 
@@ -29,11 +31,13 @@ class FakeElement {
 	}
 
 	findByText(text: string): FakeElement | undefined {
+		if (this.hidden) return undefined;
 		if (this.textContent === text) return this;
 		return this.children.map((child) => child.findByText(text)).find(Boolean);
 	}
 
 	findAllByText(text: string): FakeElement[] {
+		if (this.hidden) return [];
 		return [
 			...(this.textContent === text ? [this] : []),
 			...this.children.flatMap((child) => child.findAllByText(text)),
@@ -104,6 +108,33 @@ describe("ArchiveProgressModal", () => {
 		run.updateItem("a", "success", "Captured");
 
 		expect(content.querySelector(".wayback-progress-list")?.scrollTop).toBe(240);
+	});
+
+	it("updates stable rows and Skip buttons in place", () => {
+		const run = new BatchRunController([
+			{ id: "a", url: "https://a.example", filePath: "a.md" },
+			{ id: "b", url: "https://b.example", filePath: "b.md" },
+		]);
+		const modal = new ArchiveProgressModal({} as never, { run });
+
+		modal.open();
+		const content = modal.contentEl as unknown as FakeElement;
+		const initialList = content.querySelector(".wayback-progress-list");
+		if (!initialList) throw new Error("Expected progress list");
+		const initialRow = initialList.children[0];
+		const initialSkipButton = initialRow.findByText("Skip");
+
+		run.updateItem("b", "capturing", "Requesting");
+
+		const updatedList = content.querySelector(".wayback-progress-list");
+		expect(updatedList).toBe(initialList);
+		expect(updatedList?.children[0]).toBe(initialRow);
+		expect(initialRow.findByText("Skip")).toBe(initialSkipButton);
+
+		run.updateItem("a", "success", "Captured");
+
+		expect(initialRow.allText).toContain("success · Captured");
+		expect(initialSkipButton?.hidden).toBe(true);
 	});
 
 	it("keeps the shared run active when details close", () => {
