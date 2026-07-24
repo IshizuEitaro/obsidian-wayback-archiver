@@ -1,8 +1,35 @@
-import { App, ButtonComponent, PluginSettingTab, Notice, Setting } from "obsidian";
+import {
+	App,
+	ButtonComponent,
+	PluginSettingTab,
+	Notice,
+	Setting,
+	SettingDefinitionItem,
+	SecretComponent,
+} from "obsidian";
 import { ConfirmationModal, ProfileNameModal } from "./modals";
 import { runAsyncAction } from "../utils/async";
+import { parseIgnoredDomains } from "../utils/LinkUtils";
+import {
+	DeclarativeSettingKey,
+	getDeclarativeSettingValue,
+	setDeclarativeSettingValue,
+} from "./settings/bindings";
+import { buildSettingDefinitions } from "./settings/definitions";
+import { renderLegacySettings } from "./settings/legacyRenderer";
 import { WaybackArchiverPlugin } from "../main";
-import { ArchivePolicyRule, ArchiveServiceId, DEFAULT_SETTINGS } from "../core/settings";
+import {
+	ArchivePolicyRule,
+	ArchiveServiceId,
+	DEFAULT_SETTINGS,
+	purgePlaintextCredentials,
+	SPN_ACCESS_KEY_SECRET_ID,
+	SPN_SECRET_KEY_SECRET_ID,
+} from "../core/settings";
+
+export function supportsDeclarativeSettings(tab: PluginSettingTab): boolean {
+	return typeof (tab as { update?: unknown }).update === "function";
+}
 
 class WaybackArchiverSettingTab extends PluginSettingTab {
 	plugin: WaybackArchiverPlugin;
@@ -12,8 +39,48 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	refreshSettingsUi(structural: boolean): void {
+		if (supportsDeclarativeSettings(this)) {
+			const declarativeTab = this as PluginSettingTab & {
+				update(): void;
+				refreshDomState(): void;
+			};
+			if (structural) declarativeTab.update();
+			else declarativeTab.refreshDomState();
+			return;
+		}
+		this.display();
+	}
+
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return buildSettingDefinitions({
+			plugin: this.plugin,
+			refresh: (structural) => this.refreshSettingsUi(structural),
+			createProfile: () => this.handleCreateProfileClick(),
+			renameProfile: () => this.handleRenameProfileClick(),
+			deleteProfile: () => this.handleDeleteProfileClick(),
+		});
+	}
+
+	getControlValue(key: string): unknown {
+		return getDeclarativeSettingValue(this.plugin, key as DeclarativeSettingKey);
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const effect = await setDeclarativeSettingValue(
+			this.plugin,
+			key as DeclarativeSettingKey,
+			value,
+		);
+		if (effect === "structure") this.refreshSettingsUi(true);
+		if (effect === "visibility") this.refreshSettingsUi(false);
+	}
+
 	display(): void {
-		const { containerEl } = this;
+		renderLegacySettings(this, this.containerEl);
+	}
+
+	renderLegacySettingsInto(containerEl: HTMLElement): void {
 		containerEl.empty();
 
 		new Setting(containerEl).setName("Archive.org API keys (global)").setHeading();
@@ -25,31 +92,168 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			href: "https://archive.org/account/s3.php",
 		});
 
-		new Setting(containerEl)
-			.setName("Archive.org SPN access key")
-			.setDesc("Your S3-like access key for the SPN API v2.")
-			.addText((text) => {
-				text.setPlaceholder("Enter your access key")
-					.setValue(this.plugin.data.spnAccessKey || "")
-					.onChange(async (value) => {
-						this.plugin.data.spnAccessKey = value.trim();
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = "password";
-			});
+		const SecretComponentClass = SecretComponent;
+		const hasSecretStorage = Boolean(this.app.secretStorage && SecretComponentClass);
+		const currentMode =
+			this.plugin.data.spnCredentialStorageMode ||
+			(hasSecretStorage ? "secretStorage" : "plaintext");
 
-		new Setting(containerEl)
-			.setName("Archive.org SPN secret key")
-			.setDesc("Your S3-like secret key for the SPN API v2.")
-			.addText((text) => {
-				text.setPlaceholder("Enter your secret key")
-					.setValue(this.plugin.data.spnSecretKey || "")
-					.onChange(async (value) => {
-						this.plugin.data.spnSecretKey = value.trim();
-						await this.plugin.saveSettings();
+		if (hasSecretStorage) {
+			new Setting(containerEl)
+				.setName("API key storage method")
+				.setDesc("Choose where your API credentials are stored.")
+				.addDropdown((dropdown) => {
+					dropdown
+						.addOption(
+							"secretStorage",
+							"Obsidian SecretStorage (Secure, stored locally per device)",
+						)
+						.addOption(
+							"plaintext",
+							"data.json (Vault file, plaintext, synced across devices)",
+						)
+						.setValue(currentMode)
+						.onChange(async (value) => {
+							const newMode = value as "secretStorage" | "plaintext";
+							this.plugin.data.spnCredentialStorageMode = newMode;
+
+							if (newMode === "secretStorage") {
+								if (
+									this.plugin.data.spnAccessKey &&
+									!this.plugin.data.spnAccessKeySecretName
+								) {
+									const name = SPN_ACCESS_KEY_SECRET_ID;
+									this.app.secretStorage.setSecret(
+										name,
+										this.plugin.data.spnAccessKey,
+									);
+									this.plugin.data.spnAccessKeySecretName = name;
+								}
+								if (
+									this.plugin.data.spnSecretKey &&
+									!this.plugin.data.spnSecretKeySecretName
+								) {
+									const name = SPN_SECRET_KEY_SECRET_ID;
+									this.app.secretStorage.setSecret(
+										name,
+										this.plugin.data.spnSecretKey,
+									);
+									this.plugin.data.spnSecretKeySecretName = name;
+								}
+							} else if (newMode === "plaintext") {
+								if (this.plugin.data.spnAccessKeySecretName) {
+									const val = this.app.secretStorage.getSecret(
+										this.plugin.data.spnAccessKeySecretName,
+									);
+									if (val && !this.plugin.data.spnAccessKey) {
+										this.plugin.data.spnAccessKey = val;
+									}
+								}
+								if (this.plugin.data.spnSecretKeySecretName) {
+									const val = this.app.secretStorage.getSecret(
+										this.plugin.data.spnSecretKeySecretName,
+									);
+									if (val && !this.plugin.data.spnSecretKey) {
+										this.plugin.data.spnSecretKey = val;
+									}
+								}
+							}
+
+							await this.plugin.saveSettings();
+							this.refreshSettingsUi(true);
+						});
+				});
+		}
+
+		if (currentMode === "secretStorage" && hasSecretStorage) {
+			new Setting(containerEl)
+				.setName("Archive.org SPN access key")
+				.setDesc(
+					"Select or create a secret in SecretStorage for the SPN API v2 access key.",
+				)
+				.addComponent((el) =>
+					new SecretComponentClass(this.app, el)
+						.setValue(this.plugin.data.spnAccessKeySecretName || "")
+						.onChange(async (value: string) => {
+							this.plugin.data.spnAccessKeySecretName = value.trim();
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			new Setting(containerEl)
+				.setName("Archive.org SPN secret key")
+				.setDesc(
+					"Select or create a secret in SecretStorage for the SPN API v2 secret key.",
+				)
+				.addComponent((el) =>
+					new SecretComponentClass(this.app, el)
+						.setValue(this.plugin.data.spnSecretKeySecretName || "")
+						.onChange(async (value: string) => {
+							this.plugin.data.spnSecretKeySecretName = value.trim();
+							await this.plugin.saveSettings();
+						}),
+				);
+
+			const syncNotice = containerEl.createEl("p", { cls: "setting-item-description" });
+			syncNotice.setText(
+				"🔒 SecretStorage stores credentials securely on this device. On other synced devices (e.g. mobile), please select or create the corresponding secret in settings.",
+			);
+
+			if (this.plugin.data.spnAccessKey || this.plugin.data.spnSecretKey) {
+				const purgeCallout = containerEl.createDiv({ cls: "notice" });
+				purgeCallout.createEl("strong", {
+					text: "Legacy plaintext API keys detected in data.json.",
+				});
+				purgeCallout.createEl("p", {
+					text: "Credentials have been imported to SecretStorage on this device. If you sync settings across multiple devices, wait until all devices have loaded the plugin before purging plaintext keys.",
+				});
+
+				new Setting(purgeCallout)
+					.setName("Purge plaintext API keys from data.json")
+					.setDesc("Removes legacy plaintext keys from data.json file.")
+					.addButton((btn) => {
+						btn.setButtonText("Purge plaintext keys")
+							.setWarning()
+							.onClick(async () => {
+								purgePlaintextCredentials(this.plugin.data);
+								await this.plugin.saveSettings();
+								new Notice("Legacy plaintext API keys purged from data.json.");
+								this.refreshSettingsUi(true);
+							});
 					});
-				text.inputEl.type = "password";
-			});
+			}
+		} else {
+			new Setting(containerEl)
+				.setName("Archive.org SPN access key")
+				.setDesc("Your S3-like access key for the SPN API v2 (stored in data.json).")
+				.addText((text) => {
+					text.setPlaceholder("Enter your access key")
+						.setValue(this.plugin.data.spnAccessKey || "")
+						.onChange(async (value) => {
+							this.plugin.data.spnAccessKey = value.trim();
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = "password";
+				});
+
+			new Setting(containerEl)
+				.setName("Archive.org SPN secret key")
+				.setDesc("Your S3-like secret key for the SPN API v2 (stored in data.json).")
+				.addText((text) => {
+					text.setPlaceholder("Enter your secret key")
+						.setValue(this.plugin.data.spnSecretKey || "")
+						.onChange(async (value) => {
+							this.plugin.data.spnSecretKey = value.trim();
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = "password";
+				});
+
+			const plaintextNotice = containerEl.createEl("p", { cls: "setting-item-description" });
+			plaintextNotice.setText(
+				"⚠️ Plaintext mode stores API keys directly in data.json. They will automatically sync across devices if you use Obsidian Sync.",
+			);
+		}
 
 		new Setting(containerEl).setName("Profiles").setHeading();
 
@@ -64,7 +268,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.data.activeProfileId = value;
 					await this.plugin.saveSettings();
-					this.display();
+					this.refreshSettingsUi(true);
 				});
 			});
 
@@ -131,7 +335,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Filtering rules (optional)").setHeading();
 
 		new Setting(containerEl)
-			.setName("Ignore URL patterns")
+			.setName("Legacy ignore URL patterns")
 			.setDesc(
 				"URLs matching these patterns (one per line, regex or simple text) will be ignored. Example: youtube\\.com or internal-wiki",
 			)
@@ -146,6 +350,31 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 							.filter((p) => p.length > 0);
 						await this.plugin.saveSettings();
 					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Ignored domains")
+			.setDesc(
+				"Skip these domains and all subdomains. Separate entries with commas or new lines.",
+			)
+			.addTextArea((text) =>
+				text
+					.setPlaceholder("example.com\nnews.example.org")
+					.setValue(activeSettings.ignoredDomains.join("\n"))
+					.onChange(async (value) => {
+						activeSettings.ignoredDomains = parseIgnoredDomains(value);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Archive bare URLs")
+			.setDesc("Also archive pasted URLs that are not wrapped in Markdown or HTML links.")
+			.addToggle((toggle) =>
+				toggle.setValue(activeSettings.archiveBareUrls).onChange(async (value) => {
+					activeSettings.archiveBareUrls = value;
+					await this.plugin.saveSettings();
+				}),
 			);
 
 		containerEl.createEl("p", {
@@ -289,7 +518,47 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					});
 			});
 
+		new Setting(containerEl)
+			.setName("Maximum wait for fresh captures (seconds)")
+			.addText((text) =>
+				text
+					.setValue(String(activeSettings.maxFreshCaptureWaitSeconds))
+					.onChange(async (value) => {
+						activeSettings.maxFreshCaptureWaitSeconds = Math.max(
+							1,
+							Number.parseInt(value, 10) || 120,
+						);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl).setName("Throttle retry delay (ms)").addText((text) =>
+			text.setValue(String(activeSettings.throttleRetryDelayMs)).onChange(async (value) => {
+				activeSettings.throttleRetryDelayMs = Math.max(0, Number.parseInt(value, 10) || 0);
+				await this.plugin.saveSettings();
+			}),
+		);
+
+		new Setting(containerEl).setName("Maximum throttle retries").addText((text) =>
+			text.setValue(String(activeSettings.maxThrottleRetries)).onChange(async (value) => {
+				activeSettings.maxThrottleRetries = Math.max(0, Number.parseInt(value, 10) || 0);
+				await this.plugin.saveSettings();
+			}),
+		);
+
 		new Setting(containerEl).setName("Fallback archive providers").setHeading();
+
+		new Setting(containerEl)
+			.setName("Fall back to latest existing snapshot")
+			.setDesc(
+				"After capture failure, use the latest snapshot only when it is inside Archive freshness.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(activeSettings.fallbackToLatestSnapshot).onChange(async (value) => {
+					activeSettings.fallbackToLatestSnapshot = value;
+					await this.plugin.saveSettings();
+				}),
+			);
 
 		new Setting(containerEl)
 			.setName("Use archive.today fallback")
@@ -346,7 +615,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						activeSettings.archiveTodayExperimentalSubmit = value;
 						await this.plugin.saveSettings();
-						this.display();
+						this.refreshSettingsUi(false);
 					}),
 			);
 
@@ -669,7 +938,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				};
 				this.plugin.data.activeProfileId = newName;
 				await this.plugin.saveSettings();
-				this.display();
+				this.refreshSettingsUi(true);
 				new Notice(`Profile "${newName}" created and activated.`);
 			} else if (newName) {
 				new Notice(`Profile "${newName}" already exists.`);
@@ -695,7 +964,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					delete this.plugin.data.profiles[currentId];
 					this.plugin.data.activeProfileId = newName;
 					await this.plugin.saveSettings();
-					this.display();
+					this.refreshSettingsUi(true);
 					new Notice(`Profile "${currentId}" renamed to "${newName}".`);
 				} else if (newName === currentId) {
 					new Notice("New name is the same as the current name.");
@@ -727,7 +996,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					delete this.plugin.data.profiles[profileIdToDelete];
 					this.plugin.data.activeProfileId = "default";
 					await this.plugin.saveSettings();
-					this.display();
+					this.refreshSettingsUi(true);
 					new Notice(`Profile "${profileIdToDelete}" deleted.`);
 				} else {
 					new Notice("Profile deletion cancelled.");

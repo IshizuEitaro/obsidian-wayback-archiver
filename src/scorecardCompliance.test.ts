@@ -15,10 +15,24 @@ describe("Obsidian scorecard compliance", () => {
 		expect(read("package.json")).not.toContain('"builtin-modules"');
 	});
 
+	it("minifies production builds while preserving development source maps", () => {
+		const source = read("esbuild.config.mjs");
+		expect(source).toContain("minify: prod");
+		expect(source).toContain('sourcemap: prod ? false : "inline"');
+	});
+
 	it("does not use settings in a settings heading", () => {
 		expect(read("src/ui/SettingsTab.ts")).not.toContain(
 			'.setName("SPN API v2 settings").setHeading()',
 		);
+	});
+
+	it("manages all context-menu listeners through the plugin lifecycle", () => {
+		const source = read("src/core/contextMenus.ts");
+		expect(source.match(/plugin\.registerEvent\(/gu)).toHaveLength(4);
+		for (const event of ["editor-menu", "file-menu", "url-menu", "files-menu"]) {
+			expect(source).toContain(`workspace.on("${event}"`);
+		}
 	});
 
 	it("attests release assets and installs from the frozen lockfile", () => {

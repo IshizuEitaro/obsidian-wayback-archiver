@@ -11,13 +11,58 @@ import {
 	LINK_REGEX,
 	getUrlFromMatch,
 	isFollowedByArchiveLink,
+	isArchiveTimestampFresh,
+	isBareUrlMatch,
+	isHostnameIgnored,
 	matchesAnyPattern,
 	normalizeArchiveUrl,
 	decodeHtmlEntities,
 	normalizeUrlForComparison,
+	parseIgnoredDomains,
 	isSnapshotForTargetUrl,
 	extractProviderSnapshotFromText,
 } from "./LinkUtils";
+
+describe("safe URL filtering helpers", () => {
+	it("accepts only fallback timestamps inside the configured freshness window", () => {
+		const now = new Date("2026-07-22T12:00:00Z").getTime();
+		expect(isArchiveTimestampFresh("20260721120001", 1, now)).toBe(true);
+		expect(isArchiveTimestampFresh("20260721115959", 1, now)).toBe(false);
+		expect(isArchiveTimestampFresh("20260722115959", 0, now)).toBe(false);
+		expect(isArchiveTimestampFresh("invalid", 30, now)).toBe(false);
+	});
+
+	it("rejects semantically invalid archive timestamps", () => {
+		const now = new Date("2026-07-22T12:00:00Z").getTime();
+		expect(isArchiveTimestampFresh("20260230120000", 365, now)).toBe(false);
+	});
+	it("distinguishes bare URLs while retaining image URLs", () => {
+		const matches = Array.from(
+			"[page](https://page.example) ![image](https://img.example/a.png) <https://auto.example> https://bare.example".matchAll(
+				LINK_REGEX,
+			),
+		);
+
+		expect(matches.map(isBareUrlMatch)).toEqual([false, false, true, true]);
+	});
+
+	it("parses comma and newline separated ignored domains", () => {
+		expect(parseIgnoredDomains("Example.com, api.example.org\nnews.example.net")).toEqual([
+			"example.com",
+			"api.example.org",
+			"news.example.net",
+		]);
+	});
+
+	it("matches a domain and its subdomains but not suffix lookalikes", () => {
+		const domains = ["example.com"];
+		expect(isHostnameIgnored("https://example.com/a", domains)).toBe(true);
+		expect(isHostnameIgnored("https://www.example.com/a", domains)).toBe(true);
+		expect(isHostnameIgnored("https://deep.www.example.com/a", domains)).toBe(true);
+		expect(isHostnameIgnored("https://evil-example.com/a", domains)).toBe(false);
+		expect(isHostnameIgnored("https://example.com.evil.test/a", domains)).toBe(false);
+	});
+});
 
 describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 	const getMatches = (text: string) => {
@@ -111,6 +156,14 @@ describe("Link Detection (Balanced Parentheses & Edge Cases)", () => {
 			expect(extractArchiveTimestamp(archiveToday)).toBe("20260505164448");
 			expect(isFollowedByArchiveLink(megalodon)).toBe(true);
 			expect(extractArchiveTimestamp(megalodon)).toBe("20260507000135");
+		});
+
+		it("does not cross an intervening Markdown link to find an archive link", () => {
+			const nextText =
+				"\n[next](https://next.example) [(Archived)](https://web.archive.org/web/20260722110000/https://next.example)";
+
+			expect(getAdjacentArchiveLinkMatch(nextText)).toBeNull();
+			expect(isFollowedByArchiveLink(nextText)).toBe(false);
 		});
 
 		it("respects the adjacent link search limit of 300 characters", () => {

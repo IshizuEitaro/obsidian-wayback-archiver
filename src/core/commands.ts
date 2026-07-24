@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { WaybackArchiverData, WaybackArchiverSettings } from "./settings";
 import { serializeFailedArchiveEntriesToCsv } from "./failedArchiveLog";
 import { runAsyncAction } from "../utils/async";
+import { ArchiveScanSummary } from "./vaultScan";
 
 const runCommandAction = (action: () => Promise<void>): void => {
 	runAsyncAction(action, (error: unknown) => {
@@ -12,12 +13,36 @@ const runCommandAction = (action: () => Promise<void>): void => {
 	});
 };
 
+function resolveCurrentMarkdownEditor(
+	app: App,
+): { editor: Editor; context: MarkdownView | MarkdownFileInfo } | null {
+	const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+	if (activeView?.file) {
+		return { editor: activeView.editor, context: activeView };
+	}
+
+	const activeEditor = app.workspace.activeEditor;
+	if (activeEditor?.editor && activeEditor.file) {
+		return { editor: activeEditor.editor, context: activeEditor };
+	}
+
+	const activeFile = app.workspace.getActiveFile();
+	if (!activeFile) return null;
+	for (const leaf of app.workspace.getLeavesOfType("markdown")) {
+		const view = leaf.view;
+		if (view instanceof MarkdownView && view.file?.path === activeFile.path) {
+			return { editor: view.editor, context: view };
+		}
+	}
+	return null;
+}
+
 export function registerCommands(plugin: WaybackArchiverPlugin) {
 	// This creates an icon in the left ribbon.
 	plugin.addRibbonIcon("wayback-ribbon", "Archive links in current note", async () => {
-		const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		if (view) {
-			await plugin.archiveLinksAction(view.editor, view);
+		const current = resolveCurrentMarkdownEditor(plugin.app);
+		if (current) {
+			await plugin.archiveLinksAction(current.editor, current.context);
 		} else {
 			new Notice("Please open a markdown file first.");
 		}
@@ -33,19 +58,12 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		id: "archive-links-vault",
 		name: "Archive all links in vault",
 		callback: async () => {
-			new ConfirmationModal(
-				plugin.app,
-				"Archive all links?",
-				"This will scan all markdown notes in your vault and attempt to archive external links via Archive.org. Links that already have an archive link immediately following them will be skipped. This may take a while depending on the number of notes and links.",
-				"Yes, archive all",
-				async (confirmed: boolean) => {
-					if (confirmed) {
-						await plugin.archiveAllLinksVaultAction();
-					} else {
-						new Notice("Vault-wide archiving cancelled.");
-					}
-				},
-			).open();
+			const summary = await plugin.scanVaultForArchiving(false);
+			if (!summary.linkCount) {
+				new Notice("No suitable links found in the vault.");
+				return;
+			}
+			plugin.startArchiveRun(summary, "Archive all links in vault?");
 		},
 	});
 
@@ -305,19 +323,12 @@ export function registerCommands(plugin: WaybackArchiverPlugin) {
 		id: "force-rearchive-links-vault",
 		name: "Force re-archive all links in vault",
 		callback: async () => {
-			new ConfirmationModal(
-				plugin.app,
-				"Force re-archive all links?",
-				"This will scan all markdown notes in your vault and attempt to archive external links via Archive.org, *overwriting* any existing archive links immediately following them. This may take a while.",
-				"Yes, force re-archive all",
-				async (confirmed: boolean) => {
-					if (!confirmed) {
-						new Notice("Vault-wide force re-archiving cancelled.");
-						return;
-					}
-					await plugin.forceReArchiveAllLinksAction();
-				},
-			).open();
+			const summary = await plugin.scanVaultForArchiving(true);
+			if (!summary.linkCount) {
+				new Notice("No suitable links found in the vault.");
+				return;
+			}
+			plugin.startArchiveRun(summary, "Force re-archive all links in vault?");
 		},
 	});
 
@@ -497,6 +508,8 @@ interface WaybackArchiverPlugin extends Plugin {
 		isForce: boolean,
 	) => Promise<void>;
 	runPendingQueueCycle: () => Promise<void>;
+	scanVaultForArchiving: (isForce: boolean) => Promise<ArchiveScanSummary>;
+	startArchiveRun: (summary: ArchiveScanSummary, title: string) => void;
 	saveSettings: () => Promise<void>;
 	loadSettings: () => Promise<void>;
 	data: WaybackArchiverData;

@@ -18,6 +18,8 @@ This is an Obsidian plugin which automatically archives web links via Wayback Ma
     - [Filtering](#filtering)
     - [Substitution](#substitution)
     - [Failed Archives](#failed-archives)
+- [Safe long-running archival](#safe-long-running-archival)
+- [Context menu actions](#context-menu-actions)
 - [Commands](#commands)
     - [Archive links in current note](#archive-links-in-current-note)
     - [Archive all links in vault](#archive-all-links-in-vault)
@@ -95,6 +97,26 @@ If the plugin fails to archive a link (due to API errors, timeouts, rate limits,
 The plugin keeps an internal failed archive list in its plugin data. You can export this list to JSON or CSV for review or retry. Exported log files are separate files; clearing the internal failed list does not delete previously exported log files. Saved log files are stored under your Obsidian configuration folder, usually `.obsidian/plugins/wayback-archiver/failed_logs/`.
 
 To avoid log bloat, repeated failures for the same URL, file, target URL, and failure stage within a short time window are coalesced into one failed entry.
+
+---
+
+## Safe long-running archival
+
+Vault-wide and multi-note runs show affected notes, eligible link occurrences, and unique URLs before starting. During archival, progress is reported in real time via a compact floating progress chip as well as the status bar. The progress dialog lists individual target URLs, allows skipping individual pending items on the fly, and can be reopened anytime by clicking the chip or status bar. Progress summaries dynamically report completed items alongside detailed counts for saved, failed, and skipped links. Cancel stops new work and preserves only edits completed before cancellation; an in-flight request may finish, but its result is not written after cancellation.
+
+Bare URLs can be enabled or disabled, while Markdown and HTML image URLs remain eligible. Ignored domains match exact hostnames and their subdomains; legacy regular-expression URL patterns remain available. Throttled captures retry with the configured delay and limit. A failed capture can use only a fixed-timestamp snapshot inside the configured Archive freshness window; freshness `0` disables that fallback.
+
+Archive.org credentials continue to use the explicitly selected SecretStorage or plaintext `data.json` mode.
+
+On Obsidian 1.13+, settings use the searchable declarative interface with inline validation. Obsidian 1.8.10–1.12 continues to use the legacy renderer. Stored legacy numeric values are normalized safely on load, while profile data and credential storage choices keep their existing format.
+
+---
+
+## Context menu actions
+
+Archive actions are available from the editor, a note in File Explorer, a URL, or a multi-note selection on Desktop and Mobile. Every menu offers normal and force modes. A URL action captures the selected URL once and updates every eligible occurrence in the active note, including Markdown links and images, HTML anchors and images, and enabled bare URLs. Selected-note actions scan only the deduplicated Markdown notes, show preflight counts, and use the shared progress and cancellation workflow.
+
+---
 
 ## Commands
 
@@ -228,6 +250,8 @@ These settings apply only to the **currently active profile**.
 
 Control which notes and links are processed.
 
+- **Ignored domains:** Skip exact domains and all of their subdomains. Separate entries with commas or new lines. Default: empty.
+- **Archive bare URLs:** Archive pasted HTTP(S) URLs that are not wrapped in Markdown or HTML links. Markdown and HTML image URLs remain eligible regardless of this setting. Default: enabled.
 - **Ignore URL Patterns:** URLs matching these patterns (one per line, supports simple text or Regex) will be skipped during archiving. `web.archive.org` is ignored by default.
 - **URL Patterns:** (All commands) Only process links whose URL matches one of these patterns (one per line, simple text or Regex). Leave empty to process links with any URL (respecting Ignore Patterns).
 - **Path Patterns:** (Vault-wide commands and selection-free current-note commands) Only process notes whose file path matches one of these patterns (one per line, simple text or Regex). Leave empty to process notes in any path.
@@ -300,6 +324,8 @@ Control specific features of the Archive.org SPN API v2 capture process. Please 
 - **Force GET Request (force_get=1):** Force the archiver to use an HTTP GET request (`force_get=1`). Default: false.
 - **Capture Outlinks (capture_outlinks=1):** Attempt to capture pages linked _from_ the target URL (`capture_outlinks=1`). Use with caution, can be slow and consume more resources. Default: false.
 
+---
+
 ## Troubleshooting FAQ
 
 **Q: Why are my API keys not working? / Getting "Configuration Error".**
@@ -362,6 +388,8 @@ However, if you run a command with an **active text selection**, the selection t
 
 **A:** archive.today auto-submit is experimental and best-effort. archive.today does not provide a stable public saving API, and requests may be blocked by rate limits, CAPTCHA, anti-bot checks, regional/network differences, or site changes. Try using **Open next failed URLs in archive.today** to complete the save manually in your browser, then run **Check pending archive.today snapshots now** or **Insert latest archive.today snapshot for selected links**.
 
+---
+
 ## Supporting the Project & Providers
 
 If you find this plugin useful, please consider supporting both the development of this project and the incredible archiving services that make it possible:
@@ -402,6 +430,8 @@ This option is disabled by default. Enable it only if you understand that it may
 
 > [!WARNING]
 > Even when auto-submit appears to succeed, the plugin cannot guarantee that archive.today will create a snapshot or expose a final snapshot URL.
+
+---
 
 ## LICENSE
 

@@ -7,6 +7,9 @@ import {
 } from "./settings";
 import { App, PluginManifest, Editor, MarkdownView, TFile } from "obsidian";
 import WaybackArchiverPlugin from "../main";
+import { getUrlFromMatch, LINK_REGEX } from "../utils/LinkUtils";
+import { BatchCanceledError, BatchRunController } from "./batchRun";
+import type { ArchiveScanSummary } from "./vaultScan";
 
 import {
 	serializeFailedArchiveEntriesToCsv,
@@ -18,6 +21,16 @@ const { noticeMock, requestUrlMock } = vi.hoisted(() => ({
 	noticeMock: vi.fn(),
 	requestUrlMock: vi.fn(),
 }));
+
+const toArchiveTimestamp = (date: Date): string =>
+	[
+		date.getUTCFullYear(),
+		String(date.getUTCMonth() + 1).padStart(2, "0"),
+		String(date.getUTCDate()).padStart(2, "0"),
+		String(date.getUTCHours()).padStart(2, "0"),
+		String(date.getUTCMinutes()).padStart(2, "0"),
+		String(date.getUTCSeconds()).padStart(2, "0"),
+	].join("");
 
 beforeEach(() => {
 	vi.stubGlobal("window", globalThis);
@@ -91,6 +104,7 @@ vi.mock("obsidian", () => ({
 }));
 
 const { ArchiverService } = await import("./archiver");
+const { ConfirmationModal } = await import("../ui/modals");
 
 const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 	let currentContent = content;
@@ -124,6 +138,7 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 		data,
 		activeSettings: { ...settings, apiDelay: 0 },
 		saveSettings: vi.fn(),
+		enqueueArchiveRun: vi.fn(),
 	};
 	const service = new ArchiverService(
 		plugin as unknown as ConstructorParameters<typeof ArchiverService>[0],
@@ -147,6 +162,225 @@ const createFileService = (content: string, settings = DEFAULT_SETTINGS) => {
 		service,
 	};
 };
+
+describe("archive preflight scan", () => {
+	it("excludes fresh adjacent archives, ignored domains, and disabled bare URLs", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-22T12:00:00Z"));
+		const content = [
+			"[kept](https://kept.example)",
+			"https://bare.example",
+			"[ignored](https://sub.skip.example)",
+			"[fresh](https://fresh.example) [(Archived)](https://web.archive.org/web/20260722110000/https://fresh.example)",
+		].join("\n");
+		const { file, service } = createFileService(content, {
+			...DEFAULT_SETTINGS,
+			archiveBareUrls: false,
+			ignoredDomains: ["skip.example"],
+			archiveFreshnessDays: 1,
+		});
+
+		const summary = await service.scanFilesForArchiving([file], false);
+
+		expect(summary).toMatchObject({ noteCount: 1, linkCount: 1, uniqueUrlCount: 1 });
+		expect(summary.items[0].url).toBe("https://kept.example");
+		vi.useRealTimers();
+	});
+});
+
+describe("archiveUrlScopeAction", () => {
+	it("queues every eligible occurrence without capturing immediately", async () => {
+		const setup = createFileService(
+			[
+				"[a](https://e.example)",
+				"![b](https://e.example)",
+				'<a href="https://e.example">c</a>',
+				'<img src="https://e.example">',
+			].join("\n"),
+		);
+		const capture = vi.spyOn(setup.service, "archiveUrl");
+
+		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", false);
+
+		expect(capture).not.toHaveBeenCalled();
+		expect(setup.plugin.enqueueArchiveRun).toHaveBeenCalledOnce();
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0]).toMatchObject({
+			noteCount: 1,
+			linkCount: 4,
+			uniqueUrlCount: 1,
+		});
+	});
+
+	it("does not capture when every occurrence has a fresh adjacent archive", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-22T12:00:00Z"));
+		const setup = createFileService(
+			"[a](https://e.example) [(Archived)](https://web.archive.org/web/20260722110000/https://e.example)",
+			{ ...DEFAULT_SETTINGS, archiveFreshnessDays: 1 },
+		);
+		const capture = vi.spyOn(setup.service, "archiveUrl");
+
+		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", false);
+
+		expect(capture).not.toHaveBeenCalled();
+		expect(setup.plugin.enqueueArchiveRun).not.toHaveBeenCalled();
+		vi.useRealTimers();
+	});
+
+	it("queues force replacement for every occurrence without another confirmation", async () => {
+		const setup = createFileService(
+			"[a](https://e.example) [(Archived)](https://web.archive.org/web/20200101000000/https://e.example)\n[b](https://e.example)",
+		);
+		const confirmation = vi.spyOn(ConfirmationModal.prototype, "open");
+
+		await setup.service.archiveUrlScopeAction(setup.file, "https://e.example", true);
+
+		expect(confirmation).not.toHaveBeenCalled();
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0].items).toHaveLength(2);
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0].items).toEqual(
+			expect.arrayContaining([expect.objectContaining({ isForce: true })]),
+		);
+	});
+});
+
+describe("current editor archive submission", () => {
+	const createEditor = (content: string, selectionStart: number, selectionEnd: number) => ({
+		getSelection: () => content.slice(selectionStart, selectionEnd),
+		getValue: () => content,
+		getCursor: (fromTo?: string) => ({
+			line: 0,
+			ch: fromTo === "from" ? selectionStart : selectionEnd,
+		}),
+		posToOffset: (position: { ch: number }) => position.ch,
+	});
+
+	it("queues all eligible links in the current note", async () => {
+		const setup = createFileService("[a](https://a.example)\n[b](https://b.example)");
+		const editor = createEditor(setup.getContent(), 0, 0);
+
+		await setup.service.archiveLinksAction(editor as never, { file: setup.file } as never);
+
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0]).toMatchObject({
+			noteCount: 1,
+			linkCount: 2,
+		});
+	});
+
+	it("queues only unarchived links when the rest have fresh adjacent archives", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-22T12:00:00Z"));
+		const unarchived = Array.from(
+			{ length: 5 },
+			(_, index) => `[new-${index}](https://new-${index}.example)`,
+		);
+		const fresh = Array.from(
+			{ length: 63 },
+			(_, index) =>
+				`[fresh-${index}](https://fresh-${index}.example) [(Archived)](https://web.archive.org/web/20260722110000/https://fresh-${index}.example)`,
+		);
+		const setup = createFileService([...unarchived, ...fresh].join("\n"), {
+			...DEFAULT_SETTINGS,
+			archiveFreshnessDays: 1,
+		});
+		const editor = createEditor(setup.getContent(), 0, 0);
+
+		await setup.service.archiveLinksAction(editor as never, { file: setup.file } as never);
+
+		expect(setup.plugin.enqueueArchiveRun).toHaveBeenCalledOnce();
+		const summary = setup.plugin.enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
+		expect(summary).toMatchObject({
+			noteCount: 1,
+			linkCount: 5,
+			uniqueUrlCount: 5,
+		});
+		expect(summary.items.map(({ url }) => url)).toEqual(
+			unarchived.map((_, index) => `https://new-${index}.example`),
+		);
+		vi.useRealTimers();
+	});
+
+	it("queues only links fully contained in the selection", async () => {
+		const content = "[a](https://a.example)\n[b](https://b.example)";
+		const setup = createFileService(content);
+		const selectionEnd = content.indexOf("\n");
+		const editor = createEditor(content, 0, selectionEnd);
+
+		await setup.service.archiveLinksAction(editor as never, { file: setup.file } as never);
+
+		expect(setup.plugin.enqueueArchiveRun.mock.calls[0][0].items).toEqual([
+			expect.objectContaining({ url: "https://a.example", approximateIndex: 0 }),
+		]);
+	});
+});
+
+describe("archiveScannedLinksAction", () => {
+	it("applies completed work and leaves later items unchanged after cancellation", async () => {
+		const { file, getContent, service } = createFileService(
+			"[a](https://a.example)\n[b](https://b.example)",
+		);
+		const summary = await service.scanFilesForArchiving([file], false);
+		const run = new BatchRunController(
+			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
+		);
+		const processSingle = vi.spyOn(
+			service as unknown as {
+				processSingleUrlArchival: () => Promise<unknown>;
+			},
+			"processSingleUrlArchival",
+		);
+		processSingle
+			.mockResolvedValueOnce({
+				status: "archived_success",
+				url: "https://web.archive.org/web/20260722120000/https://a.example",
+			})
+			.mockImplementationOnce(async () => {
+				run.cancel();
+				return {
+					status: "archived_success",
+					url: "https://web.archive.org/web/20260722120000/https://b.example",
+				};
+			});
+
+		await (
+			service as unknown as {
+				archiveScannedLinksAction: (
+					summary: ArchiveScanSummary,
+					run: BatchRunController,
+				) => Promise<void>;
+			}
+		).archiveScannedLinksAction(summary, run);
+
+		expect(getContent()).toContain("web.archive.org/web/20260722120000/https://a.example");
+		expect(getContent()).not.toContain("web.archive.org/web/20260722120000/https://b.example");
+		expect(run.snapshot()).toMatchObject({ canceled: true, finished: true });
+	});
+
+	it("does not apply a completed request after that item is skipped", async () => {
+		const { file, getContent, service } = createFileService("[a](https://a.example)");
+		const summary = await service.scanFilesForArchiving([file], false);
+		const [item] = summary.items;
+		const run = new BatchRunController([
+			{ id: "queue-item", url: item.url, filePath: item.filePath },
+		]);
+		vi.spyOn(
+			service as unknown as {
+				processSingleUrlArchival: () => Promise<unknown>;
+			},
+			"processSingleUrlArchival",
+		).mockImplementationOnce(async () => {
+			run.cancelItem("queue-item");
+			return {
+				status: "archived_success",
+				url: "https://web.archive.org/web/20260722120000/https://a.example",
+			};
+		});
+
+		await service.archiveScannedItemAction(item, run, "queue-item").catch(() => undefined);
+
+		expect(getContent()).not.toContain("web.archive.org/web/20260722120000/https://a.example");
+		expect(run.snapshot().items[0].status).toBe("canceled");
+	});
+});
 
 describe("ArchiverService.archiveUrl", () => {
 	const createService = (
@@ -298,17 +532,128 @@ describe("ArchiverService.archiveUrl", () => {
 	});
 
 	it("uses the latest snapshot when capture is rate-limited", async () => {
+		const freshTimestamp = toArchiveTimestamp(new Date(Date.now() - 60_000));
 		requestUrlMock.mockResolvedValueOnce({ status: 429, json: {} }).mockResolvedValueOnce({
 			status: 200,
-			json: [["timestamp"], ["20260416000000"]],
-			text: '[["timestamp"],["20260416000000"]]',
+			json: [["timestamp"], [freshTimestamp]],
+			text: JSON.stringify([["timestamp"], [freshTimestamp]]),
 		});
-		const service = createService();
+		const service = createService({}, { maxThrottleRetries: 0, archiveFreshnessDays: 1 });
 
 		await expect(service.archiveUrl("https://example.com")).resolves.toEqual({
 			status: "too_many_captures",
-			url: "https://web.archive.org/web/20260416000000/https://example.com",
+			url: `https://web.archive.org/web/${freshTimestamp}/https://example.com`,
 		});
+	});
+
+	it("does not append an old CDX fallback after capture failure", async () => {
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 500, json: {}, text: "failed" })
+			.mockResolvedValueOnce({
+				status: 200,
+				json: [["timestamp"], ["20200101000000"]],
+			});
+		const service = createService(
+			{},
+			{
+				archiveFreshnessDays: 30,
+				fallbackToLatestSnapshot: true,
+				defaultArchiveProviders: ["wayback"],
+			},
+		);
+
+		await expect(service.archiveUrl("https://example.com")).resolves.toMatchObject({
+			status: "failed",
+		});
+	});
+
+	it("returns a fresh fixed CDX fallback after capture failure", async () => {
+		const freshTimestamp = toArchiveTimestamp(new Date(Date.now() - 60_000));
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 500, json: {}, text: "failed" })
+			.mockResolvedValueOnce({
+				status: 200,
+				json: [["timestamp"], [freshTimestamp]],
+			});
+		const service = createService(
+			{},
+			{
+				archiveFreshnessDays: 1,
+				fallbackToLatestSnapshot: true,
+				defaultArchiveProviders: ["wayback"],
+			},
+		);
+
+		await expect(service.archiveUrl("https://example.com")).resolves.toEqual({
+			status: "too_many_captures",
+			url: `https://web.archive.org/web/${freshTimestamp}/https://example.com`,
+		});
+	});
+
+	it("retries active-session throttles before using a fresh fallback", async () => {
+		const run = new BatchRunController([
+			{ id: "item", url: "https://example.com", filePath: "a.md" },
+		]);
+		requestUrlMock
+			.mockResolvedValueOnce({ status: 429, json: { message: "active sessions limit" } })
+			.mockResolvedValueOnce({ status: 429, json: { message: "active sessions limit" } })
+			.mockResolvedValueOnce({ status: 200, json: { job_id: "job" } })
+			.mockResolvedValueOnce({
+				status: 200,
+				json: {
+					status: "success",
+					timestamp: "20260722120000",
+					original_url: "https://example.com",
+				},
+			});
+		const service = createService(
+			{},
+			{
+				apiDelay: 0,
+				throttleRetryDelayMs: 0,
+				maxThrottleRetries: 2,
+			},
+		);
+
+		const result = await service.archiveUrl("https://example.com", run, "item");
+
+		expect(result.status).toBe("success");
+		expect(requestUrlMock).toHaveBeenCalledTimes(4);
+	});
+
+	it("does not look up or apply a fallback after in-flight cancellation", async () => {
+		const run = new BatchRunController([
+			{ id: "item", url: "https://example.com", filePath: "a.md" },
+		]);
+		requestUrlMock.mockImplementationOnce(async () => {
+			run.cancel();
+			return { status: 500, json: {}, text: "failed" };
+		});
+		const service = createService({}, { apiDelay: 0 });
+
+		await expect(service.archiveUrl("https://example.com", run, "item")).rejects.toBeInstanceOf(
+			BatchCanceledError,
+		);
+		expect(requestUrlMock).toHaveBeenCalledOnce();
+	});
+
+	it("does not look up or apply a fallback after the active item is skipped", async () => {
+		const run = new BatchRunController([
+			{ id: "item", url: "https://example.com", filePath: "a.md" },
+			{ id: "other", url: "https://other.example", filePath: "b.md" },
+		]);
+		requestUrlMock.mockImplementationOnce(async () => {
+			run.cancelItem("item");
+			return { status: 500, json: {}, text: "failed" };
+		});
+		const service = createService({}, { apiDelay: 0 });
+
+		await expect(service.archiveUrl("https://example.com", run, "item")).rejects.toBeInstanceOf(
+			BatchCanceledError,
+		);
+		expect(run.isCanceled()).toBe(false);
+		expect(run.isItemCanceled("other")).toBe(false);
+		expect(requestUrlMock).toHaveBeenCalledOnce();
 	});
 
 	it("falls back to archive.today latest snapshot when Wayback capture fails", async () => {
@@ -502,9 +847,11 @@ describe("ArchiverService.archiveUrl", () => {
 			stage: "wayback-initiation-failed",
 			targetUrl: "https://cdn.imgchest.com/files/xxxxxxxxxxxxx.png",
 		});
-		expect(requestUrlMock.mock.calls.map((call) => call[0].url)).toEqual([
-			"https://web.archive.org/save",
-		]);
+		const requestedUrls = requestUrlMock.mock.calls.map((call) => call[0].url);
+		expect(requestedUrls).toContain("https://web.archive.org/save");
+		expect(requestedUrls).not.toContain(
+			"https://archive.md/latest/https%3A%2F%2Fcdn.imgchest.com%2Ffiles%2Fxxxxxxxxxxxxx.png",
+		);
 	});
 
 	it("archiveUrl returns failed when archive.today experimental submit-only request returns 429", async () => {
@@ -658,6 +1005,58 @@ describe("archive.today pending queue", () => {
 	beforeEach(() => {
 		requestUrlMock.mockReset();
 		noticeMock.mockReset();
+	});
+
+	it("does not retain a timer when the pending queue is empty", async () => {
+		vi.useFakeTimers();
+		const { service } = createPendingService("", []);
+		service.startPendingQueueScheduler();
+		await Promise.resolve();
+
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("wakes the scheduler when a pending entry is registered", async () => {
+		vi.useFakeTimers();
+		const { service } = createPendingService("", []);
+		service.startPendingQueueScheduler();
+		await (
+			service as unknown as {
+				registerPendingArchive: (
+					url: string,
+					targetUrl: string,
+					filePath: string,
+				) => Promise<string>;
+			}
+		).registerPendingArchive("https://example.com", "https://example.com", "test.md");
+
+		expect(vi.getTimerCount()).toBe(1);
+	});
+
+	it("keeps scheduler start, wake, and stop idempotent", () => {
+		vi.useFakeTimers();
+		const entry: PendingArchiveEntry = {
+			id: "pending",
+			providerId: "archiveToday",
+			url: "https://example.com",
+			targetUrl: "https://example.com",
+			filePath: "test.md",
+			createdAt: Date.now(),
+			checkCount: 0,
+			maxWaitMs: 600_000,
+			status: "submitted",
+		};
+		const { service } = createPendingService("", [entry]);
+		const scheduler = service as InstanceType<typeof ArchiverService> & {
+			wakePendingQueueScheduler(delayMs?: number): void;
+		};
+		scheduler.startPendingQueueScheduler();
+		scheduler.startPendingQueueScheduler();
+		scheduler.wakePendingQueueScheduler(0);
+		scheduler.wakePendingQueueScheduler(0);
+		expect(vi.getTimerCount()).toBe(1);
+		scheduler.stopPendingQueueScheduler();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	afterEach(() => {
@@ -2068,12 +2467,49 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 				...settingsOverrides,
 			},
 			saveSettings: vi.fn(),
+			enqueueArchiveRun: vi.fn(),
 		};
 
 		return new ArchiverService(
 			plugin as unknown as ConstructorParameters<typeof ArchiverService>[0],
 		);
 	};
+
+	it("filters disabled bare URLs while retaining Markdown and image URLs", () => {
+		const service = createTddService({}, { archiveBareUrls: false });
+		const content =
+			"[page](https://page.example) ![image](https://img.example/a.png) https://bare.example";
+		const result = (
+			service as unknown as {
+				filterLinksForArchiving: (
+					matches: RegExpMatchArray[],
+					content: string,
+					force: boolean,
+				) => { linksToProcess: RegExpMatchArray[] };
+			}
+		).filterLinksForArchiving(Array.from(content.matchAll(LINK_REGEX)), content, false);
+
+		expect(result.linksToProcess.map(getUrlFromMatch)).toEqual([
+			"https://page.example",
+			"https://img.example/a.png",
+		]);
+	});
+
+	it("filters ignored domains at hostname boundaries", () => {
+		const service = createTddService({}, { ignoredDomains: ["skip.example"] });
+		const content = "[ignored](https://sub.skip.example/a) [kept](https://evil-skip.example/a)";
+		const result = (
+			service as unknown as {
+				filterLinksForArchiving: (
+					matches: RegExpMatchArray[],
+					content: string,
+					force: boolean,
+				) => { linksToProcess: RegExpMatchArray[] };
+			}
+		).filterLinksForArchiving(Array.from(content.matchAll(LINK_REGEX)), content, false);
+
+		expect(result.linksToProcess.map(getUrlFromMatch)).toEqual(["https://evil-skip.example/a"]);
+	});
 
 	it("logs targetUrl for selection-mode failures", async () => {
 		const service = createTddService();
@@ -2105,6 +2541,12 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 		);
+		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<typeof vi.fn>;
+		const summary = enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
+		const run = new BatchRunController(
+			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
+		);
+		await service.archiveScannedItemAction(summary.items[0], run, summary.items[0].id);
 
 		const failedList = service["plugin"].data.failedArchives ?? [];
 		expect(failedList).toHaveLength(1);
@@ -2142,6 +2584,12 @@ describe("Wayback Archiver Enhancements TDD Part 2", () => {
 			editor as unknown as Editor,
 			{ file } as unknown as MarkdownView,
 		);
+		const enqueueArchiveRun = service["plugin"].enqueueArchiveRun as ReturnType<typeof vi.fn>;
+		const summary = enqueueArchiveRun.mock.calls[0][0] as ArchiveScanSummary;
+		const run = new BatchRunController(
+			summary.items.map(({ id, url, filePath }) => ({ id, url, filePath })),
+		);
+		await service.archiveScannedItemAction(summary.items[0], run, summary.items[0].id);
 
 		const failedList = service["plugin"].data.failedArchives ?? [];
 		expect(failedList).toHaveLength(1);

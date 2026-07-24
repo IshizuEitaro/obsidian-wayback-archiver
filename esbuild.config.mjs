@@ -36,6 +36,7 @@ esbuild
 		format: "cjs",
 		target: "es2022", // Match tsconfig.json target
 		logLevel: "info",
+		minify: prod,
 		sourcemap: prod ? false : "inline",
 		treeShaking: true,
 		outfile: "main.js",

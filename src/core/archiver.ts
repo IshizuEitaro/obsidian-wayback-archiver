@@ -7,6 +7,9 @@ import {
 	checkAdjacentLinkFreshness,
 	extractArchiveTimestamp,
 	getUrlFromMatch,
+	isBareUrlMatch,
+	isArchiveTimestampFresh,
+	isHostnameIgnored,
 	isFollowedByArchiveLink,
 	LINK_REGEX,
 	matchesAnyPattern,
@@ -28,6 +31,7 @@ import {
 	WaybackArchiverData,
 	WaybackArchiverSettings,
 	appendFailedArchiveEntry,
+	getSpnCredentials,
 } from "./settings";
 import {
 	serializeFailedArchiveEntriesToCsv,
@@ -40,6 +44,9 @@ import {
 	selectFullyContainedLinkMatches,
 } from "../utils/contentManipulator";
 import { runAsyncAction } from "../utils/async";
+import { ArchiveScanSummary, ArchiveWorkItem, summarizeArchiveWork } from "./vaultScan";
+import { BatchCanceledError, BatchRunController, waitForBatchDelay } from "./batchRun";
+import { collectUrlOccurrences, SourceOccurrence } from "./archiveScope";
 
 export type ArchiveMode = "selection" | "file" | "vault";
 
@@ -86,6 +93,11 @@ export type ArchiveTodaySubmitQueueResult =
 interface EffectiveArchivePolicy {
 	providers: ArchiveServiceId[];
 	archiveTodayExperimentalSubmit: boolean;
+}
+
+interface LatestSnapshot {
+	url: string;
+	timestamp: string;
 }
 
 const ARCHIVE_TODAY_CANONICAL_HOST = "archive.md";
@@ -146,6 +158,150 @@ export class ArchiverService {
 		await this.plugin.saveSettings();
 	}
 
+	private fileMatchesActiveFilters(file: TFile, content: string): boolean {
+		if (
+			this.activeSettings.pathPatterns.length > 0 &&
+			!matchesAnyPattern(file.path, this.activeSettings.pathPatterns)
+		) {
+			return false;
+		}
+		return !(
+			this.activeSettings.wordPatterns.length > 0 &&
+			!this.activeSettings.wordPatterns.some((pattern) => content.includes(pattern))
+		);
+	}
+
+	private isOccurrenceEligible(
+		content: string,
+		occurrence: SourceOccurrence,
+		isForce: boolean,
+	): boolean {
+		if (this.isUrlIgnored(occurrence.url)) return false;
+		if (
+			this.activeSettings.urlPatterns.length > 0 &&
+			!matchesAnyPattern(occurrence.url, this.activeSettings.urlPatterns)
+		) {
+			return false;
+		}
+		if (!/^https?:\/\//iu.test(occurrence.url)) return false;
+		if (isForce) return true;
+		const following = content.slice(
+			occurrence.index + occurrence.matchText.length,
+			occurrence.index + occurrence.matchText.length + ADJACENT_LINK_SEARCH_LIMIT,
+		);
+		const adjacent = getAdjacentArchiveLinkMatch(following);
+		if (!adjacent) return true;
+		return checkAdjacentLinkFreshness(extractArchiveTimestamp(adjacent[0]), this.activeSettings)
+			.shouldProcess;
+	}
+
+	archiveUrlScopeAction = async (
+		file: TFile,
+		sourceUrl: string,
+		isForce: boolean,
+	): Promise<void> => {
+		const originalContent = await this.app.vault.read(file);
+		if (!this.fileMatchesActiveFilters(file, originalContent)) {
+			new Notice("This URL is excluded by the active profile.");
+			return;
+		}
+		const occurrences = collectUrlOccurrences(
+			originalContent,
+			sourceUrl,
+			this.activeSettings,
+		).filter((occurrence) => this.isOccurrenceEligible(originalContent, occurrence, isForce));
+		if (occurrences.length === 0) {
+			new Notice("No eligible occurrences of this URL were found in the active note.");
+			return;
+		}
+		this.plugin.enqueueArchiveRun(
+			summarizeArchiveWork(
+				occurrences.map((occurrence) => ({
+					id: `${file.path}:${occurrence.index}`,
+					filePath: file.path,
+					url: occurrence.url,
+					approximateIndex: occurrence.index,
+					isForce,
+				})),
+			),
+		);
+	};
+
+	archiveFilesAction = async (files: TFile[], isForce: boolean): Promise<void> => {
+		const markdownFiles = Array.from(
+			new Map(
+				files
+					.filter((file) => file.path.toLowerCase().endsWith(".md"))
+					.map((file) => [file.path, file]),
+			).values(),
+		);
+		const summary = await this.scanFilesForArchiving(markdownFiles, isForce);
+		if (summary.items.length === 0) {
+			new Notice("No eligible links were found in the selected notes.");
+			return;
+		}
+		this.plugin.enqueueArchiveRun(summary);
+	};
+
+	async scanFilesForArchiving(files: TFile[], isForce: boolean): Promise<ArchiveScanSummary> {
+		const uniqueFiles = Array.from(
+			new Map(
+				files
+					.filter((file) => file.path.toLowerCase().endsWith(".md"))
+					.map((file) => [file.path, file]),
+			).values(),
+		);
+		const items: ArchiveWorkItem[] = [];
+
+		for (const file of uniqueFiles) {
+			let content: string;
+			try {
+				content = await this.app.vault.read(file);
+			} catch {
+				new Notice(`Error reading file: ${file.path}`);
+				continue;
+			}
+			if (!this.fileMatchesActiveFilters(file, content)) continue;
+
+			const { linksToProcess } = this.filterLinksForArchiving(
+				Array.from(content.matchAll(LINK_REGEX)),
+				content,
+				isForce,
+			);
+			for (const match of linksToProcess) {
+				const approximateIndex = match.index;
+				if (approximateIndex === undefined) continue;
+				if (!isForce) {
+					const following = content.slice(
+						approximateIndex + match[0].length,
+						approximateIndex + match[0].length + ADJACENT_LINK_SEARCH_LIMIT,
+					);
+					const adjacent = getAdjacentArchiveLinkMatch(following);
+					if (adjacent) {
+						const freshness = checkAdjacentLinkFreshness(
+							extractArchiveTimestamp(adjacent[0]),
+							this.activeSettings,
+						);
+						if (!freshness.shouldProcess) continue;
+					}
+				}
+				items.push({
+					id: `${file.path}:${approximateIndex}`,
+					filePath: file.path,
+					url: getUrlFromMatch(match),
+					approximateIndex,
+					isForce,
+				});
+			}
+		}
+
+		return summarizeArchiveWork(items);
+	}
+
+	scanVaultForArchiving(isForce: boolean): Promise<ArchiveScanSummary> {
+		return this.scanFilesForArchiving(this.app.vault.getMarkdownFiles(), isForce);
+	}
+
 	private filterLinksForArchiving(
 		allMatches: RegExpMatchArray[],
 		fullContent: string,
@@ -166,6 +322,10 @@ export class ArchiverService {
 				localSkippedCount++;
 				return false;
 			}
+			if (!this.activeSettings.archiveBareUrls && isBareUrlMatch(match)) {
+				localSkippedCount++;
+				return false;
+			}
 
 			// --- Adjacent Check ---
 			let checkStartIndex = matchIndex + match[0].length;
@@ -183,14 +343,22 @@ export class ArchiverService {
 				checkStartIndex,
 				checkStartIndex + ADJACENT_LINK_SEARCH_LIMIT,
 			);
-			if (
-				!isForce &&
-				isFollowedByArchiveLink(textAfter) &&
-				cached &&
-				Date.now() - cached.timestamp < getFreshnessThresholdMs(this.activeSettings)
-			) {
-				localSkippedCount++;
-				return false;
+			if (!isForce) {
+				const adjacent = getAdjacentArchiveLinkMatch(textAfter);
+				if (adjacent) {
+					const cachedArchiveIsFresh =
+						cached !== undefined &&
+						Date.now() - cached.timestamp <
+							getFreshnessThresholdMs(this.activeSettings);
+					const adjacentArchiveIsFresh = !checkAdjacentLinkFreshness(
+						extractArchiveTimestamp(adjacent[0]),
+						this.activeSettings,
+					).shouldProcess;
+					if (cachedArchiveIsFresh || adjacentArchiveIsFresh) {
+						localSkippedCount++;
+						return false;
+					}
+				}
 			}
 
 			if (this.isUrlIgnored(url)) {
@@ -240,6 +408,7 @@ export class ArchiverService {
 				return true;
 			}
 		}
+		if (isHostnameIgnored(url, this.activeSettings.ignoredDomains)) return true;
 		return matchesAnyPattern(url, this.activeSettings.ignorePatterns);
 	}
 
@@ -248,6 +417,8 @@ export class ArchiverService {
 		isForce: boolean,
 		filePath: string,
 		approximateIndex?: number,
+		run?: BatchRunController,
+		itemId?: string,
 	): Promise<SingleArchiveOutcome> {
 		const cached = this.recentArchiveCache.get(originalUrl);
 		if (
@@ -264,7 +435,7 @@ export class ArchiverService {
 			}
 		} else {
 			// console.log(`[DEBUG] Calling archiveUrl (cache miss/stale) for: ${originalUrl}`);
-			const archiveResult = await this.archiveUrl(originalUrl);
+			const archiveResult = await this.archiveUrl(originalUrl, run, itemId);
 			// console.log(`[DEBUG] archiveUrl returned:`, archiveResult);
 			if (archiveResult.status === "success") {
 				this.recentArchiveCache.set(originalUrl, {
@@ -300,6 +471,103 @@ export class ArchiverService {
 			}
 		}
 	}
+
+	archiveScannedItemAction = async (
+		item: ArchiveWorkItem,
+		run: BatchRunController,
+		itemId: string,
+	): Promise<void> => {
+		run.assertItemActive(itemId);
+		run.updateItem(itemId, "capturing", "Requesting Save Page Now");
+		const outcome = await this.processSingleUrlArchival(
+			item.url,
+			item.isForce,
+			item.filePath,
+			item.approximateIndex,
+			run,
+			itemId,
+		);
+		run.assertItemActive(itemId);
+		if (outcome.status === "submitted") {
+			run.updateItem(itemId, "success", "Submitted to archive.today");
+			return;
+		}
+		if (outcome.status === "archived_failed") {
+			run.updateItem(itemId, "failed", outcome.error ?? "Archiving failed");
+			await this.logFailedArchive(
+				item.url,
+				item.filePath,
+				`Archiving failed (${outcome.error ?? "Unknown error"})`,
+				0,
+				{
+					stage: outcome.stage,
+					manualProviderIds: outcome.manualProviderIds,
+					targetUrl: outcome.targetUrl,
+				},
+			);
+			return;
+		}
+		if (
+			item.isForce &&
+			(outcome.status === "archived_limited" || outcome.status === "cache_hit_limited")
+		) {
+			run.updateItem(itemId, "skipped", "No new fixed snapshot");
+			return;
+		}
+		const file = this.app.vault.getAbstractFileByPath(item.filePath);
+		if (!file || !(file instanceof TFile)) {
+			run.updateItem(itemId, "failed", "Note no longer exists");
+			return;
+		}
+		let modified = false;
+		await this.app.vault.process(file, (latestContent) => {
+			if (run.isCanceled() || run.isItemCanceled(itemId)) return latestContent;
+			const latestIndex = findLatestLinkIndex(latestContent, item.url, item.approximateIndex);
+			if (latestIndex === null) return latestContent;
+			const latestMatch = Array.from(latestContent.matchAll(LINK_REGEX)).find(
+				(match) => match.index === latestIndex,
+			);
+			if (!latestMatch) return latestContent;
+			const following = latestContent.slice(
+				latestIndex + latestMatch[0].length,
+				latestIndex + latestMatch[0].length + ADJACENT_LINK_SEARCH_LIMIT,
+			);
+			const change = applyLinkModification(
+				latestContent,
+				item.url,
+				outcome.url,
+				latestIndex,
+				this.activeSettings,
+				{
+					isReplacement: isFollowedByArchiveLink(following),
+					allowMismatchedReplacement: item.isForce,
+				},
+			);
+			modified = change.modified;
+			return change.content;
+		});
+		run.assertItemActive(itemId);
+		run.updateItem(
+			itemId,
+			modified ? "success" : "skipped",
+			modified ? "Captured" : "Occurrence changed or already archived",
+		);
+	};
+
+	archiveScannedLinksAction = async (
+		summary: ArchiveScanSummary,
+		run: BatchRunController,
+	): Promise<void> => {
+		try {
+			for (const item of summary.items) {
+				await this.archiveScannedItemAction(item, run, item.id);
+			}
+		} catch (error) {
+			if (!(error instanceof BatchCanceledError)) throw error;
+		} finally {
+			run.finish();
+		}
+	};
 
 	private async logFailedArchive(
 		originalUrl: string,
@@ -498,7 +766,17 @@ export class ArchiverService {
 		}
 	}
 
-	async archiveUrl(url: string): Promise<ArchiveUrlResult> {
+	async archiveUrl(
+		url: string,
+		run?: BatchRunController,
+		itemId?: string,
+	): Promise<ArchiveUrlResult> {
+		const assertActive = () => {
+			if (!run) return;
+			if (itemId) run.assertItemActive(itemId);
+			else run.assertActive();
+		};
+		assertActive();
 		const substitutedUrl = applySubstitutionRules(url, this.activeSettings.substitutionRules);
 		const policy = this.getArchivePolicy(substitutedUrl);
 
@@ -507,16 +785,23 @@ export class ArchiverService {
 				substitutedUrl,
 				policy,
 				"Wayback skipped by policy",
+				undefined,
+				run,
+				itemId,
 			);
 		}
 
-		if (!this.data.spnAccessKey || !this.data.spnSecretKey) {
+		const { spnAccessKey, spnSecretKey } = getSpnCredentials(this.app, this.data);
+
+		if (!spnAccessKey || !spnSecretKey) {
 			if (policy.providers.some((p) => p !== "wayback")) {
 				return await this.resolveFallbackArchive(
 					substitutedUrl,
 					"Archive.org SPN API keys are not configured",
 					policy,
 					"wayback-initiation-failed",
+					run,
+					itemId,
 				);
 			}
 
@@ -533,7 +818,11 @@ export class ArchiverService {
 
 		// Enforce fixed delay before initial archive request to avoid 429 rate limits
 		// console.log(`Waiting ${this.activeSettings.apiDelay}ms before archiving to respect SPN2 rate limits...`);
-		await new Promise((resolve) => window.setTimeout(resolve, this.activeSettings.apiDelay));
+		if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run, itemId);
+		else
+			await new Promise((resolve) =>
+				window.setTimeout(resolve, this.activeSettings.apiDelay),
+			);
 		// console.log('Proceeding with archive request...');
 
 		try {
@@ -555,35 +844,40 @@ export class ArchiverService {
 			}
 
 			// console.log(`Initiating capture for ${substitutedUrl} via requestUrl...`);
-			const initResponse = await requestUrl({
-				method: "POST",
-				url: "https://web.archive.org/save",
-				headers: {
-					Accept: "application/json",
-					Authorization: `LOW ${this.data.spnAccessKey}:${this.data.spnSecretKey}`,
-					"Content-Type": "application/x-www-form-urlencoded",
+			const initResponse = await this.initiateCapture(
+				{
+					method: "POST",
+					url: "https://web.archive.org/save",
+					headers: {
+						Accept: "application/json",
+						Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					body: new URLSearchParams(params).toString(),
 				},
-				body: new URLSearchParams(params).toString(),
-			});
+				run,
+				itemId,
+			);
+			assertActive();
 
 			// console.log(`Capture initiation response status: ${initResponse.status}`);
 			// console.log(`Capture initiation response JSON:`, initResponse.json);
 
 			if (initResponse.status === 429) {
 				// console.warn(`Rate limit hit (429) when initiating capture for ${substitutedUrl}.`);
-				const latestSnapshotUrl = await this.getLatestSnapshotUrl(substitutedUrl);
+				const latestSnapshotUrl = await this.getLatestFreshSnapshotUrl(substitutedUrl);
 				if (latestSnapshotUrl) {
 					new Notice(
 						`Daily capture limit likely reached. Using latest snapshot for ${substitutedUrl}.`,
 					);
 					return { status: "too_many_captures", url: latestSnapshotUrl };
-				} else {
-					const fallbackUrl = `https://web.archive.org/web/*/${substitutedUrl}`;
-					new Notice(
-						`Daily capture limit likely reached. No recent snapshot found, using wildcard URL.`,
-					);
-					return { status: "too_many_captures", url: fallbackUrl };
 				}
+				return {
+					status: "failed",
+					status_ext: "Capture throttled and no fresh snapshot was found",
+					stage: "wayback-initiation-failed",
+					targetUrl: substitutedUrl,
+				};
 			}
 
 			if (initResponse.status !== 200 || !initResponse.json?.job_id) {
@@ -592,12 +886,15 @@ export class ArchiverService {
 					initResponse.json?.message?.includes("The same snapshot had been made")
 				) {
 					// console.warn(`Recent snapshot exists for ${substitutedUrl}. Trying to get latest specific snapshot URL.`);
-					const latestSnapshotUrl = await this.getLatestSnapshotUrl(substitutedUrl);
+					const latestSnapshotUrl = await this.getLatestFreshSnapshotUrl(substitutedUrl);
 					if (latestSnapshotUrl) {
 						return { status: "too_many_captures", url: latestSnapshotUrl };
-					} else {
-						const fallbackUrl = `https://web.archive.org/web/*/${substitutedUrl}`;
-						return { status: "too_many_captures", url: fallbackUrl };
+					}
+				}
+				if (!policy.providers.some((provider) => provider !== "wayback")) {
+					const latestSnapshotUrl = await this.getLatestFreshSnapshotUrl(substitutedUrl);
+					if (latestSnapshotUrl) {
+						return { status: "too_many_captures", url: latestSnapshotUrl };
 					}
 				}
 				// console.error(`Failed to initiate capture for ${substitutedUrl}. Status: ${initResponse.status}`, initResponse.text);
@@ -606,6 +903,8 @@ export class ArchiverService {
 					`Initiation failed (${initResponse.status})`,
 					policy,
 					"wayback-initiation-failed",
+					run,
+					itemId,
 				);
 			}
 
@@ -613,10 +912,14 @@ export class ArchiverService {
 			// console.log(`Capture initiated. Job ID: ${jobId}`);
 
 			let retries = 0;
-			while (retries < this.activeSettings.maxRetries) {
-				await new Promise((resolve) =>
-					window.setTimeout(resolve, this.activeSettings.apiDelay),
-				);
+			const captureDeadline =
+				Date.now() + this.activeSettings.maxFreshCaptureWaitSeconds * 1000;
+			while (retries < this.activeSettings.maxRetries && Date.now() < captureDeadline) {
+				if (run) await waitForBatchDelay(this.activeSettings.apiDelay, run, itemId);
+				else
+					await new Promise((resolve) =>
+						window.setTimeout(resolve, this.activeSettings.apiDelay),
+					);
 
 				try {
 					// console.log(`Checking status for Job ID: ${jobId} (Attempt ${retries + 1}/${this.activeSettings.maxRetries})`);
@@ -625,9 +928,10 @@ export class ArchiverService {
 						url: `https://web.archive.org/save/status/${jobId}`,
 						headers: {
 							Accept: "application/json",
-							Authorization: `LOW ${this.data.spnAccessKey}:${this.data.spnSecretKey}`,
+							Authorization: `LOW ${spnAccessKey}:${spnSecretKey}`,
 						},
 					});
+					assertActive();
 
 					// console.log(`Status check response status: ${statusResponse.status}`);
 					// console.log(`Status check response JSON:`, statusResponse.json);
@@ -652,6 +956,8 @@ export class ArchiverService {
 							`Wayback job error: ${statusData.status_ext || "Unknown error"}`,
 							policy,
 							"wayback-job-error",
+							run,
+							itemId,
 						);
 					} else {
 						// console.log(`Job ${jobId} is still pending...`);
@@ -661,7 +967,8 @@ export class ArchiverService {
 							break;
 						}
 					}
-				} catch {
+				} catch (error: unknown) {
+					if (error instanceof BatchCanceledError) throw error;
 					// console.error(`Error during status check for Job ID ${jobId}:`, statusError);
 					retries++;
 					if (retries >= this.activeSettings.maxRetries) {
@@ -676,14 +983,19 @@ export class ArchiverService {
 				"Wayback job check timeout",
 				policy,
 				"wayback-timeout",
+				run,
+				itemId,
 			);
 		} catch (error: unknown) {
+			if (error instanceof BatchCanceledError) throw error;
 			// console.error(`Unexpected error during archiving process for ${substitutedUrl}:`, error);
 			return await this.resolveFallbackArchive(
 				substitutedUrl,
 				`Unexpected Error: ${error instanceof Error ? error.message : String(error)}`,
 				policy,
 				"wayback-initiation-failed",
+				run,
+				itemId,
 			);
 		}
 	}
@@ -742,7 +1054,15 @@ export class ArchiverService {
 		policy: EffectiveArchivePolicy,
 		failureReason: string,
 		waybackStage?: FailedArchiveStage,
+		run?: BatchRunController,
+		itemId?: string,
 	): Promise<ArchiveUrlResult> {
+		const assertActive = () => {
+			if (!run) return;
+			if (itemId) run.assertItemActive(itemId);
+			else run.assertActive();
+		};
+		assertActive();
 		let providerHadRetryableError = false;
 
 		const fallbackProviders = policy.providers.filter(
@@ -754,7 +1074,9 @@ export class ArchiverService {
 				continue;
 			}
 			if (providerId === "archiveToday" && policy.archiveTodayExperimentalSubmit) {
+				assertActive();
 				const resolution = await this.resolveProviderSnapshot(providerId, targetUrl);
+				assertActive();
 				if (resolution.url) {
 					const timestamp = extractArchiveTimestamp(resolution.url);
 					const freshness = checkAdjacentLinkFreshness(timestamp, this.activeSettings);
@@ -764,10 +1086,12 @@ export class ArchiverService {
 				}
 
 				try {
+					assertActive();
 					const response = await requestUrl({
 						method: "GET",
 						url: ARCHIVE_PROVIDER_RESOLVERS.archiveToday.saveUrl(targetUrl),
 					});
+					assertActive();
 					if (!this.isSuccessfulArchiveTodaySubmitResponse(response.status)) {
 						return {
 							status: "failed",
@@ -789,7 +1113,9 @@ export class ArchiverService {
 				}
 			}
 
+			assertActive();
 			const resolution = await this.resolveProviderSnapshot(providerId, targetUrl);
+			assertActive();
 			if (resolution.retryableError) {
 				providerHadRetryableError = true;
 			}
@@ -866,8 +1192,17 @@ export class ArchiverService {
 		failureReason: string,
 		policy: EffectiveArchivePolicy,
 		waybackStage?: FailedArchiveStage,
+		run?: BatchRunController,
+		itemId?: string,
 	): Promise<ArchiveUrlResult> {
-		return await this.archiveWithProviderPolicy(targetUrl, policy, failureReason, waybackStage);
+		return await this.archiveWithProviderPolicy(
+			targetUrl,
+			policy,
+			failureReason,
+			waybackStage,
+			run,
+			itemId,
+		);
 	}
 
 	private async resolveProviderSnapshot(
@@ -969,6 +1304,7 @@ export class ArchiverService {
 		};
 		this.data.pendingArchives.push(entry);
 		await this.saveSettings();
+		this.wakePendingQueueScheduler(0);
 		return id;
 	}
 
@@ -1209,30 +1545,32 @@ export class ArchiverService {
 	startPendingQueueScheduler(): void {
 		if (this._schedulerStarted) return;
 		this._schedulerStarted = true;
+		if (this.data.pendingArchives?.length) {
+			this.wakePendingQueueScheduler(0);
+		}
+	}
 
-		const scheduleNext = () => {
-			if (!this._schedulerStarted) return;
-
-			const intervalMs = this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60000;
-			this._pendingQueueTimer = window.setTimeout(() => {
+	wakePendingQueueScheduler(delayMs?: number): void {
+		if (!this._schedulerStarted || !this.data.pendingArchives?.length) return;
+		if (this._pendingQueueTimer !== null) return;
+		const waitMs = delayMs ?? this.activeSettings.archiveTodayPendingPollIntervalMs ?? 60_000;
+		this._pendingQueueTimer = window.setTimeout(
+			() => {
+				this._pendingQueueTimer = null;
 				runAsyncAction(
 					() => this.runPendingQueueCycle(),
 					(error: unknown) => {
 						console.error("Error checking pending archive.today snapshots:", error);
 						new Notice("Could not check pending archive.today snapshots.");
 					},
-					scheduleNext,
+					() => {
+						if (this.data.pendingArchives?.length) {
+							this.wakePendingQueueScheduler();
+						}
+					},
 				);
-			}, intervalMs);
-		};
-
-		runAsyncAction(
-			() => this.runPendingQueueCycle(),
-			(error: unknown) => {
-				console.error("Error checking pending archive.today snapshots:", error);
-				new Notice("Could not check pending archive.today snapshots.");
 			},
-			scheduleNext,
+			Math.max(0, waitMs),
 		);
 	}
 
@@ -1338,8 +1676,49 @@ export class ArchiverService {
 		return this.getArchivePolicy(targetUrl).providers.includes(providerId);
 	}
 
+	private isThrottleResponse(status: number, message: unknown): boolean {
+		return (
+			status === 429 ||
+			(typeof message === "string" && /active[- ]session|rate limit|too many/iu.test(message))
+		);
+	}
+
+	private async initiateCapture(
+		request: Parameters<typeof requestUrl>[0],
+		run?: BatchRunController,
+		itemId?: string,
+	): Promise<Awaited<ReturnType<typeof requestUrl>>> {
+		const assertActive = () => {
+			if (!run) return;
+			if (itemId) run.assertItemActive(itemId);
+			else run.assertActive();
+		};
+		for (let attempt = 0; attempt <= this.activeSettings.maxThrottleRetries; attempt++) {
+			assertActive();
+			const response = await requestUrl(request);
+			assertActive();
+			if (!this.isThrottleResponse(response.status, response.json?.message)) return response;
+			if (attempt === this.activeSettings.maxThrottleRetries) return response;
+			if (run && itemId) {
+				run.updateItem(
+					itemId,
+					"throttled",
+					`Retrying throttle ${attempt + 1}/${this.activeSettings.maxThrottleRetries}`,
+				);
+			}
+			if (run) {
+				await waitForBatchDelay(this.activeSettings.throttleRetryDelayMs, run, itemId);
+			} else {
+				await new Promise((resolve) =>
+					window.setTimeout(resolve, this.activeSettings.throttleRetryDelayMs),
+				);
+			}
+		}
+		throw new Error("Unreachable throttle retry state");
+	}
+
 	// Query Wayback Machine CDX API for the latest snapshot timestamp. See https://archive.org/developers/wayback-cdx-server.html
-	async getLatestSnapshotUrl(targetUrl: string): Promise<string | null> {
+	private async getLatestSnapshot(targetUrl: string): Promise<LatestSnapshot | null> {
 		try {
 			const apiUrl = `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(targetUrl)}&output=json&fl=timestamp&filter=statuscode:200&limit=1&sort=reverse`;
 			const response = await requestUrl({ url: apiUrl, method: "GET" });
@@ -1360,15 +1739,72 @@ export class ArchiverService {
 				return null;
 			}
 
-			const latestTimestamp = jsonData[1][0];
-			if (!latestTimestamp) {
+			const latestTimestamp = jsonData[1]?.[0];
+			if (typeof latestTimestamp !== "string" || !/^\d{14}$/u.test(latestTimestamp)) {
 				return null;
 			}
 
-			return `https://web.archive.org/web/${latestTimestamp}/${targetUrl}`;
+			return {
+				timestamp: latestTimestamp,
+				url: `https://web.archive.org/web/${latestTimestamp}/${targetUrl}`,
+			};
 		} catch {
 			return null;
 		}
+	}
+
+	async getLatestSnapshotUrl(targetUrl: string): Promise<string | null> {
+		return (await this.getLatestSnapshot(targetUrl))?.url ?? null;
+	}
+
+	private async getLatestFreshSnapshotUrl(targetUrl: string): Promise<string | null> {
+		if (!this.activeSettings.fallbackToLatestSnapshot) return null;
+		const snapshot = await this.getLatestSnapshot(targetUrl);
+		if (!snapshot) return null;
+		return isArchiveTimestampFresh(snapshot.timestamp, this.activeSettings.archiveFreshnessDays)
+			? snapshot.url
+			: null;
+	}
+
+	private scanEditorForArchiving(
+		editor: Editor,
+		file: TFile,
+		isForce: boolean,
+	): ArchiveScanSummary {
+		const content = editor.getValue();
+		const selectedText = editor.getSelection();
+		const isSelection = selectedText.length > 0;
+		if (!isSelection && !this.fileMatchesActiveFilters(file, content)) {
+			return summarizeArchiveWork([]);
+		}
+		const selectionStart = isSelection ? editor.posToOffset(editor.getCursor("from")) : 0;
+		const selectionEnd = isSelection
+			? editor.posToOffset(editor.getCursor("to"))
+			: content.length;
+		const matches = isSelection
+			? selectFullyContainedLinkMatches(content, selectionStart, selectionEnd).map(
+					(link) => link.match,
+				)
+			: Array.from(content.matchAll(LINK_REGEX));
+		const filtered = this.filterLinksForArchiving(matches, content, isForce, {
+			isSelection,
+			fullDocContent: content,
+		});
+		return summarizeArchiveWork(
+			filtered.linksToProcess.flatMap((match) => {
+				const approximateIndex = match.index;
+				if (approximateIndex === undefined) return [];
+				return [
+					{
+						id: `${file.path}:${approximateIndex}`,
+						filePath: file.path,
+						url: getUrlFromMatch(match),
+						approximateIndex,
+						isForce,
+					},
+				];
+			}),
+		);
 	}
 
 	archiveLinksAction = async (
@@ -1381,100 +1817,16 @@ export class ArchiverService {
 			return;
 		}
 
-		const selectedText = editor.getSelection();
-		const isSelection = selectedText.length > 0;
-		const archivedCount = 0;
-		const failedCount = 0;
-		const skippedCount = 0;
-		const counters = { archivedCount, failedCount, skippedCount, submittedCount: 0 };
-
-		if (isSelection) {
-			const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
-			const selectionEndOffset = editor.posToOffset(editor.getCursor("to"));
-			const fullDocContent = editor.getValue();
-			const selectedLinks = selectFullyContainedLinkMatches(
-				fullDocContent,
-				selectionStartOffset,
-				selectionEndOffset,
+		const summary = this.scanEditorForArchiving(editor, file, false);
+		if (summary.items.length === 0) {
+			new Notice(
+				editor.getSelection().length > 0
+					? "No suitable links found in selection."
+					: "No suitable links found in the current note.",
 			);
-			const allMatches = selectedLinks.map((link) => link.match);
-
-			const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, false, {
-				isSelection: true,
-				fullDocContent,
-			});
-
-			if (!filterResult.linksToProcess.length) {
-				new Notice("No suitable links found in selection.");
-				return;
-			}
-
-			new Notice(`Processing ${filterResult.linksToProcess.length} links in selection...`);
-
-			// For Selection mode, we process each link and apply it to the editor immediately.
-			const total = filterResult.linksToProcess.length;
-			let current = 0;
-			for (const match of filterResult.linksToProcess) {
-				current++;
-				this.plugin.setStatusBarText?.(`⌛ Archiving link ${current}/${total}...`);
-				const originalUrl = getUrlFromMatch(match);
-				const absoluteOriginalIndex = match.index;
-				if (absoluteOriginalIndex === undefined) continue;
-
-				// API call
-				const archiveOutcome = await this.processSingleUrlArchival(
-					originalUrl,
-					false,
-					file.path,
-					absoluteOriginalIndex,
-				);
-				if (archiveOutcome.status === "submitted") {
-					counters.submittedCount++;
-					continue;
-				}
-				if (archiveOutcome.status === "archived_failed") {
-					counters.failedCount++;
-					await this.logFailedArchive(
-						originalUrl,
-						file.path,
-						`Archiving failed (${archiveOutcome.error || "Unknown error"})`,
-						0,
-						{
-							stage: archiveOutcome.stage,
-							manualProviderIds: archiveOutcome.manualProviderIds,
-							targetUrl: archiveOutcome.targetUrl,
-						},
-					);
-					continue;
-				}
-				// Apply edit surgically to editor
-				const applied = this.applyLinkEditToEditor(
-					editor,
-					originalUrl,
-					absoluteOriginalIndex,
-					archiveOutcome.url,
-					false,
-				);
-				if (applied) {
-					counters.archivedCount++;
-				} else {
-					counters.skippedCount++;
-				}
-			}
-			counters.skippedCount += filterResult.skippedCount;
-		} else {
-			new Notice(`Archiving links in ${file.basename}...`);
-			await this.processFileWithContext(file, false, counters);
+			return;
 		}
-
-		let summary = `Archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
-		if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
-		if (counters.submittedCount > 0) summary += `, Submitted: ${counters.submittedCount}`;
-		new Notice(summary);
-		this.plugin.setStatusBarText?.(
-			`✅ Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
-		);
-		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+		this.plugin.enqueueArchiveRun(summary);
 	};
 
 	archiveAllLinksVaultAction = async (): Promise<void> => {
@@ -1748,106 +2100,16 @@ export class ArchiverService {
 			return;
 		}
 
-		const selectedText = editor.getSelection();
-		const isSelection = selectedText.length > 0;
-		const counters = { archivedCount: 0, failedCount: 0, skippedCount: 0, submittedCount: 0 };
-
-		if (isSelection) {
-			const selectionStartOffset = editor.posToOffset(editor.getCursor("from"));
-			const selectionEndOffset = editor.posToOffset(editor.getCursor("to"));
-			const fullDocContent = editor.getValue();
-			const selectedLinks = selectFullyContainedLinkMatches(
-				fullDocContent,
-				selectionStartOffset,
-				selectionEndOffset,
-			);
-			const allMatches = selectedLinks.map((link) => link.match);
-
-			const filterResult = this.filterLinksForArchiving(allMatches, fullDocContent, true, {
-				isSelection: true,
-				fullDocContent,
-			});
-
-			if (!filterResult.linksToProcess.length) {
-				new Notice("No suitable links found in selection to force re-archive.");
-				return;
-			}
-
+		const summary = this.scanEditorForArchiving(editor, file, true);
+		if (summary.items.length === 0) {
 			new Notice(
-				`Force re-archiving ${filterResult.linksToProcess.length} links in selection...`,
+				editor.getSelection().length > 0
+					? "No suitable links found in selection to force re-archive."
+					: "No suitable links found in the current note to force re-archive.",
 			);
-
-			const total = filterResult.linksToProcess.length;
-			let current = 0;
-			for (const match of filterResult.linksToProcess) {
-				current++;
-				this.plugin.setStatusBarText?.(`⌛ Force re-archiving link ${current}/${total}...`);
-				const originalUrl = getUrlFromMatch(match);
-				const absoluteOriginalIndex = match.index;
-				if (absoluteOriginalIndex === undefined) continue;
-
-				// API call
-				const archiveOutcome = await this.processSingleUrlArchival(
-					originalUrl,
-					true,
-					file.path,
-					absoluteOriginalIndex,
-				);
-				if (archiveOutcome.status === "submitted") {
-					counters.submittedCount++;
-					continue;
-				}
-				if (archiveOutcome.status === "archived_failed") {
-					counters.failedCount++;
-					await this.logFailedArchive(
-						originalUrl,
-						file.path,
-						`Archiving failed (${archiveOutcome.error || "Unknown error"})`,
-						0,
-						{
-							stage: archiveOutcome.stage,
-							manualProviderIds: archiveOutcome.manualProviderIds,
-							targetUrl: archiveOutcome.targetUrl,
-						},
-					);
-					continue;
-				}
-				if (
-					archiveOutcome.status === "archived_limited" ||
-					archiveOutcome.status === "cache_hit_limited"
-				) {
-					counters.skippedCount++;
-					continue;
-				}
-
-				// Apply edit surgically to editor
-				const applied = this.applyLinkEditToEditor(
-					editor,
-					originalUrl,
-					absoluteOriginalIndex,
-					archiveOutcome.url,
-					true,
-				);
-				if (applied) {
-					counters.archivedCount++;
-				} else {
-					counters.skippedCount++;
-				}
-			}
-			counters.skippedCount += filterResult.skippedCount;
-		} else {
-			new Notice(`Force re-archiving links in ${file.basename}...`);
-			await this.processFileWithContext(file, true, counters);
+			return;
 		}
-
-		let summary = `Force re-archival complete. Archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`;
-		if (counters.skippedCount > 0) summary += `, Skipped: ${counters.skippedCount}`;
-		if (counters.submittedCount > 0) summary += `, Submitted: ${counters.submittedCount}`;
-		new Notice(summary);
-		this.plugin.setStatusBarText?.(
-			`✅ Force re-archived: ${counters.archivedCount}, Failed: ${counters.failedCount}`,
-		);
-		window.setTimeout(() => this.plugin.setStatusBarText?.(""), 4000);
+		this.plugin.enqueueArchiveRun(summary);
 	};
 
 	/**

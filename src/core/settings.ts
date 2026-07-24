@@ -39,10 +39,16 @@ export interface WaybackArchiverSettings {
 	 */
 	archiveLinkText: string;
 	ignorePatterns: string[];
+	ignoredDomains: string[];
+	archiveBareUrls: boolean;
 	substitutionRules: { find: string; replace: string; regex: boolean }[];
 	apiDelay: number;
 	maxRetries: number;
 	archiveFreshnessDays: number;
+	fallbackToLatestSnapshot: boolean;
+	maxFreshCaptureWaitSeconds: number;
+	throttleRetryDelayMs: number;
+	maxThrottleRetries: number;
 	pathPatterns: string[];
 	urlPatterns: string[];
 	wordPatterns: string[];
@@ -76,10 +82,16 @@ export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 		"archive.is/",
 		"megalodon.jp/",
 	],
+	ignoredDomains: [],
+	archiveBareUrls: true,
 	substitutionRules: [],
 	apiDelay: 2000, // Default 2 seconds delay
 	maxRetries: 3,
 	archiveFreshnessDays: 0, // 0 means always archive if not present
+	fallbackToLatestSnapshot: true,
+	maxFreshCaptureWaitSeconds: 120,
+	throttleRetryDelayMs: 30_000,
+	maxThrottleRetries: 3,
 	pathPatterns: [],
 	urlPatterns: [],
 	wordPatterns: [],
@@ -101,6 +113,98 @@ export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 	defaultArchiveProviders: ["wayback"],
 	archivePolicies: [],
 };
+
+function cloneSettingsValue<T>(value: T): T {
+	if (typeof structuredClone === "function") return structuredClone(value);
+	return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function normalizeProfileSettings(
+	profile: Partial<WaybackArchiverSettings> | undefined,
+): WaybackArchiverSettings {
+	const clampInteger = (value: unknown, min: number, max: number, fallback: number): number => {
+		if (typeof value !== "number" || !Number.isInteger(value)) return fallback;
+		return Math.min(max, Math.max(min, value));
+	};
+	const merged = {
+		...cloneSettingsValue(DEFAULT_SETTINGS),
+		...cloneSettingsValue(profile ?? {}),
+	};
+	return {
+		...merged,
+		ignorePatterns: [...(profile?.ignorePatterns ?? DEFAULT_SETTINGS.ignorePatterns)],
+		ignoredDomains: [...(profile?.ignoredDomains ?? [])],
+		apiDelay:
+			typeof profile?.apiDelay === "number" &&
+			Number.isInteger(profile.apiDelay) &&
+			profile.apiDelay >= 500 &&
+			profile.apiDelay <= 10_000
+				? profile.apiDelay
+				: DEFAULT_SETTINGS.apiDelay,
+		maxRetries: clampInteger(profile?.maxRetries, 1, 10, DEFAULT_SETTINGS.maxRetries),
+		archiveFreshnessDays: clampInteger(
+			profile?.archiveFreshnessDays,
+			0,
+			36_500,
+			DEFAULT_SETTINGS.archiveFreshnessDays,
+		),
+		maxFreshCaptureWaitSeconds: clampInteger(
+			profile?.maxFreshCaptureWaitSeconds,
+			1,
+			86_400,
+			DEFAULT_SETTINGS.maxFreshCaptureWaitSeconds,
+		),
+		throttleRetryDelayMs: clampInteger(
+			profile?.throttleRetryDelayMs,
+			0,
+			86_400_000,
+			DEFAULT_SETTINGS.throttleRetryDelayMs,
+		),
+		maxThrottleRetries: clampInteger(
+			profile?.maxThrottleRetries,
+			0,
+			100,
+			DEFAULT_SETTINGS.maxThrottleRetries,
+		),
+		archiveTodaySubmitDelayMs: clampInteger(
+			profile?.archiveTodaySubmitDelayMs,
+			1_000,
+			10_000,
+			DEFAULT_SETTINGS.archiveTodaySubmitDelayMs,
+		),
+		archiveTodayPendingPollIntervalMs: clampInteger(
+			profile?.archiveTodayPendingPollIntervalMs,
+			15_000,
+			300_000,
+			DEFAULT_SETTINGS.archiveTodayPendingPollIntervalMs,
+		),
+		archiveTodayPendingPollBatchSize: clampInteger(
+			profile?.archiveTodayPendingPollBatchSize,
+			1,
+			10,
+			DEFAULT_SETTINGS.archiveTodayPendingPollBatchSize,
+		),
+		archiveTodayMaxPendingCount: clampInteger(
+			profile?.archiveTodayMaxPendingCount,
+			1,
+			100,
+			DEFAULT_SETTINGS.archiveTodayMaxPendingCount,
+		),
+		archiveTodayPendingMaxWaitMs: clampInteger(
+			profile?.archiveTodayPendingMaxWaitMs,
+			60_000,
+			1_200_000,
+			DEFAULT_SETTINGS.archiveTodayPendingMaxWaitMs,
+		),
+		manualSaveBatchSize: clampInteger(
+			profile?.manualSaveBatchSize,
+			1,
+			5,
+			DEFAULT_SETTINGS.manualSaveBatchSize,
+		),
+		jsBehaviorTimeout: Math.max(0, Number(profile?.jsBehaviorTimeout) || 0),
+	};
+}
 
 export const getFreshnessThresholdMs = (settings: WaybackArchiverSettings) =>
 	settings.archiveFreshnessDays * 24 * 60 * 60 * 1000; // Convert days to ms
@@ -137,8 +241,134 @@ export interface WaybackArchiverData {
 	profiles: Record<string, WaybackArchiverSettings>;
 	failedArchives?: FailedArchiveEntry[];
 	pendingArchives?: PendingArchiveEntry[];
-	spnAccessKey: string;
-	spnSecretKey: string;
+	spnCredentialStorageMode?: "secretStorage" | "plaintext";
+	spnAccessKeySecretName?: string;
+	spnSecretKeySecretName?: string;
+	spnAccessKey?: string;
+	spnSecretKey?: string;
+}
+
+export interface CredentialStorageData {
+	spnCredentialStorageMode?: "secretStorage" | "plaintext";
+	spnAccessKeySecretName?: string;
+	spnSecretKeySecretName?: string;
+	spnAccessKey?: string;
+	spnSecretKey?: string;
+}
+
+export const SPN_ACCESS_KEY_SECRET_ID = "wayback-archiver-spn-access-key";
+export const SPN_SECRET_KEY_SECRET_ID = "wayback-archiver-spn-secret-key";
+
+interface SecretStorageLike {
+	getSecret?(name: string): string | null | undefined;
+	setSecret?(name: string, value: string): void;
+}
+
+function getSecretStorage(app: unknown): SecretStorageLike | undefined {
+	if (!app || typeof app !== "object" || !("secretStorage" in app)) return undefined;
+	const storage = (app as { secretStorage?: unknown }).secretStorage;
+	return storage && typeof storage === "object" ? (storage as SecretStorageLike) : undefined;
+}
+
+/**
+ * Safely resolves SPN credentials using Obsidian SecretStorage if available and configured,
+ * falling back to legacy plaintext fields in data.json.
+ */
+export function getSpnCredentials(
+	app: unknown,
+	data: CredentialStorageData,
+): { spnAccessKey: string; spnSecretKey: string } {
+	let spnAccessKey = "";
+	let spnSecretKey = "";
+
+	if (data.spnCredentialStorageMode === "plaintext") {
+		return {
+			spnAccessKey: data.spnAccessKey || "",
+			spnSecretKey: data.spnSecretKey || "",
+		};
+	}
+
+	const secretStorage = getSecretStorage(app);
+	if (typeof secretStorage?.getSecret === "function") {
+		if (data.spnAccessKeySecretName) {
+			const secretVal = secretStorage.getSecret(data.spnAccessKeySecretName);
+			if (secretVal) {
+				spnAccessKey = secretVal;
+			}
+		}
+		if (data.spnSecretKeySecretName) {
+			const secretVal = secretStorage.getSecret(data.spnSecretKeySecretName);
+			if (secretVal) {
+				spnSecretKey = secretVal;
+			}
+		}
+	}
+
+	if (!spnAccessKey) {
+		spnAccessKey = data.spnAccessKey || "";
+	}
+	if (!spnSecretKey) {
+		spnSecretKey = data.spnSecretKey || "";
+	}
+
+	return { spnAccessKey, spnSecretKey };
+}
+
+/**
+ * Automatically imports legacy plaintext credentials from data.json into Obsidian SecretStorage.
+ * Crucially, leaves legacy plaintext credentials in data.json so other synced devices can also auto-import.
+ */
+export async function migrateSecretStorage(
+	app: unknown,
+	data: CredentialStorageData,
+): Promise<boolean> {
+	const secretStorage = getSecretStorage(app);
+	const hasSecretStorage = typeof secretStorage?.setSecret === "function";
+
+	let modified = false;
+
+	if (!data.spnCredentialStorageMode) {
+		data.spnCredentialStorageMode = hasSecretStorage ? "secretStorage" : "plaintext";
+		modified = true;
+	}
+
+	if (!hasSecretStorage) {
+		return modified;
+	}
+
+	if (data.spnCredentialStorageMode === "secretStorage") {
+		if (!data.spnAccessKeySecretName && data.spnAccessKey) {
+			const name = SPN_ACCESS_KEY_SECRET_ID;
+			secretStorage?.setSecret?.(name, data.spnAccessKey);
+			data.spnAccessKeySecretName = name;
+			modified = true;
+		}
+
+		if (!data.spnSecretKeySecretName && data.spnSecretKey) {
+			const name = SPN_SECRET_KEY_SECRET_ID;
+			secretStorage?.setSecret?.(name, data.spnSecretKey);
+			data.spnSecretKeySecretName = name;
+			modified = true;
+		}
+	}
+
+	return modified;
+}
+
+/**
+ * Explicitly removes legacy plaintext credentials from data.json (e.g. when user clicks purge button in settings UI).
+ */
+export function purgePlaintextCredentials(data: CredentialStorageData): boolean {
+	let purged = false;
+	if (data.spnAccessKey !== undefined) {
+		delete data.spnAccessKey;
+		purged = true;
+	}
+	if (data.spnSecretKey !== undefined) {
+		delete data.spnSecretKey;
+		purged = true;
+	}
+	return purged;
 }
 
 /**

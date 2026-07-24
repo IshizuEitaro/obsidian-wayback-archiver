@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { getFreshnessThresholdMs, WaybackArchiverSettings } from "../core/settings";
+import { WaybackArchiverSettings } from "../core/settings";
 
 /**
  * Regex to find various link types: Markdown, HTML A/Img, Plain URL
@@ -37,6 +37,32 @@ export const LINK_REGEX = new RegExp(
 export const getUrlFromMatch = (match: RegExpMatchArray) =>
 	match[1] || match[2] || match[3] || match[4] || match[5] || match[6] || "";
 
+export const isBareUrlMatch = (match: RegExpMatchArray): boolean => Boolean(match[6]);
+
+export function parseIgnoredDomains(value: string): string[] {
+	return Array.from(
+		new Set(
+			value
+				.split(/[\n,]/u)
+				.map((domain) => domain.trim().toLowerCase().replace(/\.$/u, ""))
+				.filter((domain) =>
+					/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(
+						domain,
+					),
+				),
+		),
+	);
+}
+
+export function isHostnameIgnored(url: string, domains: string[]): boolean {
+	try {
+		const hostname = new URL(url).hostname.toLowerCase().replace(/\.$/u, "");
+		return domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+	} catch {
+		return false;
+	}
+}
+
 export const ARCHIVE_TODAY_HOSTS = [
 	"archive.today",
 	"archive.is",
@@ -62,8 +88,8 @@ export const ADJACENT_LINK_SEARCH_LIMIT = 300;
 
 // Regex to match markdown and HTML adjacent archive links
 export const ADJACENT_ARCHIVE_LINK_REGEX = new RegExp(
-	String.raw`^\s*\n*\s*(\[.*?\]\(${ARCHIVE_URL_PATTERN}\)|<a\b[^>]*href=["']${ARCHIVE_URL_PATTERN}["'][^>]*>.*?<\/a>)`,
-	"is",
+	String.raw`^[\t \r\n]*(\[(?:\\.|[^\]\\\r\n])*\]\(${ARCHIVE_URL_PATTERN}\)|<a\b[^>]*href=["']${ARCHIVE_URL_PATTERN}["'][^>]*>[^<\r\n]*<\/a>)`,
+	"i",
 );
 
 /**
@@ -108,6 +134,36 @@ export function extractArchiveTimestamp(archiveUrlOrText: string): string | unde
 	}
 
 	return undefined;
+}
+
+export function isArchiveTimestampFresh(
+	timestamp: string,
+	freshnessDays: number,
+	now: number = Date.now(),
+): boolean {
+	if (freshnessDays <= 0 || !/^\d{14}$/u.test(timestamp)) return false;
+	const year = Number(timestamp.slice(0, 4));
+	const month = Number(timestamp.slice(4, 6));
+	const day = Number(timestamp.slice(6, 8));
+	const hour = Number(timestamp.slice(8, 10));
+	const minute = Number(timestamp.slice(10, 12));
+	const second = Number(timestamp.slice(12, 14));
+	const capturedDate = new Date(0);
+	capturedDate.setUTCFullYear(year, month - 1, day);
+	capturedDate.setUTCHours(hour, minute, second, 0);
+	if (
+		capturedDate.getUTCFullYear() !== year ||
+		capturedDate.getUTCMonth() !== month - 1 ||
+		capturedDate.getUTCDate() !== day ||
+		capturedDate.getUTCHours() !== hour ||
+		capturedDate.getUTCMinutes() !== minute ||
+		capturedDate.getUTCSeconds() !== second
+	) {
+		return false;
+	}
+	const capturedAt = capturedDate.getTime();
+	const age = now - capturedAt;
+	return Number.isFinite(capturedAt) && age >= 0 && age < freshnessDays * 86_400_000;
 }
 
 /**
@@ -237,17 +293,11 @@ export const checkAdjacentLinkFreshness = (
 
 	if (adjacentTimestamp) {
 		try {
-			const adjacentDate = new Date(
-				parseInt(adjacentTimestamp.substring(0, 4)), // Year
-				parseInt(adjacentTimestamp.substring(4, 6)) - 1, // Month (0-indexed)
-				parseInt(adjacentTimestamp.substring(6, 8)), // Day
-				parseInt(adjacentTimestamp.substring(8, 10)), // Hour
-				parseInt(adjacentTimestamp.substring(10, 12)), // Minute
-				parseInt(adjacentTimestamp.substring(12, 14)), // Second
-			);
-			if (!isNaN(adjacentDate.getTime())) {
-				const isFresh =
-					Date.now() - adjacentDate.getTime() < getFreshnessThresholdMs(settings);
+			if (/^\d{14}$/u.test(adjacentTimestamp)) {
+				const isFresh = isArchiveTimestampFresh(
+					adjacentTimestamp,
+					settings.archiveFreshnessDays,
+				);
 				if (isFresh) {
 					// Adjacent link exists and is fresh, skip.
 					shouldProcess = false;
