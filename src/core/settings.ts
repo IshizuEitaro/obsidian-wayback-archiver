@@ -236,11 +236,7 @@ export interface PendingArchiveEntry {
 	status: "submitted";
 }
 
-export interface WaybackArchiverData {
-	activeProfileId: string;
-	profiles: Record<string, WaybackArchiverSettings>;
-	failedArchives?: FailedArchiveEntry[];
-	pendingArchives?: PendingArchiveEntry[];
+export interface CredentialStorageData {
 	spnCredentialStorageMode?: "secretStorage" | "plaintext";
 	spnAccessKeySecretName?: string;
 	spnSecretKeySecretName?: string;
@@ -248,12 +244,11 @@ export interface WaybackArchiverData {
 	spnSecretKey?: string;
 }
 
-export interface CredentialStorageData {
-	spnCredentialStorageMode?: "secretStorage" | "plaintext";
-	spnAccessKeySecretName?: string;
-	spnSecretKeySecretName?: string;
-	spnAccessKey?: string;
-	spnSecretKey?: string;
+export interface WaybackArchiverData extends CredentialStorageData {
+	activeProfileId: string;
+	profiles: Record<string, WaybackArchiverSettings>;
+	failedArchives?: FailedArchiveEntry[];
+	pendingArchives?: PendingArchiveEntry[];
 }
 
 export const SPN_ACCESS_KEY_SECRET_ID = "wayback-archiver-spn-access-key";
