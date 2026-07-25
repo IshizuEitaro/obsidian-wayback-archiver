@@ -109,8 +109,7 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 				name: "Markdown link",
 				input: "Read [Docs](https://example.com) now.",
 				originalUrl: "https://example.com",
-				archiveUrl:
-					"https://web.archive.org/web/20260417000000/https://example.com",
+				archiveUrl: "https://web.archive.org/web/20260417000000/https://example.com",
 				expected:
 					"Read [Docs](https://web.archive.org/web/20260417000000/https://example.com) now.",
 			},
@@ -125,18 +124,15 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 			},
 			{
 				name: "HTML anchor",
-				input:
-					'<a class="external" href="https://example.com" rel="noreferrer">Docs</a>',
+				input: '<a class="external" href="https://example.com" rel="noreferrer">Docs</a>',
 				originalUrl: "https://example.com",
-				archiveUrl:
-					"https://web.archive.org/web/20260417000000/https://example.com",
+				archiveUrl: "https://web.archive.org/web/20260417000000/https://example.com",
 				expected:
 					'<a class="external" href="https://web.archive.org/web/20260417000000/https://example.com" rel="noreferrer">Docs</a>',
 			},
 			{
 				name: "HTML image",
-				input:
-					"<img alt='Preview' src='https://example.com/image.png' loading='lazy'>",
+				input: "<img alt='Preview' src='https://example.com/image.png' loading='lazy'>",
 				originalUrl: "https://example.com/image.png",
 				archiveUrl:
 					"https://web.archive.org/web/20260417000000/https://example.com/image.png",
@@ -147,25 +143,27 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 				name: "bare URL",
 				input: "Visit https://example.com now.",
 				originalUrl: "https://example.com",
-				archiveUrl:
-					"https://web.archive.org/web/20260417000000/https://example.com",
+				archiveUrl: "https://web.archive.org/web/20260417000000/https://example.com",
 				expected:
 					"Visit https://web.archive.org/web/20260417000000/https://example.com now.",
 			},
-		])("replaces only the destination of a $name", ({ input, originalUrl, archiveUrl, expected }) => {
-			const result = applyLinkModification(
-				input,
-				originalUrl,
-				archiveUrl,
-				0,
-				replaceSettings,
-				{ isReplacement: false },
-			);
+		])(
+			"replaces only the destination of a $name",
+			({ input, originalUrl, archiveUrl, expected }) => {
+				const result = applyLinkModification(
+					input,
+					originalUrl,
+					archiveUrl,
+					0,
+					replaceSettings,
+					{ isReplacement: false },
+				);
 
-			expect(result.content).toBe(expected);
-			expect(result.modified).toBe(true);
-			expect(result.deltaLength).toBe(expected.length - input.length);
-		});
+				expect(result.content).toBe(expected);
+				expect(result.modified).toBe(true);
+				expect(result.deltaLength).toBe(expected.length - input.length);
+			},
+		);
 
 		it("removes an adjacent appended archive link while replacing the original destination", () => {
 			const input =

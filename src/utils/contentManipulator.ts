@@ -157,12 +157,9 @@ export function applyLinkModification(
 
 		return {
 			content:
-				content.slice(0, latestIndex) +
-				replacedOriginalLink +
-				content.slice(replaceEnd),
+				content.slice(0, latestIndex) + replacedOriginalLink + content.slice(replaceEnd),
 			modified: true,
-			deltaLength:
-				replacedOriginalLink.length - currentMatch[0].length - removedLength,
+			deltaLength: replacedOriginalLink.length - currentMatch[0].length - removedLength,
 			newIndex,
 		};
 	}
