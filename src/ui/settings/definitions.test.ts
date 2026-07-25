@@ -100,6 +100,21 @@ describe("declarative setting definitions", () => {
 		expect((delay!.visible as () => boolean)()).toBe(false);
 	});
 
+	it.each([
+		{ archiveLinkMode: "append", expected: true },
+		{ archiveLinkMode: "replace", expected: false },
+	] as const)(
+		"shows append-only formatting controls in $archiveLinkMode mode: $expected",
+		({ archiveLinkMode, expected }) => {
+			const flat = flatten(buildSettingDefinitions(createContext({ archiveLinkMode })));
+			for (const name of ["Date format", "Archive link text"]) {
+				const setting = flat.find((item) => item.name === name);
+				expect(typeof setting?.visible).toBe("function");
+				expect((setting!.visible as () => boolean)()).toBe(expected);
+			}
+		},
+	);
+
 	it("defines credential, profile, and substitution-rule controls", () => {
 		const definitions = buildSettingDefinitions(createContext());
 		const flat = flatten(definitions);

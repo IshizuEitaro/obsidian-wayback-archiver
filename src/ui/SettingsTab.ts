@@ -14,7 +14,7 @@ import {
 	getDeclarativeSettingValue,
 	setDeclarativeSettingValue,
 } from "./settings/bindings";
-import { buildSettingDefinitions } from "./settings/definitions";
+import { buildSettingDefinitions, isArchiveLinkFormattingVisible } from "./settings/definitions";
 import { renderLegacySettings } from "./settings/legacyRenderer";
 import { WaybackArchiverPlugin } from "../main";
 import {
@@ -309,38 +309,41 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						activeSettings.archiveLinkMode = value as "append" | "replace";
 						await this.plugin.saveSettings();
+						this.refreshSettingsUi(false);
 					}),
 			);
 
-		new Setting(containerEl)
-			.setName("Date format")
-			.setDesc(
-				"Format for the {date} placeholder in the archive link text (using date-fns format).",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("yyyy-MM-dd")
-					.setValue(activeSettings.dateFormat)
-					.onChange(async (value) => {
-						activeSettings.dateFormat = value || "yyyy-MM-dd";
-						await this.plugin.saveSettings();
-					}),
-			);
+		if (isArchiveLinkFormattingVisible(activeSettings)) {
+			new Setting(containerEl)
+				.setName("Date format")
+				.setDesc(
+					"Format for the {date} placeholder in the archive link text (using date-fns format).",
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder("yyyy-MM-dd")
+						.setValue(activeSettings.dateFormat)
+						.onChange(async (value) => {
+							activeSettings.dateFormat = value || "yyyy-MM-dd";
+							await this.plugin.saveSettings();
+						}),
+				);
 
-		new Setting(containerEl)
-			.setName("Archive link text")
-			.setDesc(
-				"Text used for the inserted archive link. Use {date} and/or {provider} as placeholders.",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("(Archived on {date})")
-					.setValue(activeSettings.archiveLinkText)
-					.onChange(async (value) => {
-						activeSettings.archiveLinkText = value || "(Archived on {date})";
-						await this.plugin.saveSettings();
-					}),
-			);
+			new Setting(containerEl)
+				.setName("Archive link text")
+				.setDesc(
+					"Text used for the inserted archive link. Use {date} and/or {provider} as placeholders.",
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder("(Archived on {date})")
+						.setValue(activeSettings.archiveLinkText)
+						.onChange(async (value) => {
+							activeSettings.archiveLinkText = value || "(Archived on {date})";
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
 
 		new Setting(containerEl).setName("Filtering rules (optional)").setHeading();
 

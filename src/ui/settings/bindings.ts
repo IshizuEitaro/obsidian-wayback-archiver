@@ -138,7 +138,9 @@ export async function setDeclarativeSettingValue(
 		Object.assign(plugin.activeSettings, { [profileKey]: value });
 	}
 	await plugin.saveSettings();
-	return key === "profile.archiveTodayExperimentalSubmit" ? "visibility" : "none";
+	return key === "profile.archiveTodayExperimentalSubmit" || key === "profile.archiveLinkMode"
+		? "visibility"
+		: "none";
 }
 
 export const validateNonNegativeInteger = (value: number): string | undefined =>

@@ -66,6 +66,18 @@ describe("declarative settings bindings", () => {
 		expect(plugin.saveSettings).toHaveBeenCalledTimes(5);
 	});
 
+	it("requests a visibility refresh without clearing append-only values", async () => {
+		const plugin = createPluginData();
+		const dateFormat = plugin.activeSettings.dateFormat;
+		const archiveLinkText = plugin.activeSettings.archiveLinkText;
+
+		expect(
+			await setDeclarativeSettingValue(plugin as never, "profile.archiveLinkMode", "replace"),
+		).toBe("visibility");
+		expect(plugin.activeSettings.dateFormat).toBe(dateFormat);
+		expect(plugin.activeSettings.archiveLinkText).toBe(archiveLinkText);
+	});
+
 	it("validates number ranges and date formats", () => {
 		expect(validateNonNegativeInteger(0)).toBeUndefined();
 		expect(validateNonNegativeInteger(-1)).toBeTruthy();
