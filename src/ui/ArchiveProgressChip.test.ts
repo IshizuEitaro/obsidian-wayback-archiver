@@ -15,6 +15,25 @@ class FakeElement {
 		this.children.push(...children);
 	}
 
+	createDiv(options?: { cls?: string }): FakeElement {
+		const element = new FakeElement();
+		element.className = options?.cls ?? "";
+		this.children.push(element);
+		return element;
+	}
+
+	createEl(
+		_tag: string,
+		options?: { cls?: string; text?: string; attr?: { type?: string } },
+	): FakeElement {
+		const element = new FakeElement();
+		element.className = options?.cls ?? "";
+		element.textContent = options?.text ?? "";
+		element.type = options?.attr?.type ?? "";
+		this.children.push(element);
+		return element;
+	}
+
 	addEventListener(event: string, listener: () => void): void {
 		this.listeners.set(event, listener);
 	}
@@ -35,9 +54,8 @@ class FakeElement {
 
 describe("ArchiveProgressChip", () => {
 	beforeEach(() => {
-		vi.stubGlobal("document", {
+		vi.stubGlobal("activeDocument", {
 			body: new FakeElement(),
-			createElement: vi.fn(() => new FakeElement()),
 		});
 	});
 
@@ -53,7 +71,7 @@ describe("ArchiveProgressChip", () => {
 		run.updateItem("a", "success", "Captured");
 		run.finish();
 
-		const details = (document.body as unknown as FakeElement).findByClass(
+		const details = (activeDocument.body as unknown as FakeElement).findByClass(
 			"wayback-progress-chip-details",
 		);
 		expect(details?.textContent).toBe("Complete 1/1 · 1 saved");
@@ -70,7 +88,7 @@ describe("ArchiveProgressChip", () => {
 		run.updateItem("a", "success", "Captured");
 		run.cancelItem("b");
 
-		const details = (document.body as unknown as FakeElement).findByClass(
+		const details = (activeDocument.body as unknown as FakeElement).findByClass(
 			"wayback-progress-chip-details",
 		);
 		expect(details?.textContent).toBe("Archiving 2/2 · 1 saved · 1 skipped");
@@ -84,7 +102,7 @@ describe("ArchiveProgressChip", () => {
 		const chip = new ArchiveProgressChip(run, openDetails);
 		chip.open();
 
-		(document.body as unknown as FakeElement)
+		(activeDocument.body as unknown as FakeElement)
 			.findByClass("wayback-progress-chip-details")
 			?.click();
 
@@ -99,14 +117,15 @@ describe("ArchiveProgressChip", () => {
 		const chip = new ArchiveProgressChip(run, vi.fn());
 		chip.open();
 
-		(document.body as unknown as FakeElement)
+		(activeDocument.body as unknown as FakeElement)
 			.findByClass("wayback-progress-chip-cancel")
 			?.click();
 
 		expect(cancel).toHaveBeenCalledOnce();
 		expect(
-			(document.body as unknown as FakeElement).findByClass("wayback-progress-chip-cancel")
-				?.hidden,
+			(activeDocument.body as unknown as FakeElement).findByClass(
+				"wayback-progress-chip-cancel",
+			)?.hidden,
 		).toBe(true);
 	});
 
@@ -116,7 +135,9 @@ describe("ArchiveProgressChip", () => {
 		]);
 		const chip = new ArchiveProgressChip(run, vi.fn());
 		chip.open();
-		const root = (document.body as unknown as FakeElement).findByClass("wayback-progress-chip");
+		const root = (activeDocument.body as unknown as FakeElement).findByClass(
+			"wayback-progress-chip",
+		);
 		const details = root?.findByClass("wayback-progress-chip-details");
 
 		chip.destroy();

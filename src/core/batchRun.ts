@@ -202,7 +202,7 @@ export async function waitForBatchDelay(
 	else run.assertActive();
 	await new Promise<void>((resolve, reject) => {
 		let unsubscribe: () => void = () => undefined;
-		const timer = globalThis.setTimeout(
+		const timer = window.setTimeout(
 			() => {
 				unsubscribe();
 				resolve();
@@ -214,7 +214,7 @@ export async function waitForBatchDelay(
 				itemId !== undefined &&
 				snapshot.items.some((item) => item.id === itemId && item.status === "canceled");
 			if (!snapshot.canceled && !itemCanceled) return;
-			globalThis.clearTimeout(timer);
+			window.clearTimeout(timer);
 			unsubscribe();
 			reject(new BatchCanceledError());
 		});

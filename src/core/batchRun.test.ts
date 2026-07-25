@@ -1,8 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { BatchCanceledError, BatchRunController, formatBatchProgressDetails, waitForBatchDelay } from "./batchRun";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	BatchCanceledError,
+	BatchRunController,
+	formatBatchProgressDetails,
+	waitForBatchDelay,
+} from "./batchRun";
 
 describe("BatchRunController", () => {
-	afterEach(() => vi.useRealTimers());
+	beforeEach(() => vi.stubGlobal("window", globalThis));
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
 
 	it("keeps completed items and cancels remaining work", async () => {
 		const run = new BatchRunController([
@@ -55,7 +64,12 @@ describe("BatchRunController", () => {
 		run.updateItem("a", "success", "Captured");
 		run.updateItem("b", "success", "Captured");
 
-		expect(run.snapshot()).toMatchObject({ canceled: false, completed: 2, succeeded: 1, skipped: 1 });
+		expect(run.snapshot()).toMatchObject({
+			canceled: false,
+			completed: 2,
+			succeeded: 1,
+			skipped: 1,
+		});
 		expect(run.snapshot().items.map(({ status }) => status)).toEqual(["canceled", "success"]);
 	});
 

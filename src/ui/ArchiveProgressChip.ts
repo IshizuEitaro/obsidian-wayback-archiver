@@ -11,21 +11,20 @@ export class ArchiveProgressChip {
 		private readonly onOpenDetails: () => void,
 	) {}
 
-	open(parent: HTMLElement = document.body): void {
+	open(parent: HTMLElement = activeDocument.body): void {
 		if (this.root) return;
-		const root = document.createElement("div");
-		root.className = "wayback-progress-chip";
-		const detailsButton = document.createElement("button");
-		detailsButton.type = "button";
-		detailsButton.className = "wayback-progress-chip-details";
+		const root = parent.createDiv({ cls: "wayback-progress-chip" });
+		const detailsButton = root.createEl("button", {
+			cls: "wayback-progress-chip-details",
+			attr: { type: "button" },
+		});
 		detailsButton.addEventListener("click", this.onOpenDetails);
-		const cancelButton = document.createElement("button");
-		cancelButton.type = "button";
-		cancelButton.className = "wayback-progress-chip-cancel";
-		cancelButton.textContent = "Cancel";
+		const cancelButton = root.createEl("button", {
+			text: "Cancel",
+			cls: "wayback-progress-chip-cancel",
+			attr: { type: "button" },
+		});
 		cancelButton.addEventListener("click", () => this.run.cancel());
-		root.append(detailsButton, cancelButton);
-		parent.append(root);
 		this.root = root;
 		this.detailsButton = detailsButton;
 		this.cancelButton = cancelButton;
