@@ -98,6 +98,95 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 		);
 	});
 
+	describe("replace output mode", () => {
+		const replaceSettings = {
+			...DEFAULT_SETTINGS,
+			archiveLinkMode: "replace" as const,
+		};
+
+		it.each([
+			{
+				name: "Markdown link",
+				input: "Read [Docs](https://example.com) now.",
+				originalUrl: "https://example.com",
+				archiveUrl:
+					"https://web.archive.org/web/20260417000000/https://example.com",
+				expected:
+					"Read [Docs](https://web.archive.org/web/20260417000000/https://example.com) now.",
+			},
+			{
+				name: "Markdown image",
+				input: "![Preview](https://example.com/image.png)",
+				originalUrl: "https://example.com/image.png",
+				archiveUrl:
+					"https://web.archive.org/web/20260417000000/https://example.com/image.png",
+				expected:
+					"![Preview](https://web.archive.org/web/20260417000000/https://example.com/image.png)",
+			},
+			{
+				name: "HTML anchor",
+				input:
+					'<a class="external" href="https://example.com" rel="noreferrer">Docs</a>',
+				originalUrl: "https://example.com",
+				archiveUrl:
+					"https://web.archive.org/web/20260417000000/https://example.com",
+				expected:
+					'<a class="external" href="https://web.archive.org/web/20260417000000/https://example.com" rel="noreferrer">Docs</a>',
+			},
+			{
+				name: "HTML image",
+				input:
+					"<img alt='Preview' src='https://example.com/image.png' loading='lazy'>",
+				originalUrl: "https://example.com/image.png",
+				archiveUrl:
+					"https://web.archive.org/web/20260417000000/https://example.com/image.png",
+				expected:
+					"<img alt='Preview' src='https://web.archive.org/web/20260417000000/https://example.com/image.png' loading='lazy'>",
+			},
+			{
+				name: "bare URL",
+				input: "Visit https://example.com now.",
+				originalUrl: "https://example.com",
+				archiveUrl:
+					"https://web.archive.org/web/20260417000000/https://example.com",
+				expected:
+					"Visit https://web.archive.org/web/20260417000000/https://example.com now.",
+			},
+		])("replaces only the destination of a $name", ({ input, originalUrl, archiveUrl, expected }) => {
+			const result = applyLinkModification(
+				input,
+				originalUrl,
+				archiveUrl,
+				0,
+				replaceSettings,
+				{ isReplacement: false },
+			);
+
+			expect(result.content).toBe(expected);
+			expect(result.modified).toBe(true);
+			expect(result.deltaLength).toBe(expected.length - input.length);
+		});
+
+		it("removes an adjacent appended archive link while replacing the original destination", () => {
+			const input =
+				"[Docs](https://example.com) [(Archived)](https://archive.md/20260410000000/https://other.example)";
+			const expected =
+				"[Docs](https://web.archive.org/web/20260417000000/https://example.com)";
+
+			const result = applyLinkModification(
+				input,
+				"https://example.com",
+				"https://web.archive.org/web/20260417000000/https://example.com",
+				0,
+				replaceSettings,
+				{ isReplacement: false },
+			);
+
+			expect(result.content).toBe(expected);
+			expect(result.deltaLength).toBe(expected.length - input.length);
+		});
+	});
+
 	it("should replace an adjacent archive link after the original", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-04-17T00:00:00Z"));
