@@ -25,6 +25,9 @@ describe("declarative settings bindings", () => {
 		expect(getDeclarativeSettingValue(plugin as never, "profile.dateFormat")).toBe(
 			"yyyy-MM-dd",
 		);
+		expect(getDeclarativeSettingValue(plugin as never, "profile.archiveLinkMode")).toBe(
+			"append",
+		);
 		expect(getDeclarativeSettingValue(plugin as never, "profile.ignorePatternsText")).toBe(
 			"archive\\.org\ninternal",
 		);
@@ -49,8 +52,10 @@ describe("declarative settings bindings", () => {
 			"Example.com, api.example.org\nnews.example.net",
 		);
 		await setDeclarativeSettingValue(plugin as never, "profile.provider.megalodon", true);
+		await setDeclarativeSettingValue(plugin as never, "profile.archiveLinkMode", "replace");
 
 		expect(plugin.activeSettings.apiDelay).toBe(2500);
+		expect(plugin.activeSettings.archiveLinkMode).toBe("replace");
 		expect(plugin.activeSettings.ignorePatterns).toEqual(["one", "two"]);
 		expect(plugin.activeSettings.ignoredDomains).toEqual([
 			"example.com",
@@ -58,7 +63,19 @@ describe("declarative settings bindings", () => {
 			"news.example.net",
 		]);
 		expect(plugin.activeSettings.defaultArchiveProviders).toContain("megalodon");
-		expect(plugin.saveSettings).toHaveBeenCalledTimes(4);
+		expect(plugin.saveSettings).toHaveBeenCalledTimes(5);
+	});
+
+	it("requests a visibility refresh without clearing append-only values", async () => {
+		const plugin = createPluginData();
+		const dateFormat = plugin.activeSettings.dateFormat;
+		const archiveLinkText = plugin.activeSettings.archiveLinkText;
+
+		expect(
+			await setDeclarativeSettingValue(plugin as never, "profile.archiveLinkMode", "replace"),
+		).toBe("visibility");
+		expect(plugin.activeSettings.dateFormat).toBe(dateFormat);
+		expect(plugin.activeSettings.archiveLinkText).toBe(archiveLinkText);
 	});
 
 	it("validates number ranges and date formats", () => {

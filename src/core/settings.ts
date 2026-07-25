@@ -17,6 +17,8 @@ export type ArchiveProviderId = (typeof ARCHIVE_PROVIDER_ID_VALUES)[number];
 
 export type ArchiveServiceId = "wayback" | ArchiveProviderId;
 
+export type ArchiveLinkMode = "append" | "replace";
+
 export interface ArchivePolicyRule {
 	/**
 	 * A case-insensitive regular expression pattern to match the target URL.
@@ -30,6 +32,7 @@ export interface ArchivePolicyRule {
 
 export interface WaybackArchiverSettings {
 	dateFormat: string;
+	archiveLinkMode: ArchiveLinkMode;
 	/**
 	 * Template for the appended archive link text.
 	 * Placeholders:
@@ -73,6 +76,7 @@ export interface WaybackArchiverSettings {
 
 export const DEFAULT_SETTINGS: WaybackArchiverSettings = {
 	dateFormat: "yyyy-MM-dd",
+	archiveLinkMode: "append",
 	archiveLinkText: "(Archived on {date})",
 	ignorePatterns: [
 		"web.archive.org/",
@@ -132,6 +136,7 @@ export function normalizeProfileSettings(
 	};
 	return {
 		...merged,
+		archiveLinkMode: profile?.archiveLinkMode === "replace" ? "replace" : "append",
 		ignorePatterns: [...(profile?.ignorePatterns ?? DEFAULT_SETTINGS.ignorePatterns)],
 		ignoredDomains: [...(profile?.ignoredDomains ?? [])],
 		apiDelay:

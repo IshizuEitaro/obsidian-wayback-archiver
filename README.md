@@ -62,11 +62,15 @@ The plugin scans your notes (either the current note, selected text, or the enti
 
 ### Archive Links
 
-If archiving is successful, the plugin inserts a new Markdown (or HTML) archive link immediately after the original link. The format of this link is configurable.
+If archiving is successful, the plugin either appends a new Markdown (or HTML) archive link after the original link or replaces the original link destination with the archive URL. The output is controlled by **Archive link mode**.
 
-**Example:**
-`[Example Site](https://example.com)` becomes
+With **Archive link mode** set to **Append** (default):
+
 `[Example Site](https://example.com) [(Archived on 2025-04-10)](https://web.archive.org/web/20250410...)`
+
+With it set to **Replace**:
+
+`[Example Site](https://web.archive.org/web/20250410...)`
 
 The plugin avoids adding archive links if one already exists immediately following the original link, unless using a "Force re-archive" command or the existing archive link is older than the configured Archive Freshness threshold.
 
@@ -240,6 +244,7 @@ These settings apply only to the **currently active profile**.
 
 #### General
 
+- **Archive Link Mode:** Choose **Append** (default) to add a separate archive link, or **Replace** to keep the original label or markup and replace only its destination URL. Replace mode also removes an adjacent appended archive link when that item is successfully processed.
 - **Date Format:** Define the format for the `{date}` placeholder in the archive link text. Uses `date-fns` format tokens (e.g., `yyyy-MM-dd`, `dd MMM yyyy`). Default: `yyyy-MM-dd`.
 - **Archive Link Text:** The template for the inserted archive link. Placeholders available:
     - `{date}`: replaced with the formatted archive date.

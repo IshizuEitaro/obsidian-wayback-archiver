@@ -11,7 +11,11 @@ import {
 	validateIntegerRange,
 	validateNonNegativeInteger,
 } from "./bindings";
-import { SPN_ACCESS_KEY_SECRET_ID, SPN_SECRET_KEY_SECRET_ID } from "../../core/settings";
+import {
+	SPN_ACCESS_KEY_SECRET_ID,
+	SPN_SECRET_KEY_SECRET_ID,
+	WaybackArchiverSettings,
+} from "../../core/settings";
 import {
 	addSubstitutionRule,
 	deleteSubstitutionRule,
@@ -30,6 +34,7 @@ export const SETTING_IDS = [
 	"active-profile",
 	"profile-actions",
 	"date-format",
+	"archive-link-mode",
 	"archive-link-text",
 	"ignore-url-patterns",
 	"ignored-domains",
@@ -85,6 +90,10 @@ const textArea = (key: DeclarativeSettingKey): SettingControl<DeclarativeSetting
 	key,
 	rows: 5,
 });
+
+export const isArchiveLinkFormattingVisible = (
+	settings: Pick<WaybackArchiverSettings, "archiveLinkMode">,
+): boolean => settings.archiveLinkMode === "append";
 
 function buildCredentialGroup(
 	context: SettingDefinitionContext,
@@ -513,6 +522,9 @@ function buildSpnPage(): SettingDefinitionPage<DeclarativeSettingKey> {
 export function buildSettingDefinitions(
 	context: SettingDefinitionContext,
 ): SettingDefinitionItem<DeclarativeSettingKey>[] {
+	const archiveLinkFormattingVisible = () =>
+		isArchiveLinkFormattingVisible(context.plugin.activeSettings);
+
 	return [
 		buildCredentialGroup(context),
 		buildProfileGroup(context),
@@ -520,17 +532,36 @@ export function buildSettingDefinitions(
 			type: "page",
 			name: "Archive link format",
 			items: [
-				profileControl("Date format", "date-fns format used for {date}.", {
-					type: "text",
-					key: "profile.dateFormat",
-					placeholder: "yyyy-MM-dd",
-					validate: validateDateFormat,
-				}),
-				profileControl("Archive link text", "Use {date} and {provider} placeholders.", {
-					type: "text",
-					key: "profile.archiveLinkText",
-					placeholder: "(Archived on {date})",
-				}),
+				profileControl(
+					"Archive link mode",
+					"Append a separate archive link or replace the original link destination.",
+					{
+						type: "dropdown",
+						key: "profile.archiveLinkMode",
+						options: { append: "Append", replace: "Replace" },
+					},
+				),
+				profileControl(
+					"Date format",
+					"date-fns format used for {date}.",
+					{
+						type: "text",
+						key: "profile.dateFormat",
+						placeholder: "yyyy-MM-dd",
+						validate: validateDateFormat,
+					},
+					{ visible: archiveLinkFormattingVisible },
+				),
+				profileControl(
+					"Archive link text",
+					"Use {date} and {provider} placeholders.",
+					{
+						type: "text",
+						key: "profile.archiveLinkText",
+						placeholder: "(Archived on {date})",
+					},
+					{ visible: archiveLinkFormattingVisible },
+				),
 			],
 		},
 		buildFilteringPage(),

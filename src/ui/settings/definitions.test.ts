@@ -68,6 +68,7 @@ describe("declarative setting definitions", () => {
 		expect(names).toEqual(
 			expect.arrayContaining([
 				"Date format",
+				"Archive link mode",
 				"Archive link text",
 				"Ignored domains",
 				"Archive bare URLs",
@@ -79,6 +80,12 @@ describe("declarative setting definitions", () => {
 		);
 		const apiDelay = flat.find((item) => item.name === "API request delay");
 		expect(apiDelay?.aliases).toContain("request interval");
+		const mode = flat.find((item) => item.name === "Archive link mode");
+		expect(mode?.control).toEqual({
+			type: "dropdown",
+			key: "profile.archiveLinkMode",
+			options: { append: "Append", replace: "Replace" },
+		});
 	});
 
 	it("shows archive.today queue controls only when auto-submit is enabled", () => {
@@ -92,6 +99,21 @@ describe("declarative setting definitions", () => {
 		expect(typeof delay?.visible).toBe("function");
 		expect((delay!.visible as () => boolean)()).toBe(false);
 	});
+
+	it.each([
+		{ archiveLinkMode: "append", expected: true },
+		{ archiveLinkMode: "replace", expected: false },
+	] as const)(
+		"shows append-only formatting controls in $archiveLinkMode mode: $expected",
+		({ archiveLinkMode, expected }) => {
+			const flat = flatten(buildSettingDefinitions(createContext({ archiveLinkMode })));
+			for (const name of ["Date format", "Archive link text"]) {
+				const setting = flat.find((item) => item.name === name);
+				expect(typeof setting?.visible).toBe("function");
+				expect((setting!.visible as () => boolean)()).toBe(expected);
+			}
+		},
+	);
 
 	it("defines credential, profile, and substitution-rule controls", () => {
 		const definitions = buildSettingDefinitions(createContext());

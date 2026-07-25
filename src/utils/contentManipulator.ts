@@ -5,6 +5,7 @@ import {
 	getUrlFromMatch,
 	createArchiveLink,
 	isSnapshotForTargetUrl,
+	normalizeArchiveUrl,
 	normalizeUrlForComparison,
 } from "./LinkUtils";
 import { WaybackArchiverSettings } from "../core/settings";
@@ -127,12 +128,52 @@ export function applyLinkModification(
 		};
 	}
 
-	const archiveLinkText = createArchiveLink(currentMatch, archiveUrl, settings);
 	const insertionPoint = latestIndex + currentMatch[0].length;
+	const newIndex = latestIndex;
 
+	if (settings.archiveLinkMode === "replace") {
+		const urlCaptureIndex = currentMatch.slice(1).findIndex((capture) => capture !== undefined);
+		const absoluteUrlRange = currentMatch.indices?.[urlCaptureIndex + 1];
+		const matchStartIndex = currentMatch.index;
+		if (urlCaptureIndex < 0 || !absoluteUrlRange || matchStartIndex === undefined) {
+			return {
+				content,
+				modified: false,
+				deltaLength: 0,
+				newIndex,
+			};
+		}
+		const relativeUrlStart = absoluteUrlRange[0] - matchStartIndex;
+		const relativeUrlEnd = absoluteUrlRange[1] - matchStartIndex;
+
+		const normalizedArchiveUrl = normalizeArchiveUrl(archiveUrl);
+		const replacedOriginalLink =
+			currentMatch[0].slice(0, relativeUrlStart) +
+			normalizedArchiveUrl +
+			currentMatch[0].slice(relativeUrlEnd);
+		const textAfterLink = content.slice(
+			insertionPoint,
+			insertionPoint + ADJACENT_LINK_SEARCH_LIMIT,
+		);
+		const adjacentArchiveMatch = getAdjacentArchiveLinkMatch(textAfterLink);
+		const removedLength =
+			adjacentArchiveMatch && isAdjacentArchiveForTarget(adjacentArchiveMatch[0], originalUrl)
+				? adjacentArchiveMatch[0].length
+				: 0;
+		const replaceEnd = insertionPoint + removedLength;
+
+		return {
+			content:
+				content.slice(0, latestIndex) + replacedOriginalLink + content.slice(replaceEnd),
+			modified: true,
+			deltaLength: replacedOriginalLink.length - currentMatch[0].length - removedLength,
+			newIndex,
+		};
+	}
+
+	const archiveLinkText = createArchiveLink(currentMatch, archiveUrl, settings);
 	let newContent: string;
 	let deltaLength: number;
-	const newIndex = latestIndex;
 
 	if (options.isReplacement) {
 		const textAfterLink = content.slice(
