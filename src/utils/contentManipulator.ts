@@ -92,10 +92,6 @@ export interface ContentModification {
 	newIndex: number;
 }
 
-interface MatchWithIndices extends RegExpMatchArray {
-	indices?: Array<[number, number] | undefined>;
-}
-
 /**
  * Robustly applies a link modification (insertion or replacement) to content.
  * It re-scans the content for the correct position at the moment of modification.
@@ -137,7 +133,7 @@ export function applyLinkModification(
 
 	if (settings.archiveLinkMode === "replace") {
 		const urlCaptureIndex = currentMatch.slice(1).findIndex((capture) => capture !== undefined);
-		const absoluteUrlRange = (currentMatch as MatchWithIndices).indices?.[urlCaptureIndex + 1];
+		const absoluteUrlRange = currentMatch.indices?.[urlCaptureIndex + 1];
 		const matchStartIndex = currentMatch.index;
 		if (urlCaptureIndex < 0 || !absoluteUrlRange || matchStartIndex === undefined) {
 			return {
