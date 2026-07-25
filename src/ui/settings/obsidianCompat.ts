@@ -46,9 +46,7 @@ export function getDeclarativeSettingsHost(
 
 export function getSecretSelectorConstructor(): SecretSelectorConstructor | undefined {
 	const constructor = Reflect.get(Obsidian, "SecretComponent");
-	return typeof constructor === "function"
-		? (constructor as SecretSelectorConstructor)
-		: undefined;
+	return typeof constructor === "function" ? constructor : undefined;
 }
 
 export function markButtonDestructive(button: ButtonComponent): ButtonComponent {

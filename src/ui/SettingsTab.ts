@@ -164,33 +164,31 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 		}
 
 		if (currentMode === "secretStorage" && secretStorage && SecretSelectorClass) {
-			new Setting(containerEl)
+			const accessKeySetting = new Setting(containerEl)
 				.setName("Archive.org SPN access key")
 				.setDesc(
 					"Select or create a secret in SecretStorage for the SPN API v2 access key.",
-				)
-				.addComponent((el) =>
-					new SecretSelectorClass(this.app, el)
-						.setValue(this.plugin.data.spnAccessKeySecretName || "")
-						.onChange(async (value: string) => {
-							this.plugin.data.spnAccessKeySecretName = value.trim();
-							await this.plugin.saveSettings();
-						}),
 				);
+			const accessKeySelector = new SecretSelectorClass(this.app, accessKeySetting.controlEl)
+				.setValue(this.plugin.data.spnAccessKeySecretName || "")
+				.onChange(async (value: string) => {
+					this.plugin.data.spnAccessKeySecretName = value.trim();
+					await this.plugin.saveSettings();
+				});
+			accessKeySetting.components.push(accessKeySelector);
 
-			new Setting(containerEl)
+			const secretKeySetting = new Setting(containerEl)
 				.setName("Archive.org SPN secret key")
 				.setDesc(
 					"Select or create a secret in SecretStorage for the SPN API v2 secret key.",
-				)
-				.addComponent((el) =>
-					new SecretSelectorClass(this.app, el)
-						.setValue(this.plugin.data.spnSecretKeySecretName || "")
-						.onChange(async (value: string) => {
-							this.plugin.data.spnSecretKeySecretName = value.trim();
-							await this.plugin.saveSettings();
-						}),
 				);
+			const secretKeySelector = new SecretSelectorClass(this.app, secretKeySetting.controlEl)
+				.setValue(this.plugin.data.spnSecretKeySecretName || "")
+				.onChange(async (value: string) => {
+					this.plugin.data.spnSecretKeySecretName = value.trim();
+					await this.plugin.saveSettings();
+				});
+			secretKeySetting.components.push(secretKeySelector);
 
 			const syncNotice = containerEl.createEl("p", { cls: "setting-item-description" });
 			syncNotice.setText(

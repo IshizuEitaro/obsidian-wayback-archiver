@@ -25,11 +25,14 @@ describe("Obsidian scorecard compliance", () => {
 		const settingsTab = read("src/ui/SettingsTab.ts");
 		const definitions = read("src/ui/settings/definitions.ts");
 		const shared = read("src/ui/settings/shared.ts");
+		const compatibilityHelpers = read("src/ui/settings/obsidianCompat.ts");
 
 		expect(settingsTab).not.toContain(".secretStorage");
+		expect(settingsTab).not.toContain(".addComponent(");
 		expect(settingsTab).not.toMatch(/\bSecretComponent\b/);
 		expect(definitions).not.toMatch(/\bSecretComponent\b/);
 		expect(shared).not.toContain(".secretStorage");
+		expect(compatibilityHelpers).not.toContain("as SecretSelectorConstructor");
 	});
 
 	it("does not call deprecated button and slider methods", () => {
