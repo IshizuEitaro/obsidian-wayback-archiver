@@ -1718,6 +1718,23 @@ describe("ArchiverService file processing", () => {
 		expect(counters).toEqual({ archivedCount: 1, failedCount: 0, skippedCount: 0 });
 	});
 
+	it("replaces the original destination and removes an appended archive in replace mode", async () => {
+		const setup = createFileService(
+			"Read [Docs](https://example.com) [(Archived)](https://web.archive.org/web/20260410000000/https://example.com).",
+			{ ...DEFAULT_SETTINGS, archiveLinkMode: "replace", archiveFreshnessDays: 0 },
+		);
+		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
+			status: "success",
+			url: "https://web.archive.org/web/20260417000000/https://example.com",
+		});
+
+		await setup.processFile(undefined, true);
+
+		expect(setup.getContent()).toBe(
+			"Read [Docs](https://web.archive.org/web/20260417000000/https://example.com).",
+		);
+	});
+
 	it("leaves note content unchanged and records a failure when archiving fails", async () => {
 		const setup = createFileService("Read https://example.com.");
 		vi.spyOn(setup.service, "archiveUrl").mockResolvedValue({
