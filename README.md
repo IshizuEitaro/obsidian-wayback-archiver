@@ -6,7 +6,7 @@
 
 [日本語 (Japanese)](./README.ja.md)
 
-This is an Obsidian plugin which automatically archives web links via Wayback Machine and appends archived versions in notes. It supports vault-wide archiving, include/exclude filtering, URL substitution rules, retrying failed archives, profile-based settings, fallback providers, and more.
+This is an Obsidian plugin which automatically archives web links via Wayback Machine and appends or replaces with archived versions in notes. It supports vault-wide archiving, include/exclude filtering, URL substitution rules, retrying failed archives, profile-based settings, fallback providers, and more.
 
 ## Table of Contents
 

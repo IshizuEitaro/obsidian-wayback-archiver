@@ -6,7 +6,7 @@
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ishizue)
 
-Wayback Archiver は、Obsidian ノート内の Web リンクを Wayback Machine などのアーカイブサービスへ自動保存し、アーカイブリンクを追記する Obsidian プラグインです。
+Wayback Archiver は、Obsidian ノート内の Web リンクを Wayback Machine などのアーカイブサービスへ自動保存し、アーカイブリンクを追記または置換する Obsidian プラグインです。
 Vault 全体のアーカイブ、柔軟なフィルタリング（対象指定・除外）、URL 置換ルール、失敗ログの再試行、プロフィール管理、代替プロバイダー（フォールバック）に対応しています。
 
 ## 目次
