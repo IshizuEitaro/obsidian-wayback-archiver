@@ -28,6 +28,7 @@ describe("normalizeProfileSettings", () => {
 		expect(migrated.ignorePatterns).toEqual(["youtube\\.com", "internal-wiki"]);
 		expect(migrated.ignoredDomains).toEqual([]);
 		expect(migrated.archiveBareUrls).toBe(true);
+		expect(migrated.archiveLinkMode).toBe("append");
 		expect(migrated.fallbackToLatestSnapshot).toBe(true);
 		expect(migrated.maxFreshCaptureWaitSeconds).toBe(120);
 		expect(migrated.throttleRetryDelayMs).toBe(30_000);
@@ -35,6 +36,15 @@ describe("normalizeProfileSettings", () => {
 		expect((migrated as typeof migrated & { futureSetting: string }).futureSetting).toBe(
 			"preserve-me",
 		);
+	});
+
+	it("repairs unsupported archive link modes to append", () => {
+		const result = normalizeProfileSettings({
+			...DEFAULT_SETTINGS,
+			archiveLinkMode: "unsupported" as never,
+		});
+
+		expect(result.archiveLinkMode).toBe("append");
 	});
 
 	it("repairs stored values that declarative validation would reject", () => {
