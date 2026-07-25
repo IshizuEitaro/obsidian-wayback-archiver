@@ -4,7 +4,6 @@ import type {
 	SettingDefinitionItem,
 	SettingDefinitionPage,
 } from "obsidian";
-import { SecretComponent } from "obsidian";
 import type WaybackArchiverPlugin from "../../main";
 import {
 	DeclarativeSettingKey,
@@ -21,6 +20,7 @@ import {
 	switchCredentialStorageMode,
 	updateSubstitutionRule,
 } from "./shared";
+import { getSecretSelectorConstructor } from "./obsidianCompat";
 
 export const SETTING_IDS = [
 	"credential-storage-mode",
@@ -120,7 +120,9 @@ function buildCredentialGroup(
 				render: (setting) => {
 					if (isSecretMode()) {
 						const name = plugin.data.spnAccessKeySecretName ?? SPN_ACCESS_KEY_SECRET_ID;
-						new SecretComponent(plugin.app, setting.controlEl)
+						const SecretSelector = getSecretSelectorConstructor();
+						if (!SecretSelector) return;
+						new SecretSelector(plugin.app, setting.controlEl)
 							.setValue(name)
 							.onChange(async (selectedName) => {
 								plugin.data.spnAccessKeySecretName = selectedName;
@@ -145,7 +147,9 @@ function buildCredentialGroup(
 				render: (setting) => {
 					if (isSecretMode()) {
 						const name = plugin.data.spnSecretKeySecretName ?? SPN_SECRET_KEY_SECRET_ID;
-						new SecretComponent(plugin.app, setting.controlEl)
+						const SecretSelector = getSecretSelectorConstructor();
+						if (!SecretSelector) return;
+						new SecretSelector(plugin.app, setting.controlEl)
 							.setValue(name)
 							.onChange(async (selectedName) => {
 								plugin.data.spnSecretKeySecretName = selectedName;
@@ -477,7 +481,7 @@ function buildFallbackPage(
 function buildSpnPage(): SettingDefinitionPage<DeclarativeSettingKey> {
 	return {
 		type: "page",
-		name: "SPN API v2 options",
+		name: "SPN API v2",
 		items: [
 			profileControl("Capture screenshot", "Capture a screenshot.", {
 				type: "toggle",

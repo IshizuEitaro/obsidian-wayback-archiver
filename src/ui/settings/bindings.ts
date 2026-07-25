@@ -89,7 +89,7 @@ export function getDeclarativeSettingValue(
 ): unknown {
 	if (key in TEXT_ARRAY_KEYS) {
 		const profileKey = TEXT_ARRAY_KEYS[key as keyof typeof TEXT_ARRAY_KEYS];
-		return (plugin.activeSettings[profileKey] as string[]).join("\n");
+		return plugin.activeSettings[profileKey].join("\n");
 	}
 	if (key === "profile.ignoredDomainsText") {
 		return plugin.activeSettings.ignoredDomains.join("\n");

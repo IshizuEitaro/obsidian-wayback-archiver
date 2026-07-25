@@ -5,7 +5,6 @@ import {
 	Notice,
 	Setting,
 	SettingDefinitionItem,
-	SecretComponent,
 } from "obsidian";
 import { ConfirmationModal, ProfileNameModal } from "./modals";
 import { runAsyncAction } from "../utils/async";
@@ -22,13 +21,20 @@ import {
 	ArchivePolicyRule,
 	ArchiveServiceId,
 	DEFAULT_SETTINGS,
+	getSecretStorage,
 	purgePlaintextCredentials,
 	SPN_ACCESS_KEY_SECRET_ID,
 	SPN_SECRET_KEY_SECRET_ID,
 } from "../core/settings";
+import {
+	getDeclarativeSettingsHost,
+	getSecretSelectorConstructor,
+	markButtonDestructive,
+	preserveLegacySliderValue,
+} from "./settings/obsidianCompat";
 
 export function supportsDeclarativeSettings(tab: PluginSettingTab): boolean {
-	return typeof (tab as { update?: unknown }).update === "function";
+	return getDeclarativeSettingsHost(tab) !== undefined;
 }
 
 class WaybackArchiverSettingTab extends PluginSettingTab {
@@ -40,12 +46,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 	}
 
 	refreshSettingsUi(structural: boolean): void {
-		if (supportsDeclarativeSettings(this)) {
-			const declarativeTab = this as PluginSettingTab & {
-				update(): void;
-				refreshDomState(): void;
-			};
-			if (structural) declarativeTab.update();
+		const declarativeTab = getDeclarativeSettingsHost(this);
+		if (declarativeTab) {
+			if (structural || !declarativeTab.refreshDomState) declarativeTab.update();
 			else declarativeTab.refreshDomState();
 			return;
 		}
@@ -92,13 +95,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			href: "https://archive.org/account/s3.php",
 		});
 
-		const SecretComponentClass = SecretComponent;
-		const hasSecretStorage = Boolean(this.app.secretStorage && SecretComponentClass);
+		const SecretSelectorClass = getSecretSelectorConstructor();
+		const secretStorage = getSecretStorage(this.app);
+		const hasSecretStorage = Boolean(secretStorage && SecretSelectorClass);
 		const currentMode =
 			this.plugin.data.spnCredentialStorageMode ||
 			(hasSecretStorage ? "secretStorage" : "plaintext");
 
-		if (hasSecretStorage) {
+		if (secretStorage && SecretSelectorClass) {
 			new Setting(containerEl)
 				.setName("API key storage method")
 				.setDesc("Choose where your API credentials are stored.")
@@ -123,10 +127,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									!this.plugin.data.spnAccessKeySecretName
 								) {
 									const name = SPN_ACCESS_KEY_SECRET_ID;
-									this.app.secretStorage.setSecret(
-										name,
-										this.plugin.data.spnAccessKey,
-									);
+									secretStorage.setSecret?.(name, this.plugin.data.spnAccessKey);
 									this.plugin.data.spnAccessKeySecretName = name;
 								}
 								if (
@@ -134,15 +135,12 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									!this.plugin.data.spnSecretKeySecretName
 								) {
 									const name = SPN_SECRET_KEY_SECRET_ID;
-									this.app.secretStorage.setSecret(
-										name,
-										this.plugin.data.spnSecretKey,
-									);
+									secretStorage.setSecret?.(name, this.plugin.data.spnSecretKey);
 									this.plugin.data.spnSecretKeySecretName = name;
 								}
 							} else if (newMode === "plaintext") {
 								if (this.plugin.data.spnAccessKeySecretName) {
-									const val = this.app.secretStorage.getSecret(
+									const val = secretStorage.getSecret?.(
 										this.plugin.data.spnAccessKeySecretName,
 									);
 									if (val && !this.plugin.data.spnAccessKey) {
@@ -150,7 +148,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 									}
 								}
 								if (this.plugin.data.spnSecretKeySecretName) {
-									const val = this.app.secretStorage.getSecret(
+									const val = secretStorage.getSecret?.(
 										this.plugin.data.spnSecretKeySecretName,
 									);
 									if (val && !this.plugin.data.spnSecretKey) {
@@ -165,14 +163,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 				});
 		}
 
-		if (currentMode === "secretStorage" && hasSecretStorage) {
+		if (currentMode === "secretStorage" && secretStorage && SecretSelectorClass) {
 			new Setting(containerEl)
 				.setName("Archive.org SPN access key")
 				.setDesc(
 					"Select or create a secret in SecretStorage for the SPN API v2 access key.",
 				)
 				.addComponent((el) =>
-					new SecretComponentClass(this.app, el)
+					new SecretSelectorClass(this.app, el)
 						.setValue(this.plugin.data.spnAccessKeySecretName || "")
 						.onChange(async (value: string) => {
 							this.plugin.data.spnAccessKeySecretName = value.trim();
@@ -186,7 +184,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					"Select or create a secret in SecretStorage for the SPN API v2 secret key.",
 				)
 				.addComponent((el) =>
-					new SecretComponentClass(this.app, el)
+					new SecretSelectorClass(this.app, el)
 						.setValue(this.plugin.data.spnSecretKeySecretName || "")
 						.onChange(async (value: string) => {
 							this.plugin.data.spnSecretKeySecretName = value.trim();
@@ -212,14 +210,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					.setName("Purge plaintext API keys from data.json")
 					.setDesc("Removes legacy plaintext keys from data.json file.")
 					.addButton((btn) => {
-						btn.setButtonText("Purge plaintext keys")
-							.setWarning()
-							.onClick(async () => {
+						markButtonDestructive(btn.setButtonText("Purge plaintext keys")).onClick(
+							async () => {
 								purgePlaintextCredentials(this.plugin.data);
 								await this.plugin.saveSettings();
 								new Notice("Legacy plaintext API keys purged from data.json.");
 								this.refreshSettingsUi(true);
-							});
+							},
+						);
 					});
 			}
 		} else {
@@ -290,9 +288,9 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			})
 			.buttonEl.classList.add("wa-profileButton");
 
-		new ButtonComponent(profileButtonContainer)
-			.setButtonText("Delete profile")
-			.setWarning()
+		markButtonDestructive(
+			new ButtonComponent(profileButtonContainer).setButtonText("Delete profile"),
+		)
 			.onClick(async () => {
 				await this.handleDeleteProfileClick();
 			})
@@ -462,28 +460,26 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			.setName("API request delay (ms)")
 			.setDesc("Delay between API calls (initiate, status check, next link) in milliseconds.")
 			.addSlider((slider) =>
-				slider
-					.setLimits(500, 10000, 100) // Min 0.5s, Max 10s, Step 0.1s
-					.setValue(activeSettings.apiDelay)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.apiDelay = value;
-						await this.plugin.saveSettings();
-					}),
+				preserveLegacySliderValue(
+					slider
+						.setLimits(500, 10000, 100) // Min 0.5s, Max 10s, Step 0.1s
+						.setValue(activeSettings.apiDelay),
+				).onChange(async (value) => {
+					activeSettings.apiDelay = value;
+					await this.plugin.saveSettings();
+				}),
 			);
 
 		new Setting(containerEl)
 			.setName("Max status check retries")
 			.setDesc("Maximum number of times to check the status of a pending archive job.")
 			.addSlider((slider) =>
-				slider
-					.setLimits(1, 10, 1)
-					.setValue(activeSettings.maxRetries)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.maxRetries = value;
-						await this.plugin.saveSettings();
-					}),
+				preserveLegacySliderValue(
+					slider.setLimits(1, 10, 1).setValue(activeSettings.maxRetries),
+				).onChange(async (value) => {
+					activeSettings.maxRetries = value;
+					await this.plugin.saveSettings();
+				}),
 			);
 
 		new Setting(containerEl)
@@ -631,14 +627,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					"Delay between consecutive submit requests to be gentle on archive.today. Range: 1,000ms-10,000ms.",
 				)
 				.addSlider((slider) =>
-					slider
-						.setLimits(1000, 10000, 500)
-						.setValue(activeSettings.archiveTodaySubmitDelayMs)
-						.setDynamicTooltip()
-						.onChange(async (value) => {
-							activeSettings.archiveTodaySubmitDelayMs = value;
-							await this.plugin.saveSettings();
-						}),
+					preserveLegacySliderValue(
+						slider
+							.setLimits(1000, 10000, 500)
+							.setValue(activeSettings.archiveTodaySubmitDelayMs),
+					).onChange(async (value) => {
+						activeSettings.archiveTodaySubmitDelayMs = value;
+						await this.plugin.saveSettings();
+					}),
 				);
 
 			new Setting(containerEl)
@@ -647,28 +643,28 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					"How often the plugin checks pending archive.today snapshots. Range: 15,000ms-300,000ms.",
 				)
 				.addSlider((slider) =>
-					slider
-						.setLimits(15000, 300000, 5000)
-						.setValue(activeSettings.archiveTodayPendingPollIntervalMs)
-						.setDynamicTooltip()
-						.onChange(async (value) => {
-							activeSettings.archiveTodayPendingPollIntervalMs = value;
-							await this.plugin.saveSettings();
-						}),
+					preserveLegacySliderValue(
+						slider
+							.setLimits(15000, 300000, 5000)
+							.setValue(activeSettings.archiveTodayPendingPollIntervalMs),
+					).onChange(async (value) => {
+						activeSettings.archiveTodayPendingPollIntervalMs = value;
+						await this.plugin.saveSettings();
+					}),
 				);
 
 			new Setting(containerEl)
 				.setName("archive.today pending poll batch size")
 				.setDesc("How many pending snapshots to check per poll cycle. Range: 1-10.")
 				.addSlider((slider) =>
-					slider
-						.setLimits(1, 10, 1)
-						.setValue(activeSettings.archiveTodayPendingPollBatchSize)
-						.setDynamicTooltip()
-						.onChange(async (value) => {
-							activeSettings.archiveTodayPendingPollBatchSize = value;
-							await this.plugin.saveSettings();
-						}),
+					preserveLegacySliderValue(
+						slider
+							.setLimits(1, 10, 1)
+							.setValue(activeSettings.archiveTodayPendingPollBatchSize),
+					).onChange(async (value) => {
+						activeSettings.archiveTodayPendingPollBatchSize = value;
+						await this.plugin.saveSettings();
+					}),
 				);
 
 			new Setting(containerEl)
@@ -677,14 +673,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					"Maximum number of pending items allowed in the background queue. Range: 1-100. Default: 30.",
 				)
 				.addSlider((slider) =>
-					slider
-						.setLimits(1, 100, 1)
-						.setValue(activeSettings.archiveTodayMaxPendingCount ?? 30)
-						.setDynamicTooltip()
-						.onChange(async (value) => {
-							activeSettings.archiveTodayMaxPendingCount = value;
-							await this.plugin.saveSettings();
-						}),
+					preserveLegacySliderValue(
+						slider
+							.setLimits(1, 100, 1)
+							.setValue(activeSettings.archiveTodayMaxPendingCount ?? 30),
+					).onChange(async (value) => {
+						activeSettings.archiveTodayMaxPendingCount = value;
+						await this.plugin.saveSettings();
+					}),
 				);
 
 			new Setting(containerEl)
@@ -693,14 +689,14 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					"Max time a pending snapshot is kept before moving to failed queue. Range: 60,000ms-1,200,000ms.",
 				)
 				.addSlider((slider) =>
-					slider
-						.setLimits(60000, 1200000, 60000)
-						.setValue(activeSettings.archiveTodayPendingMaxWaitMs)
-						.setDynamicTooltip()
-						.onChange(async (value) => {
-							activeSettings.archiveTodayPendingMaxWaitMs = value;
-							await this.plugin.saveSettings();
-						}),
+					preserveLegacySliderValue(
+						slider
+							.setLimits(60000, 1200000, 60000)
+							.setValue(activeSettings.archiveTodayPendingMaxWaitMs),
+					).onChange(async (value) => {
+						activeSettings.archiveTodayPendingMaxWaitMs = value;
+						await this.plugin.saveSettings();
+					}),
 				);
 		}
 
@@ -708,14 +704,12 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			.setName("Manual save batch size")
 			.setDesc("How many failed URLs to open per manual fallback command. Clamped to 1-5.")
 			.addSlider((slider) =>
-				slider
-					.setLimits(1, 5, 1)
-					.setValue(activeSettings.manualSaveBatchSize)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						activeSettings.manualSaveBatchSize = value;
-						await this.plugin.saveSettings();
-					}),
+				preserveLegacySliderValue(
+					slider.setLimits(1, 5, 1).setValue(activeSettings.manualSaveBatchSize),
+				).onChange(async (value) => {
+					activeSettings.manualSaveBatchSize = value;
+					await this.plugin.saveSettings();
+				}),
 			);
 
 		new Setting(containerEl)
@@ -735,7 +729,7 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(containerEl).setName("SPN API v2 options").setHeading();
+		new Setting(containerEl).setName("SPN API v2").setHeading();
 
 		const spnDesc = containerEl.createEl("p", { cls: "wa-spnDesc" });
 		spnDesc.appendText(

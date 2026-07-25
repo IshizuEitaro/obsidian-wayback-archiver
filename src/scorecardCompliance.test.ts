@@ -10,6 +10,34 @@ describe("Obsidian scorecard compliance", () => {
 		expect(source).not.toContain("globalThis.open");
 	});
 
+	it("uses window-scoped timers for batch delays", () => {
+		expect(read("src/core/batchRun.ts")).not.toContain("globalThis.");
+	});
+
+	it("uses Obsidian element helpers for the progress chip", () => {
+		const source = read("src/ui/ArchiveProgressChip.ts");
+		expect(source).not.toContain("document.createElement");
+		expect(source).toContain("createDiv");
+		expect(source).toContain("createEl");
+	});
+
+	it("accesses optional Obsidian APIs through compatibility helpers", () => {
+		const settingsTab = read("src/ui/SettingsTab.ts");
+		const definitions = read("src/ui/settings/definitions.ts");
+		const shared = read("src/ui/settings/shared.ts");
+
+		expect(settingsTab).not.toContain(".secretStorage");
+		expect(settingsTab).not.toMatch(/\bSecretComponent\b/);
+		expect(definitions).not.toMatch(/\bSecretComponent\b/);
+		expect(shared).not.toContain(".secretStorage");
+	});
+
+	it("does not call deprecated button and slider methods", () => {
+		const source = read("src/ui/SettingsTab.ts");
+		expect(source).not.toContain(".setWarning()");
+		expect(source).not.toContain(".setDynamicTooltip()");
+	});
+
 	it("uses Node's builtin module list instead of builtin-modules", () => {
 		expect(read("esbuild.config.mjs")).toContain('from "node:module"');
 		expect(read("package.json")).not.toContain('"builtin-modules"');
@@ -22,9 +50,12 @@ describe("Obsidian scorecard compliance", () => {
 	});
 
 	it("does not use settings in a settings heading", () => {
-		expect(read("src/ui/SettingsTab.ts")).not.toContain(
-			'.setName("SPN API v2 settings").setHeading()',
+		const legacySource = read("src/ui/SettingsTab.ts");
+		const declarativeSource = read("src/ui/settings/definitions.ts");
+		expect(legacySource).not.toMatch(
+			/setName\("SPN API v2 (?:settings|options)"\)\.setHeading\(\)/,
 		);
+		expect(declarativeSource).not.toMatch(/name: "SPN API v2 (?:settings|options)"/);
 	});
 
 	it("manages all context-menu listeners through the plugin lifecycle", () => {

@@ -254,15 +254,15 @@ export interface WaybackArchiverData extends CredentialStorageData {
 export const SPN_ACCESS_KEY_SECRET_ID = "wayback-archiver-spn-access-key";
 export const SPN_SECRET_KEY_SECRET_ID = "wayback-archiver-spn-secret-key";
 
-interface SecretStorageLike {
+export interface SecretStorageLike {
 	getSecret?(name: string): string | null | undefined;
 	setSecret?(name: string, value: string): void;
 }
 
-function getSecretStorage(app: unknown): SecretStorageLike | undefined {
+export function getSecretStorage(app: unknown): SecretStorageLike | undefined {
 	if (!app || typeof app !== "object" || !("secretStorage" in app)) return undefined;
-	const storage = (app as { secretStorage?: unknown }).secretStorage;
-	return storage && typeof storage === "object" ? (storage as SecretStorageLike) : undefined;
+	const storage = app.secretStorage;
+	return storage && typeof storage === "object" ? storage : undefined;
 }
 
 /**
