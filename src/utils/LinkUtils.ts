@@ -31,7 +31,7 @@ const PLAIN_URL =
 
 export const LINK_REGEX = new RegExp(
 	`${MARKDOWN_LINK}|${HTML_A_LINK}|${HTML_IMG_LINK}|${PLAIN_URL}`,
-	"img",
+	"dimg",
 );
 
 export const getUrlFromMatch = (match: RegExpMatchArray) =>

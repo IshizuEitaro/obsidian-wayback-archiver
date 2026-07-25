@@ -114,6 +114,14 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 					"Read [Docs](https://web.archive.org/web/20260417000000/https://example.com) now.",
 			},
 			{
+				name: "Markdown link whose label repeats the destination",
+				input: "[https://example.com](https://example.com)",
+				originalUrl: "https://example.com",
+				archiveUrl: "https://web.archive.org/web/20260417000000/https://example.com",
+				expected:
+					"[https://example.com](https://web.archive.org/web/20260417000000/https://example.com)",
+			},
+			{
 				name: "Markdown image",
 				input: "![Preview](https://example.com/image.png)",
 				originalUrl: "https://example.com/image.png",
@@ -123,12 +131,29 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 					"![Preview](https://web.archive.org/web/20260417000000/https://example.com/image.png)",
 			},
 			{
+				name: "Markdown image whose alt text repeats the destination",
+				input: "![https://example.com/image.png](https://example.com/image.png)",
+				originalUrl: "https://example.com/image.png",
+				archiveUrl:
+					"https://web.archive.org/web/20260417000000/https://example.com/image.png",
+				expected:
+					"![https://example.com/image.png](https://web.archive.org/web/20260417000000/https://example.com/image.png)",
+			},
+			{
 				name: "HTML anchor",
 				input: '<a class="external" href="https://example.com" rel="noreferrer">Docs</a>',
 				originalUrl: "https://example.com",
 				archiveUrl: "https://web.archive.org/web/20260417000000/https://example.com",
 				expected:
 					'<a class="external" href="https://web.archive.org/web/20260417000000/https://example.com" rel="noreferrer">Docs</a>',
+			},
+			{
+				name: "HTML anchor with the destination in an earlier attribute",
+				input: '<a data-source="https://example.com" href="https://example.com">Docs</a>',
+				originalUrl: "https://example.com",
+				archiveUrl: "https://web.archive.org/web/20260417000000/https://example.com",
+				expected:
+					'<a data-source="https://example.com" href="https://web.archive.org/web/20260417000000/https://example.com">Docs</a>',
 			},
 			{
 				name: "HTML image",
