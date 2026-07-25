@@ -167,9 +167,28 @@ describe("Content Manipulator - Match-at-Insertion", () => {
 
 		it("removes an adjacent appended archive link while replacing the original destination", () => {
 			const input =
-				"[Docs](https://example.com) [(Archived)](https://archive.md/20260410000000/https://other.example)";
+				"[Docs](https://example.com) [(Archived)](https://archive.md/20260410000000/https://example.com)";
 			const expected =
 				"[Docs](https://web.archive.org/web/20260417000000/https://example.com)";
+
+			const result = applyLinkModification(
+				input,
+				"https://example.com",
+				"https://web.archive.org/web/20260417000000/https://example.com",
+				0,
+				replaceSettings,
+				{ isReplacement: false },
+			);
+
+			expect(result.content).toBe(expected);
+			expect(result.deltaLength).toBe(expected.length - input.length);
+		});
+
+		it("preserves an adjacent archive link for a different target", () => {
+			const input =
+				"[Docs](https://example.com) [(Other archive)](https://archive.md/20260410000000/https://other.example)";
+			const expected =
+				"[Docs](https://web.archive.org/web/20260417000000/https://example.com) [(Other archive)](https://archive.md/20260410000000/https://other.example)";
 
 			const result = applyLinkModification(
 				input,

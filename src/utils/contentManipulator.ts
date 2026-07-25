@@ -152,7 +152,10 @@ export function applyLinkModification(
 			insertionPoint + ADJACENT_LINK_SEARCH_LIMIT,
 		);
 		const adjacentArchiveMatch = getAdjacentArchiveLinkMatch(textAfterLink);
-		const removedLength = adjacentArchiveMatch?.[0].length ?? 0;
+		const removedLength =
+			adjacentArchiveMatch && isAdjacentArchiveForTarget(adjacentArchiveMatch[0], originalUrl)
+				? adjacentArchiveMatch[0].length
+				: 0;
 		const replaceEnd = insertionPoint + removedLength;
 
 		return {
