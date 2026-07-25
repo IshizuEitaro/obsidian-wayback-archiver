@@ -294,9 +294,23 @@ class WaybackArchiverSettingTab extends PluginSettingTab {
 			})
 			.buttonEl.classList.add("wa-profileButton");
 
+		const activeSettings = this.plugin.activeSettings;
+
 		new Setting(containerEl).setName("Archive link format").setHeading();
 
-		const activeSettings = this.plugin.activeSettings;
+		new Setting(containerEl)
+			.setName("Archive link mode")
+			.setDesc("Append a separate archive link or replace the original link destination.")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("append", "Append")
+					.addOption("replace", "Replace")
+					.setValue(activeSettings.archiveLinkMode)
+					.onChange(async (value) => {
+						activeSettings.archiveLinkMode = value as "append" | "replace";
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl)
 			.setName("Date format")

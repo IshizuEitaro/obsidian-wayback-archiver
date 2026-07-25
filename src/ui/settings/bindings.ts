@@ -5,6 +5,7 @@ import { parseIgnoredDomains } from "../../utils/LinkUtils";
 
 export type DeclarativeSettingKey =
 	| "profile.dateFormat"
+	| "profile.archiveLinkMode"
 	| "profile.archiveLinkText"
 	| "profile.ignorePatternsText"
 	| "profile.ignoredDomainsText"

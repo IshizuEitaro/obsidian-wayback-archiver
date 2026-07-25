@@ -68,6 +68,7 @@ describe("declarative setting definitions", () => {
 		expect(names).toEqual(
 			expect.arrayContaining([
 				"Date format",
+				"Archive link mode",
 				"Archive link text",
 				"Ignored domains",
 				"Archive bare URLs",
@@ -79,6 +80,12 @@ describe("declarative setting definitions", () => {
 		);
 		const apiDelay = flat.find((item) => item.name === "API request delay");
 		expect(apiDelay?.aliases).toContain("request interval");
+		const mode = flat.find((item) => item.name === "Archive link mode");
+		expect(mode?.control).toEqual({
+			type: "dropdown",
+			key: "profile.archiveLinkMode",
+			options: { append: "Append", replace: "Replace" },
+		});
 	});
 
 	it("shows archive.today queue controls only when auto-submit is enabled", () => {

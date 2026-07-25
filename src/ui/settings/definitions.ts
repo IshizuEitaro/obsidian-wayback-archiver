@@ -30,6 +30,7 @@ export const SETTING_IDS = [
 	"active-profile",
 	"profile-actions",
 	"date-format",
+	"archive-link-mode",
 	"archive-link-text",
 	"ignore-url-patterns",
 	"ignored-domains",
@@ -520,6 +521,15 @@ export function buildSettingDefinitions(
 			type: "page",
 			name: "Archive link format",
 			items: [
+				profileControl(
+					"Archive link mode",
+					"Append a separate archive link or replace the original link destination.",
+					{
+						type: "dropdown",
+						key: "profile.archiveLinkMode",
+						options: { append: "Append", replace: "Replace" },
+					},
+				),
 				profileControl("Date format", "date-fns format used for {date}.", {
 					type: "text",
 					key: "profile.dateFormat",
