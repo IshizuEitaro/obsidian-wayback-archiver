@@ -1,6 +1,6 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
-	"plugins": ["typescript", "unicorn"],
+	"plugins": ["typescript", "unicorn", "import"],
 	"categories": {
 		"correctness": "off"
 	},
@@ -18,7 +18,11 @@
 	],
 	"rules": {
 		"constructor-super": "error",
+		"eqeqeq": "error",
+		"eslint/no-nested-ternary": "warn",
 		"for-direction": "error",
+		"import/no-cycle": "error",
+		"import/no-duplicates": "error",
 		"no-async-promise-executor": "error",
 		"no-case-declarations": "error",
 		"no-class-assign": "error",
